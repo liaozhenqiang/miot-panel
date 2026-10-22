@@ -2,6 +2,10 @@
 
 一个可移植的米家 / 小米智能家居触屏面板。登录小米账号后从云端枚举设备，直接云端控制与读取状态，不依赖设备的局域网 IP/Token。适合玩客云、树莓派、电视盒子、迷你主机等 Linux 设备，也可以直接在电脑/手机上作为网页使用。
 
+![面板演示（演示数据，已脱敏）](screenshots/homepage-demo.png)
+
+> 演示数据：设备名、内网 IP、用量已脱敏；不含摄像头画面。
+
 ## 功能
 
 - 触屏墙面板：全屏、响应式、时钟、天气、日历、家庭用电、设备卡片
@@ -190,6 +194,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - `config.example.json`：默认配置
 - `requirements.txt`：Python 依赖（micloud、segno）
 - `LICENSE`：MIT 许可证
+- `screenshots/homepage-demo.png`：脱敏演示图
 - `install.sh`：安装脚本
 - `miot-cloud.service` / `go2rtc.service`：systemd 参考单元
 
