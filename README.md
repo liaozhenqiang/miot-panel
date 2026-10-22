@@ -26,7 +26,7 @@
 
 ```bash
 git clone https://github.com/liaozhenqiang/onecloud-miot-panel.git
-cd miot-panel
+cd onecloud-miot-panel
 sudo bash install.sh
 ```
 
