@@ -1,0 +1,13 @@
+{
+  "home_label": "我的家",
+  "wan_prefixes": [],
+  "lan_prefixes": [],
+  "weather_location": "",
+  "weather_label": "天气",
+  "country": "cn",
+  "page_size": 10,
+  "hidden_devices": [],
+  "renames": {},
+  "admin_pin_salt": "",
+  "admin_pin_hash": ""
+}

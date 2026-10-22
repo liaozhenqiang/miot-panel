@@ -1,0 +1,12 @@
+# local runtime data (Xiaomi session, device info, layout, logs)
+micloud_auth.json
+cloud_config.json
+cloud_layout.json
+cloud_settings.json
+cloud_devices.json
+cloud_states.json
+*.bak
+*.bak-*
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,16 @@
+[Unit]
+Description=Mi Home Panel (miot-cloud)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MIOT_ROOT=/opt/miot-panel
+Environment=MIOT_PORT=80
+WorkingDirectory=/opt/miot-panel
+ExecStart=/usr/bin/python3 /opt/miot-panel/miot-cloud.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

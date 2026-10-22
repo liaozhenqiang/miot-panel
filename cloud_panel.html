@@ -1,0 +1,628 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>米家面板</title><style>
+:root{--bg:#0b0e14;--card:rgba(255,255,255,.055);--line:rgba(255,255,255,.09);--txt:#eef2f7;--muted:#8f9aaa;--accent:#ff7a18;--green:#43d17d;--red:#ff5f6d;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:'PingFang SC','Noto Sans CJK SC',sans-serif;}
+body{background:
+ radial-gradient(1200px 700px at 88% -10%, rgba(255,105,0,.18), transparent 60%),
+ radial-gradient(900px 700px at -10% 110%, rgba(64,120,255,.12), transparent 60%),
+ linear-gradient(165deg,#151a26 0%,#0b0e14 60%,#17120c 100%);}
+.app{height:100vh;width:100%;max-width:1760px;margin:0 auto;display:flex;flex-direction:column;padding:16px 20px 10px;}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex:none;margin-bottom:12px;}
+.clock{font-size:108px;line-height:1;font-weight:700;letter-spacing:1px;background:linear-gradient(180deg,#fff 25%,#ffc59a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.date{font-size:22px;color:var(--muted);margin-top:8px;}
+.brand{display:flex;align-items:center;gap:14px;padding-bottom:4px;}
+.home{font-size:17px;color:#ffcaa3;border:1px solid rgba(255,122,24,.35);background:rgba(255,122,24,.10);padding:8px 14px;border-radius:999px;}
+.count{font-size:16px;color:var(--muted);}
+.nav{display:flex;align-items:center;gap:12px;margin-left:4px;}
+.toolbtn{height:52px;padding:0 18px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:#fff;font-size:18px;cursor:pointer;}
+.toolbtn.primary{background:var(--accent);border-color:var(--accent);font-weight:600;}
+.arrow{width:54px;height:54px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.05);color:#fff;font-size:28px;line-height:1;cursor:pointer;}
+.arrow:disabled{opacity:.22;}
+.pageno{font-size:17px;color:var(--muted);min-width:60px;text-align:center;}
+.viewport{flex:1;min-height:0;overflow:hidden;position:relative;touch-action:none;}
+.track{display:flex;height:100%;transition:transform .35s cubic-bezier(.22,.61,.36,1);}
+.page{min-width:100%;height:100%;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);gap:12px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:14px 16px;display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.12);}
+.card:before{content:'';position:absolute;left:0;top:18px;bottom:18px;width:4px;border-radius:4px;background:var(--accent);opacity:.9;}
+.card.on{background:linear-gradient(160deg,rgba(255,122,24,.13),rgba(255,255,255,.055));border-color:rgba(255,122,24,.28);}
+.card.offline{opacity:.45;}
+.card.blind{border-style:dashed;border-color:rgba(255,255,255,.18);}
+.card.blind:before{background:#8f9aaa;opacity:.5;}
+.card.camera{cursor:pointer;background:linear-gradient(160deg,rgba(64,146,255,.16),rgba(255,255,255,.055));border-color:rgba(64,146,255,.30);}
+.card.camera:before{background:#4092ff;opacity:1;}
+.card.camera:active{transform:scale(.985);}
+.card.camera.offline{opacity:.5;}
+.card.camera .camHint{font-size:13px;color:var(--muted);margin-top:5px;}
+.card.camera .viewBtn{margin-top:auto;display:flex;align-items:center;justify-content:center;height:48px;border-radius:12px;background:#2f7fe0;color:#fff;font-weight:700;font-size:17px;}
+.card.busy{opacity:.65;}
+.ctop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-left:12px;}
+.nm{font-size:27px;font-weight:650;line-height:1.15;display:flex;align-items:center;gap:8px;}
+.ico{font-size:26px;}
+.md{font-size:14px;color:#7f8a9a;margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.status{font-size:16px;color:var(--muted);margin-top:4px;}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;background:#68707d;}
+.dot.on{background:var(--green);box-shadow:0 0 10px rgba(67,209,125,.7);}
+.dot.off{background:var(--red);}
+.badge{font-size:13px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08);color:#b9c2cf;white-space:nowrap;}
+.badge.blind{background:rgba(255,95,109,.12);color:#ff9aa3;}
+.metrics{font-size:18px;color:#aeb8c6;line-height:1.5;padding-left:12px;margin-top:8px;display:flex;flex-wrap:wrap;gap:4px 16px;}
+.metrics span{white-space:nowrap;}
+.metrics b{font-weight:650;color:#e9eef5;}
+.widget{background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.04));}
+.widget:before{background:#4db2ff;}
+.widget.cal:before{background:#a78bfa;}
+.widget.energy:before{background:#43d17d;}
+.wmain{display:flex;align-items:flex-end;justify-content:space-between;padding-left:12px;margin-top:8px;}
+.wtemp{font-size:72px;font-weight:700;line-height:1;}
+.wtemp small{font-size:20px;font-weight:500;color:var(--muted);margin-left:2px;}
+.wdesc{font-size:22px;color:#dbe3ee;margin-bottom:6px;}
+.wmeta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:16px;color:#aeb8c6;padding-left:12px;margin-top:8px;}
+.forecast{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-left:12px;margin-top:auto;padding-top:8px;}
+.fcDay{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:6px 4px;text-align:center;}
+.fcDate{font-size:13px;color:var(--muted);}
+.fcIcon{font-size:15px;margin:3px 0;color:#dbe3ee;}
+.fcTmp{font-size:14px;color:#e9eef5;}
+.calHead{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:13px;color:var(--muted);padding-left:12px;margin-top:8px;}
+.calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding-left:12px;margin-top:4px;flex:1;}
+.calDay{display:flex;align-items:center;justify-content:center;font-size:17px;color:#c9d2de;border-radius:8px;min-height:26px;}
+.calDay.blank{visibility:hidden;}
+.calDay.today{background:var(--accent);color:#fff;font-weight:700;}
+.emain{padding-left:12px;margin-top:10px;display:flex;align-items:flex-end;gap:10px;}
+.ewatt{font-size:68px;font-weight:700;line-height:1;}
+.ewatt small{font-size:18px;color:var(--muted);font-weight:500;margin-left:2px;}
+.edesc{font-size:16px;color:var(--muted);margin-bottom:6px;}
+.ebar{height:10px;border-radius:5px;background:rgba(255,255,255,.08);margin:12px 0 0 12px;overflow:hidden;}
+.ebar span{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#43d17d,#ffd166);}
+.emeta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:16px;color:#aeb8c6;padding-left:12px;margin-top:10px;}
+.editView{width:100%;height:100%;overflow:auto;padding-right:2px;}
+.editGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-content:start;}
+.editCard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;min-height:92px;display:flex;align-items:center;gap:12px;cursor:grab;user-select:none;touch-action:none;transition:.15s;}
+.editCard.dragging{opacity:.4;}
+.editHandle{font-size:20px;color:var(--muted);letter-spacing:-3px;padding-right:2px;}
+.editBody{flex:1;min-width:0;}
+.editBody .nm{font-size:21px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.editBody .md{font-size:14px;color:#7f8a9a;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pageBreak{grid-column:1/-1;border-top:1px dashed rgba(255,255,255,.25);padding:10px 0 0;color:var(--muted);font-size:14px;margin:2px 0;}
+.editHint{color:var(--muted);font-size:14px;padding:14px 2px 4px;}
+body.editing .dots{display:none;}
+body.editing .viewport{touch-action:pan-y;}
+.acrow{display:flex;align-items:center;gap:12px;margin-top:6px;padding-left:12px;}
+.temp{font-size:52px;font-weight:700;line-height:1;min-width:116px;}
+.temp small{font-size:18px;font-weight:500;color:var(--muted);margin-left:2px;}
+.step{width:50px;height:50px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;font-size:25px;font-weight:600;}
+.step:disabled{opacity:.3;}
+.modeWrap{padding-left:12px;margin-top:6px;}
+.mode{width:100%;padding:9px 10px;border-radius:14px;border:1px solid var(--line);background:#1d2430;color:#fff;font-size:18px;}
+.mode:disabled{opacity:.3;}
+.actions{display:flex;gap:10px;margin-top:auto;padding-top:8px;padding-left:12px;}
+.btn{flex:1;border:none;border-radius:16px;padding:15px 10px;font-size:21px;font-weight:650;color:#fff;background:#303847;transition:transform .08s ease,filter .08s ease,background .15s ease;}
+.btn.on{background:linear-gradient(135deg,#ff9a3d,#ff6900);box-shadow:0 8px 20px rgba(255,105,0,.25);}
+.btn:disabled{opacity:.3;}
+.btn.ghost{background:rgba(255,255,255,.07);border:1px solid var(--line);}
+.btn.small{font-size:18px;padding:14px 8px;}
+.empty{grid-column:1/-1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:18px;gap:8px;}
+.foot{flex:none;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#6f7988;padding-top:8px;}
+.dots{display:flex;gap:8px;}
+.dotp{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.18);cursor:pointer;}
+.dotp.on{background:var(--accent);}
+.msg{position:fixed;left:50%;top:16px;transform:translateX(-50%) translateY(-20px);background:#2f6f4f;color:#fff;padding:12px 20px;border-radius:12px;font-size:18px;opacity:0;pointer-events:none;transition:.2s;z-index:20;}
+.msg.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.msg.err{background:#8a2f2f;}
+.btn,.sw,.step,.toolbtn,.arrow{transition:transform .08s ease,filter .08s ease,background .15s ease,color .15s ease;}
+.btn:active,.sw:active,.step:active,.toolbtn:active,.arrow:active{transform:scale(.94);filter:brightness(.9);}
+body{user-select:none;-webkit-user-select:none;overscroll-behavior:none;}
+*::-webkit-scrollbar{width:0;height:0;}
+@media (pointer:coarse){*,*::before,*::after{cursor:none!important;}}
+body.touch *{cursor:none!important;}
+@media (min-width:1501px){.card.span2{grid-column:span 2;}}
+body.light{
+  --bg:#eef2f7;--card:#ffffff;--line:rgba(15,23,42,.10);--txt:#172033;--muted:#5b6678;
+  background:
+    radial-gradient(1200px 700px at 88% -10%, rgba(255,122,24,.10), transparent 60%),
+    radial-gradient(900px 700px at -10% 110%, rgba(64,120,255,.08), transparent 60%),
+    linear-gradient(165deg,#f7f9fc 0%,#eef2f7 60%,#fdf6ef 100%);
+  color:var(--txt);
+}
+body.light .clock{background:linear-gradient(180deg,#162033 25%,#e2610d 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+body.light .home{color:#c2410c;border-color:rgba(255,106,0,.25);background:rgba(255,106,0,.08);}
+body.light .toolbtn,body.light .arrow{background:#fff;border-color:var(--line);color:#172033;}
+body.light .toolbtn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+body.light .card{background:#fff;border-color:var(--line);box-shadow:0 8px 24px rgba(15,23,42,.07);}
+body.light .card.on{background:linear-gradient(160deg,#fff3e6,#fff);border-color:rgba(255,106,0,.30);}
+body.light .widget{background:linear-gradient(160deg,#fff,#f8fafc);}
+body.light .card.blind{border-color:#cbd5e1;}
+body.light .card.camera{background:linear-gradient(160deg,#eaf4ff,#fff);border-color:rgba(47,127,224,.28);}
+body.light .card.camera .viewBtn{background:#2f7fe0;color:#fff;}
+body.light .md{color:#64748b;}
+body.light .status{color:#64748b;}
+body.light .badge{background:#eef2f7;color:#475569;}
+body.light .badge.blind{background:#fee2e2;color:#b91c1c;}
+body.light .metrics,body.light .wmeta,body.light .emeta{color:#475569;}
+body.light .metrics b,body.light .fcTmp{color:#172033;}
+body.light .wdesc,body.light .fcIcon{color:#334155;}
+body.light .fcDay{background:#f8fafc;border-color:#e2e8f0;}
+body.light .calHead{color:#64748b;}
+body.light .calDay{color:#334155;}
+body.light .calDay.today{background:var(--accent);color:#fff;}
+body.light .ebar{background:#e2e8f0;}
+body.light .sw{background:#e2e8f0;color:#172033;}
+body.light .sw.on{background:linear-gradient(135deg,#ff9a3d,#ff6900);color:#fff;}
+body.light .step{background:#eef2f7;border-color:#e2e8f0;color:#172033;}
+body.light .mode{background:#f8fafc;border-color:#e2e8f0;color:#172033;}
+body.light .btn{background:#e2e8f0;color:#172033;}
+body.light .btn.ghost{background:#f8fafc;}
+body.light .btn.on{background:linear-gradient(135deg,#ff9a3d,#ff6900);color:#fff;}
+body.light .editCard{background:#fff;border-color:#e2e8f0;}
+body.light .editBody .md{color:#64748b;}
+body.light .editHint,body.light .foot{color:#64748b;}
+body.light .pageBreak{border-color:#cbd5e1;color:#64748b;}
+body.light .dotp{background:#cbd5e1;}
+body.light .empty{color:#64748b;}
+body.light .pageno,body.light .count,body.light .date{color:#64748b;}
+@media (max-width:1500px){
+  html,body{height:auto;overflow-x:hidden;overflow-y:auto;}
+  .app{height:auto;min-height:100vh;padding-bottom:24px;}
+  .viewport{overflow:visible;touch-action:pan-y;}
+  .track{height:auto;align-items:flex-start;}
+  .page{height:auto;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,minmax(240px,1fr));}
+  .editGrid{grid-template-columns:repeat(4,1fr);}
+  .card{min-height:240px;}
+}
+@media (max-width:1100px){
+  .page{grid-template-columns:repeat(3,1fr);}
+  .editGrid{grid-template-columns:repeat(3,1fr);}
+  .clock{font-size:48px;}
+}
+@media (max-width:760px){
+  .app{padding:14px;}
+  .head{flex-wrap:wrap;align-items:flex-start;}
+  .brand{flex-wrap:wrap;padding-bottom:0;}
+  .clock{font-size:42px;}
+  .page{grid-template-columns:repeat(2,1fr);grid-template-rows:auto;}
+  .editGrid{grid-template-columns:repeat(2,1fr);}
+  .card{min-height:230px;padding:16px;}
+  .wtemp{font-size:44px;}
+  .ewatt{font-size:42px;}
+}
+</style></head><body>
+<div class="app">
+  <div class="head">
+    <div><div class="clock" id="clock">--:--</div><div class="date" id="date"></div></div>
+    <div class="brand">
+      <span class="home" id="home"></span>
+      <span class="count" id="count"></span>
+      <button class="toolbtn" id="cameraBtn" onclick="location.href='/camera'">摄像头</button>
+      <button class="toolbtn" id="themeBtn" onclick="toggleTheme()" title="切换白天/黑夜模式">黑夜</button>
+      <button class="toolbtn" id="editBtn" onclick="toggleEdit()">排版</button>
+      <button class="toolbtn primary" id="saveBtn" style="display:none" onclick="saveLayout()">保存</button>
+      <button class="toolbtn" id="cancelBtn" style="display:none" onclick="cancelLayout()">取消</button>
+      <div class="nav" id="nav">
+        <button class="arrow" id="prev" onclick="go(-1)">‹</button>
+        <span class="pageno" id="pageno">1/1</span>
+        <button class="arrow" id="next" onclick="go(1)">›</button>
+      </div>
+    </div>
+  </div>
+  <div class="viewport" id="viewport"><div class="track" id="track"></div></div>
+  <div class="foot"><span id="foot">数据每 60 秒刷新 · 仅显示当前家庭</span><div class="dots" id="dots"></div><span id="updated"></span></div>
+</div>
+<div class="msg" id="msg"></div>
+<script>
+var API='';
+if(navigator.maxTouchPoints>0||'ontouchstart' in window)document.body.classList.add('touch');
+document.addEventListener('contextmenu',function(e){e.preventDefault();});
+var devices=[], camCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='dark', statusData=null;
+var viewport=document.getElementById('viewport');
+var track=document.getElementById('track');
+
+function pad2(n){return n<10?'0'+n:''+n;}
+function tick(){
+  var d=new Date();
+  document.getElementById('clock').textContent=pad2(d.getHours())+':'+pad2(d.getMinutes());
+  document.getElementById('date').textContent=(d.getMonth()+1)+'月'+d.getDate()+'日 星期'+'日一二三四五六'[d.getDay()];
+}
+tick();setInterval(tick,1000);
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function isOn(v){return v===true||v==='true'||v===1||v==='1'||v==='on';}
+function toast(msg,err){
+  var el=document.getElementById('msg');if(!el)return;
+  el.textContent=msg;el.className='msg show'+(err?' err':'');
+  clearTimeout(el._t);el._t=setTimeout(function(){el.className='msg';},2500);
+}
+function applyTheme(t){
+  theme=(t==='light')?'light':'dark';
+  document.body.classList.toggle('light',theme==='light');
+  var b=document.getElementById('themeBtn');
+  if(b){
+    b.textContent=theme==='light'?'白天':'黑夜';
+    b.title=theme==='light'?'当前白天模式，点击切换到黑夜':'当前黑夜模式，点击切换到白天';
+  }
+}
+function toggleTheme(){
+  var prev=theme,next=theme==='light'?'dark':'light';
+  applyTheme(next);
+  fetch(API+'/api/theme',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({theme:next})}).then(function(r){return r.json();}).then(function(r){
+    if(!r.ok){applyTheme(prev);toast(r.msg||'主题保存失败',true);return;}
+    toast(next==='light'?'已切换到白天模式':'已切换到黑夜模式');
+  }).catch(function(e){applyTheme(prev);toast('主题保存失败：'+e,true);});
+}
+function statusHTML(d){
+  if(!d.online)return '<span class="dot off"></span>离线';
+  if(d.blind)return '<span class="dot"></span>状态未知';
+  if(d.power===null||d.power===undefined)return '<span class="dot"></span>状态未知';
+  return '<span class="dot '+(isOn(d.power)?'on':'')+'"></span>'+(isOn(d.power)?'已开启':'已关闭');
+}
+function metricsHTML(m){
+  if(!m)return '';
+  var parts=[];
+  if(m.voltage!==undefined&&m.voltage!==null)parts.push('<span>电压 <b>'+Number(m.voltage).toFixed(1)+' V</b></span>');
+  if(m.current!==undefined&&m.current!==null)parts.push('<span>电流 <b>'+Number(m.current).toFixed(2)+' A</b></span>');
+  if(m.watt!==undefined&&m.watt!==null)parts.push('<span>功率 <b>'+Math.round(m.watt)+' W</b></span>');
+  if(m.energy!==undefined&&m.energy!==null)parts.push('<span>电量 <b>'+(Number(m.energy)>=100?Math.round(m.energy):Number(m.energy).toFixed(2))+' kWh</b></span>');
+  return parts.length?'<div class="metrics">'+parts.join('')+'</div>':'';
+}
+function timeStr(ts){
+  if(!ts)return '--';
+  var d=new Date(ts*1000);
+  return pad2(d.getHours())+':'+pad2(d.getMinutes());
+}
+function openCamera(did){
+  location.href='/camera?did='+encodeURIComponent(did);
+}
+function allCards(){
+  return devices.concat(camCards);
+}
+function updateCount(){
+  var s=statusData;if(!s)return;
+  var txt=(s.supported_count||0)+' 可控';
+  if(s.blind_count)txt+=' · '+s.blind_count+' 盲控';
+  if(camCards.length)txt+=' · '+camCards.length+' 摄像头';
+  document.getElementById('count').textContent=s.logged_in?txt:'';
+}
+function loadCameras(){
+  return fetch(API+'/api/cameras?meta=1').then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.ok)return;
+    camCards=(d.cameras||[]).map(function(c){
+      return {type:'camera',_key:'cam:'+c.did,did:String(c.did),name:c.name||'摄像头',
+              model:c.model||'',ip:c.ip||'',online:!!c.online,icon:'📷'};
+    });
+    updateCount();
+    render();
+  }).catch(function(){});
+}
+function weatherCard(){
+  var w=weather||{};
+  var t=(w.temp!==undefined)?w.temp:'--';
+  var text=w.text||'天气暂不可用';
+  var high=(w.high!==undefined)?w.high:'--';
+  var low=(w.low!==undefined)?w.low:'--';
+  var hum=(w.humidity!==undefined)?w.humidity:'--';
+  var wind=(w.wind!==undefined)?w.wind:'--';
+  var labels=['今天','明天','后天'];
+  var fc=(w.daily||[]).map(function(x,i){
+    return '<div class="fcDay"><div class="fcDate">'+(labels[i]||'')+'</div><div class="fcIcon">'+esc(x.text||'')+'</div><div class="fcTmp">'+x.min+'° / '+x.max+'°</div></div>';
+  }).join('');
+  return '<div class="card widget weather"><div class="ctop"><div><div class="nm">'+esc(weatherLabel)+'</div><div class="md">'+(w.ts?'更新 '+timeStr(w.ts):'等待天气数据')+'</div></div><span class="badge">天气</span></div>'
+    +'<div class="wmain"><div class="wtemp">'+t+'<small>°C</small></div><div class="wdesc">'+esc(text)+'</div></div>'
+    +'<div class="wmeta"><span>最高 '+high+'°</span><span>最低 '+low+'°</span><span>湿度 '+hum+'%</span><span>风 '+wind+' km/h</span></div>'
+    +(fc?'<div class="forecast">'+fc+'</div>':'')+'</div>';
+}
+function calendarCard(){
+  var now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  var first=new Date(y,m,1).getDay(), days=new Date(y,m+1,0).getDate();
+  var cells='';
+  for(var i=0;i<first;i++)cells+='<div class="calDay blank"></div>';
+  for(var d=1;d<=days;d++)cells+='<div class="calDay'+(d===now.getDate()?' today':'')+'">'+d+'</div>';
+  var total=first+days;
+  while(total%7!==0){cells+='<div class="calDay blank"></div>';total++;}
+  return '<div class="card widget cal"><div class="ctop"><div><div class="nm">'+y+'年'+(m+1)+'月</div><div class="md">日历</div></div><span class="badge">日历</span></div>'
+    +'<div class="calHead"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>'
+    +'<div class="calGrid">'+cells+'</div></div>';
+}
+function energyCard(){
+  var main=null;
+  for(var i=0;i<devices.length;i++){var d=devices[i];if(!d.blind&&d.name&&d.name.indexOf('总闸')>=0){main=d;break;}}
+  if(!main){for(var j=0;j<devices.length;j++){if(devices[j].metrics&&devices[j].metrics.energy!=null){main=devices[j];break;}}}
+  var m=(main&&main.metrics)||{};
+  var watt=(m.watt!==undefined&&m.watt!==null)?Math.round(m.watt):'--';
+  var voltage=(m.voltage!==undefined&&m.voltage!==null)?Number(m.voltage).toFixed(1):'--';
+  var current=(m.current!==undefined&&m.current!==null)?Number(m.current).toFixed(2):'--';
+  var energy=(m.energy!==undefined&&m.energy!==null)?(Number(m.energy)>=100?Math.round(m.energy):Number(m.energy).toFixed(2)):'--';
+  var ratio=(m.watt?Math.min(100,Math.max(2,m.watt/30)):0);
+  return '<div class="card widget energy"><div class="ctop"><div><div class="nm">家庭用电</div><div class="md">'+esc(main?main.name:'电源总闸')+'</div></div><span class="badge">计量</span></div>'
+    +'<div class="emain"><div class="ewatt">'+watt+'<small>W</small></div><div class="edesc">当前功率</div></div>'
+    +'<div class="ebar"><span style="width:'+ratio+'%"></span></div>'
+    +'<div class="emeta"><span>电压 '+voltage+' V</span><span>电流 '+current+' A</span><span>累计 '+energy+' kWh</span></div></div>';
+}
+function cardHTML(d,wide){
+  if(d.type==='camera'){
+    var ch='<div class="card camera'+(wide?' span2':'')+(d.online?'':' offline')+'" onclick="openCamera(\''+esc(d.did)+'\')" role="button" tabindex="0">';
+    ch+='<div class="ctop"><div><div class="nm"><span class="ico">📷</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+(d.ip?' · '+esc(d.ip):'')+'</div><div class="status">'+(d.online?'<span class="dot on"></span>在线':'<span class="dot off"></span>离线')+'</div></div><span class="badge">'+(d.online?'实时':'离线')+'</span></div>';
+    ch+='<div class="camHint">点击卡片查看实时画面</div><div class="viewBtn">查看画面</div></div>';
+    return ch;
+  }
+  if(d.type==='weather')return weatherCard();
+  if(d.type==='calendar')return calendarCard();
+  if(d.type==='energy')return energyCard();
+  var on=isOn(d.power);
+  var h='<div class="card'+(wide?' span2':'')+(on?' on':'')+(d.online?'':' offline')+(d.blind?' blind':'')+'">';
+  h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div>'+(d.blind?'<span class="badge blind">盲控</span>':'')+'</div>';
+  if(d.blind){
+    h+='<div class="actions"><button class="btn small" onclick="blind(\''+d.did+'\',true,this)">开</button><button class="btn small ghost" onclick="blind(\''+d.did+'\',false,this)">关</button></div>';
+    return h+'</div>';
+  }
+  if(d.role==='ac'&&d.modes&&d.modes.length){
+    var t=(d.temp===null||d.temp===undefined)?null:Math.round(Number(d.temp));
+    var base=(t===null?26:t);
+    var lo=d.temp_min||16, hi=d.temp_max||30;
+    var opts=d.modes.map(function(m){return '<option value="'+m[0]+'"'+(Number(d.mode)===Number(m[0])?' selected':'')+'>'+esc(m[1])+'</option>';}).join('');
+    h+='<div class="acrow"><button class="step" '+(d.online?'':'disabled')+' onclick="control(\''+d.did+'\',\'temp\','+Math.max(lo,base-1)+',this)">−</button><div class="temp">'+(t===null?'--':t)+'<small>°C</small></div><button class="step" '+(d.online?'':'disabled')+' onclick="control(\''+d.did+'\',\'temp\','+Math.min(hi,base+1)+',this)">+</button></div>';
+    h+='<div class="modeWrap"><select class="mode" '+(d.online?'':'disabled')+' onchange="control(\''+d.did+'\',\'mode\',this.value,this)">'+opts+'</select></div>';
+  }
+  if(d.role!=='ac')h+=metricsHTML(d.metrics);
+  h+='<div class="actions"><button class="btn '+(on?'on':'')+'" '+(d.online?'':'disabled')+' onclick="toggle(\''+d.did+'\','+on+',this)">'+(on?'关闭':'开启')+'</button></div>';
+  return h+'</div>';
+}
+function widgetDefs(){
+  return [
+    {type:'weather',_key:'widget:weather',name:weatherLabel,md:'天气组件',icon:'天'},
+    {type:'calendar',_key:'widget:calendar',name:'日历',md:'日历组件',icon:'日'},
+    {type:'energy',_key:'widget:energy',name:'家庭用电',md:'用电汇总',icon:'电'}
+  ];
+}
+function orderedCards(list){
+  list.forEach(function(d){if(!d._key)d._key=(d.type==='camera'?'cam:':'dev:')+d.did;});
+  var cameras=list.filter(function(d){return d.type==='camera';});
+  var supported=list.filter(function(d){return d.type!=='camera'&&!d.blind;});
+  var blind=list.filter(function(d){return d.type!=='camera'&&d.blind;});
+  var widgets=widgetDefs();
+  var byKey={};
+  supported.concat(widgets).concat(cameras).concat(blind).forEach(function(d){byKey[d._key]=d;});
+  var defaultOrder=widgets.concat(cameras).concat(supported).concat(blind).map(function(d){return d._key;});
+  var order=(layoutOrder&&layoutOrder.length)?layoutOrder.slice():[];
+  var missingCams=cameras.filter(function(d){return order.indexOf(d._key)<0;}).map(function(d){return d._key;});
+  if(order.length&&missingCams.length){
+    var ins=-1;
+    for(var i=0;i<order.length;i++){if(order[i].indexOf('widget:')===0)ins=i;}
+    order=order.slice(0,ins+1).concat(missingCams,order.slice(ins+1));
+  }
+  var cards=[],seen={};
+  order.forEach(function(k){var d=byKey[k];if(d&&!seen[k]){cards.push(d);seen[k]=true;}});
+  defaultOrder.forEach(function(k){if(!seen[k]&&byKey[k]){cards.push(byKey[k]);seen[k]=true;}});
+  return cards;
+}
+function buildPages(list){
+  var cards=orderedCards(list);
+  var out=[];
+  for(var i=0;i<cards.length;i+=PAGE)out.push(cards.slice(i,i+PAGE));
+  if(!out.length)out.push([]);
+  return out;
+}
+function move(anim){
+  track.style.transition=anim?'transform .35s cubic-bezier(.22,.61,.36,1)':'none';
+  track.style.transform='translateX('+(-page*viewport.clientWidth)+'px)';
+  if(!anim)setTimeout(function(){track.style.transition='transform .35s cubic-bezier(.22,.61,.36,1)';},30);
+}
+function updateNav(){
+  document.getElementById('pageno').textContent=(page+1)+'/'+pages.length;
+  document.getElementById('prev').disabled=page<=0;
+  document.getElementById('next').disabled=page>=pages.length-1;
+  var isBlind=pages[page]&&pages[page].length&&pages[page].every(function(d){return d.blind;});
+  document.getElementById('foot').textContent=isBlind?'盲控设备状态不可读，按钮仅发送指令':'数据每 60 秒刷新 · 仅显示当前家庭';
+  var dots=document.getElementById('dots');dots.innerHTML='';
+  pages.forEach(function(_,i){
+    var s=document.createElement('span');s.className='dotp'+(i===page?' on':'');
+    s.onclick=function(){goTo(i);};dots.appendChild(s);
+  });
+}
+function updateHeader(){
+  var editBtn=document.getElementById('editBtn'),saveBtn=document.getElementById('saveBtn');
+  var cancelBtn=document.getElementById('cancelBtn'),nav=document.getElementById('nav');
+  var cameraBtn=document.getElementById('cameraBtn');
+  if(editing){
+    editBtn.style.display='none';saveBtn.style.display='inline-block';
+    cancelBtn.style.display='inline-block';nav.style.display='none';
+    if(cameraBtn)cameraBtn.style.display='none';
+    document.getElementById('foot').textContent='拖动卡片调整顺序，每 '+PAGE+' 张为一页';
+  }else{
+    editBtn.style.display='inline-block';saveBtn.style.display='none';
+    cancelBtn.style.display='none';nav.style.display='flex';
+    if(cameraBtn)cameraBtn.style.display='inline-block';
+  }
+}
+function editCardHTML(d){
+  var isW=!!d.type&&d.type!=='camera';
+  var nm=isW?d.name:esc(d.name);
+  var md=isW?d.md:esc(d.model);
+  var ico=isW?d.icon:(d.icon||'');
+  var badge=d.type==='camera'?'摄像头':(isW?'组件':(d.blind?'盲控':'设备'));
+  return '<div class="editCard" data-key="'+esc(d._key)+'">'
+    +'<div class="editHandle">≡</div>'
+    +'<div class="editBody"><div class="nm"><span class="ico">'+ico+'</span>'+nm+'</div><div class="md">'+md+'</div></div>'
+    +'<span class="badge'+(d.blind?' blind':'')+'">'+badge+'</span></div>';
+}
+function renderEdit(){
+  var cards=orderedCards(allCards());
+  var byKey={};cards.forEach(function(d){byKey[d._key]=d;});
+  var seen={};
+  editOrder=editOrder.filter(function(k){if(!byKey[k]||seen[k])return false;seen[k]=true;return true;});
+  cards.forEach(function(d){if(editOrder.indexOf(d._key)<0)editOrder.push(d._key);});
+  var html='';
+  for(var i=0;i<editOrder.length;i++){
+    if(i>0&&i%PAGE===0){
+      html+='<div class="pageBreak">第 '+(i/PAGE)+' 页结束 · 下一张开始第 '+(i/PAGE+1)+' 页</div>';
+    }
+    var d=byKey[editOrder[i]];
+    if(d)html+=editCardHTML(d);
+  }
+  track.style.transition='none';
+  track.style.transform='translateX(0)';
+  track.innerHTML='<div class="editView"><div class="editGrid" id="editGrid">'+html+'</div><div class="editHint">拖动卡片调整顺序，每 '+PAGE+' 张为一页；保存后生效。</div></div>';
+  bindEditDrag();
+  updateHeader();
+}
+function bindEditDrag(){
+  var grid=document.getElementById('editGrid');
+  if(!grid)return;
+  var dragEl=null,dragId=null,sx=0,sy=0,dragging=false;
+  function onMove(e){
+    if(dragEl===null||e.pointerId!==dragId)return;
+    if(!dragging&&Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)<8)return;
+    if(!dragging){
+      dragging=true;dragEl.classList.add('dragging');dragEl.style.pointerEvents='none';
+    }
+    var el=document.elementFromPoint(e.clientX,e.clientY);
+    var card=el?el.closest('.editCard'):null;
+    if(card&&card!==dragEl){
+      var r=card.getBoundingClientRect();
+      grid.insertBefore(dragEl,e.clientY>r.top+r.height/2?card.nextSibling:card);
+    }
+    e.preventDefault();
+  }
+  function onUp(e){
+    if(e.pointerId!==dragId)return;
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    document.removeEventListener('pointercancel',onUp);
+    if(dragEl){dragEl.classList.remove('dragging');dragEl.style.pointerEvents='';}
+    if(dragging){
+      editOrder=Array.from(grid.querySelectorAll('.editCard')).map(function(x){return x.dataset.key;});
+      renderEdit();
+    }
+    dragEl=null;dragId=null;dragging=false;
+  }
+  Array.prototype.forEach.call(grid.querySelectorAll('.editCard'),function(el){
+    el.addEventListener('pointerdown',function(e){
+      if(e.button!==undefined&&e.button!==0)return;
+      dragEl=el;dragId=e.pointerId;sx=e.clientX;sy=e.clientY;dragging=false;
+      document.addEventListener('pointermove',onMove,{passive:false});
+      document.addEventListener('pointerup',onUp);
+      document.addEventListener('pointercancel',onUp);
+      e.preventDefault();
+    });
+  });
+}
+function toggleEdit(){
+  if(editing)return;
+  editOrder=orderedCards(allCards()).map(function(d){return d._key;});
+  editing=true;document.body.classList.add('editing');
+  render();
+}
+function cancelLayout(){
+  editing=false;document.body.classList.remove('editing');editOrder=[];page=0;
+  render();
+}
+function saveLayout(){
+  fetch(API+'/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({order:editOrder})}).then(function(r){return r.json();}).then(function(r){
+    if(!r.ok){toast(r.msg||'保存失败',true);return;}
+    layoutOrder=r.order||editOrder.slice();
+    editing=false;document.body.classList.remove('editing');page=0;
+    render();toast('排版已保存');
+  }).catch(function(e){toast('保存失败：'+e,true);});
+}
+function render(){
+  if(editing){renderEdit();return;}
+  pages=buildPages(allCards());
+  if(page>=pages.length)page=pages.length-1;
+  if(page<0)page=0;
+  var html=pages.map(function(p){
+    return '<div class="page">'+(p.length?p.map(function(d,i){return cardHTML(d,i>=8&&p.length===10);}).join(''):'<div class="empty"><div>暂无设备</div><div style="font-size:13px">正在等待云端数据</div></div>')+'</div>';
+  }).join('');
+  track.innerHTML=html;
+  updateNav();
+  updateHeader();
+  requestAnimationFrame(function(){move(false);});
+}
+function go(delta){
+  if(editing)return;
+  var np=page+delta;
+  if(np<0||np>=pages.length)return;
+  page=np;move(true);updateNav();
+}
+function goTo(i){
+  if(editing)return;
+  if(i<0||i>=pages.length)return;
+  page=i;move(true);updateNav();
+}
+function load(){
+  if(editing)return;
+  fetch(API+'/api/status').then(function(r){return r.json();}).then(function(s){
+    document.getElementById('home').textContent=s.home_label||'';
+    statusData=s;updateCount();
+    weather=s.weather||null;
+    weatherLabel=s.weather_label||weatherLabel;
+    if(s.page_size)PAGE=Number(s.page_size)||PAGE;
+    applyTheme(s.theme||theme);
+    if(!s.logged_in){location.href=API+'/login';return null;}
+    return fetch(API+'/api/devices').then(function(r){return r.json();});
+  }).then(function(j){
+    if(!j)return;
+    devices=j.devices||[];
+    if(j.layout)layoutOrder=j.layout;
+    render();
+    if(j.ts){var d=new Date(j.ts*1000);document.getElementById('updated').textContent='更新 '+pad2(d.getHours())+':'+pad2(d.getMinutes());}
+  }).catch(function(e){
+    toast('加载失败：'+e,true);
+  });
+}
+function toggle(did,on,btn){
+  if(btn.disabled)return;
+  var card=btn.closest('.card');var old=btn.textContent;
+  var nm=card.querySelector('.nm').textContent||'';
+  if(on&&nm.indexOf('总闸')>=0&&!confirm('确定要关闭电源总闸？'))return;
+  card.classList.add('busy');btn.disabled=true;btn.textContent='···';
+  fetch(API+'/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({did:did,cmd:'power',value:!on})}).then(function(r){return r.json();}).then(function(r){
+    card.classList.remove('busy');btn.disabled=false;
+    if(r.ok){
+      var now=!on;btn.textContent=now?'关闭':'开启';btn.classList.toggle('on',now);
+      var st=card.querySelector('.status');if(st)st.innerHTML=now?'<span class="dot on"></span>已开启':'<span class="dot"></span>已关闭';
+      toast(now?'已开启':'已关闭');setTimeout(load,900);
+    }else{btn.textContent=old;toast(r.msg||'控制失败',true);}
+  }).catch(function(e){card.classList.remove('busy');btn.disabled=false;btn.textContent=old;toast('请求失败：'+e,true);});
+}
+function control(did,cmd,value,el){
+  var old=el?el.disabled:false;if(el)el.disabled=true;
+  fetch(API+'/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({did:did,cmd:cmd,value:value})}).then(function(r){return r.json();}).then(function(r){
+    if(el)el.disabled=old;
+    if(r.ok){toast('已发送');setTimeout(load,700);}
+    else toast(r.msg||'控制失败',true);
+  }).catch(function(e){if(el)el.disabled=old;toast('请求失败：'+e,true);});
+}
+function blind(did,on,btn){
+  var card=btn.closest('.card');var btns=card.querySelectorAll('button');
+  btns.forEach(function(b){b.disabled=true;});
+  fetch(API+'/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({did:did,cmd:'power',value:on})}).then(function(r){return r.json();}).then(function(r){
+    btns.forEach(function(b){b.disabled=false;});
+    if(r.ok)toast('已发送（状态未知）');
+    else toast(r.msg||'控制失败',true);
+  }).catch(function(e){btns.forEach(function(b){b.disabled=false;});toast('请求失败：'+e,true);});
+}
+var sx=0,sy=0;
+viewport.addEventListener('touchstart',function(e){
+  if(e.touches.length!==1)return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;
+},{passive:true});
+viewport.addEventListener('touchend',function(e){
+  if(!e.changedTouches.length)return;
+  var dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2)go(dx<0?1:-1);
+},{passive:true});
+var mx=null;
+viewport.addEventListener('mousedown',function(e){
+  if(e.target.closest('button,select'))return;mx=e.clientX;
+});
+viewport.addEventListener('mouseup',function(e){
+  if(mx===null)return;var dx=e.clientX-mx;mx=null;
+  if(Math.abs(dx)>60)go(dx<0?1:-1);
+});
+window.addEventListener('resize',function(){move(false);});
+load();loadCameras();setInterval(load,15000);setInterval(loadCameras,300000);
+</script></body></html>

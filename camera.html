@@ -1,0 +1,258 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>摄像头</title>
+<style>
+:root{--bg:#0a0d13;--panel:#121722;--panel2:#181f2c;--line:rgba(255,255,255,.09);--text:#eef2f7;--muted:#8f9aaa;--accent:#ff6a00;--ok:#3ddc97;--bad:#ff5d5d;}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif;-webkit-tap-highlight-color:transparent;}
+body{display:flex;flex-direction:column;}
+.bar{height:64px;flex:0 0 64px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line);}
+.left{display:flex;align-items:baseline;gap:14px;min-width:0;}
+.title{font-size:24px;font-weight:700;white-space:nowrap;}
+.hint{font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.actions{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+a.btn,button.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;font-size:17px;font-weight:600;padding:11px 18px;border-radius:12px;cursor:pointer;min-height:44px;}
+a.btn:active,button.btn:active{transform:scale(.96);background:rgba(255,255,255,.12);}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+button.btn[disabled]{opacity:.45;pointer-events:none;}
+.main{flex:1;display:flex;min-height:0;}
+.side{width:330px;flex:0 0 330px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
+.sideHead{padding:18px 18px 10px;}
+.sideTitle{font-size:18px;font-weight:700;}
+.sideSub{font-size:13px;color:var(--muted);margin-top:5px;}
+.camList{flex:1;overflow:auto;padding:6px 12px 96px;scrollbar-width:thin;}
+.cam{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px;margin:6px 0;border:1px solid transparent;border-radius:14px;background:var(--panel2);color:var(--text);cursor:pointer;font:inherit;min-height:76px;}
+.cam:active{transform:scale(.985);}
+.cam.active{background:rgba(255,106,0,.15);border-color:rgba(255,106,0,.6);}
+.cam.off{opacity:.55;}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);flex:0 0 10px;box-shadow:0 0 0 3px rgba(255,93,93,.14);}
+.cam.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(61,220,151,.14);}
+.camBody{min-width:0;flex:1;}
+.camName{font-size:17px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.camMeta{font-size:12px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.camState{font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cam.active .camState{color:#ffb27a;}
+.stage{position:relative;flex:1;min-width:0;background:#000;overflow:hidden;}
+iframe{display:block;width:100%;height:100%;border:0;background:#000;}
+.loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(4,6,10,.82);z-index:5;}
+.loading[hidden]{display:none;}
+.spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.16);border-top-color:var(--accent);animation:spin .9s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loadText{font-size:17px;color:#dbe3ee;max-width:80%;text-align:center;line-height:1.6;}
+.errBox{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(4,6,10,.82);padding:28px;z-index:8;}
+.errBox[hidden]{display:none;}
+.errText{font-size:19px;line-height:1.65;color:#ffd7d7;text-align:center;max-width:760px;}
+.errSub{font-size:14px;color:var(--muted);text-align:center;line-height:1.6;}
+.hintBar{position:absolute;left:16px;bottom:14px;font-size:12px;color:rgba(255,255,255,.62);background:rgba(0,0,0,.4);padding:7px 12px;border-radius:9px;pointer-events:none;z-index:4;}
+.homeFloat{position:fixed;right:20px;bottom:86px;z-index:20;display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:18px;font-weight:700;padding:13px 20px;border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);}
+.homeFloat:active{transform:scale(.95);}
+@media (max-width:900px){
+  .side{width:260px;flex-basis:260px;}
+  .title{font-size:20px;}
+  .hint{font-size:12px;}
+  a.btn,button.btn{font-size:15px;padding:9px 13px;}
+  .homeFloat{font-size:16px;padding:11px 16px;right:12px;bottom:74px;}
+}
+@media (max-width:680px){
+  body{overflow:auto;}
+  .main{flex-direction:column;}
+  .side{width:100%;flex:0 0 auto;max-height:36vh;border-right:0;border-bottom:1px solid var(--line);}
+  .sideHead{padding:12px 14px 4px;}
+  .camList{display:flex;gap:8px;overflow-x:auto;padding:4px 10px 10px;}
+  .cam{flex:0 0 230px;margin:4px 0;}
+  .stage{flex:1;min-height:52vh;}
+  .bar{height:auto;flex-basis:auto;padding:10px 12px;flex-wrap:wrap;}
+  .left{flex-wrap:wrap;gap:6px;}
+  .errText{font-size:16px;}
+}
+</style></head><body>
+<div class="bar">
+  <div class="left">
+    <div class="title">摄像头</div>
+    <div class="hint" id="barHint">正在读取摄像头…</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/">返回面板</a>
+    <button class="btn" id="refreshBtn" onclick="refreshCams()">刷新</button>
+  </div>
+</div>
+<div class="main">
+  <aside class="side">
+    <div class="sideHead">
+      <div class="sideTitle">摄像头</div>
+      <div class="sideSub" id="camCount">—</div>
+    </div>
+    <div class="camList" id="camList"></div>
+  </aside>
+  <section class="stage">
+    <iframe id="player" title="摄像头画面" allow="autoplay"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-presentation"></iframe>
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="loadText" id="loadText">正在读取摄像头…</div>
+    </div>
+    <div class="errBox" id="errBox" hidden>
+      <div class="errText" id="errText"></div>
+      <div class="errSub" id="errSub"></div>
+      <button class="btn primary" onclick="retry()">重试</button>
+    </div>
+    <div class="hintBar">本机转码 · 约 1–2 秒延迟</div>
+  </section>
+</div>
+<a class="homeFloat" href="/">返回面板</a>
+<script>
+var HOST = location.hostname || '127.0.0.1';
+var PLAY_BASE = 'http://' + HOST + ':1984/stream.html?src=';
+var initialDid = '';
+try { initialDid = new URLSearchParams(location.search).get('did') || ''; } catch (e) {}
+var player = document.getElementById('player');
+var cams = [], current = null, pollTimer = null, failTimer = null, loadSeq = 0;
+var loading = document.getElementById('loading');
+var loadText = document.getElementById('loadText');
+var errBox = document.getElementById('errBox');
+var errText = document.getElementById('errText');
+var errSub = document.getElementById('errSub');
+var listEl = document.getElementById('camList');
+var countEl = document.getElementById('camCount');
+var barHint = document.getElementById('barHint');
+var refreshBtn = document.getElementById('refreshBtn');
+
+function setLoading(text) {
+  if (text) { loadText.textContent = text; loading.hidden = false; }
+  else { loading.hidden = true; }
+}
+function showError(text, sub) {
+  errText.textContent = text || '画面暂时不可用';
+  errSub.textContent = sub || '';
+  errBox.hidden = false;
+  setLoading('');
+}
+function hideError() { errBox.hidden = true; }
+function stopPlay() {
+  clearInterval(pollTimer); clearTimeout(failTimer);
+  pollTimer = null; failTimer = null;
+  try { player.src = 'about:blank'; } catch (e) {}
+}
+function watchStream(cam) {
+  clearInterval(pollTimer); clearTimeout(failTimer);
+  var started = Date.now(), checking = false;
+  pollTimer = setInterval(function () {
+    if (current !== cam || checking) return;
+    checking = true;
+    fetch('/api/camera_state?name=' + encodeURIComponent(cam.stream), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        checking = false;
+        if (current !== cam) return;
+        if (data && data.active) {
+          clearInterval(pollTimer); clearTimeout(failTimer);
+          setLoading('');
+          hideError();
+          barHint.textContent = cam.name + ' · 实时画面';
+        } else if (Date.now() - started > 30000) {
+          clearInterval(pollTimer);
+          setLoading('');
+          barHint.textContent = cam.name + ' · 仍在连接';
+        }
+      })
+      .catch(function () { checking = false; });
+  }, 1500);
+  failTimer = setTimeout(function () {
+    clearInterval(pollTimer);
+    if (current === cam) {
+      setLoading('');
+      barHint.textContent = cam.name + ' · 仍在连接';
+    }
+  }, 30000);
+}
+function playCamera(cam) {
+  current = cam;
+  renderList();
+  hideError();
+  stopPlay();
+  if (!cam) return;
+  if (!cam.stream) {
+    showError(cam.error || '该摄像头暂不可播放', cam.online ? '请点右上角“刷新”重新拉流' : '摄像头当前离线');
+    barHint.textContent = cam.name + ' · 不可播放';
+    return;
+  }
+  setLoading('正在连接「' + cam.name + '」…');
+  barHint.textContent = cam.name + ' · 连接中';
+  player.src = PLAY_BASE + encodeURIComponent(cam.stream);
+  watchStream(cam);
+}
+function renderList() {
+  listEl.innerHTML = '';
+  cams.forEach(function (cam) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cam' + (cam.online ? ' on' : ' off') + (current && current.did === cam.did ? ' active' : '');
+    var dot = document.createElement('span'); dot.className = 'dot';
+    var body = document.createElement('div'); body.className = 'camBody';
+    var n = document.createElement('div'); n.className = 'camName'; n.textContent = cam.name;
+    var m = document.createElement('div'); m.className = 'camMeta';
+    var shortIp = cam.ip ? ' · .' + cam.ip.split('.').pop() : '';
+    m.textContent = (cam.model || '') + shortIp + (cam.online ? '' : ' · 离线');
+    var s = document.createElement('div'); s.className = 'camState';
+    s.textContent = cam.stream ? '可查看' : (cam.error || '不可播放');
+    body.appendChild(n); body.appendChild(m); body.appendChild(s);
+    b.appendChild(dot); b.appendChild(body);
+    b.onclick = function () { selectCam(cam.did); };
+    listEl.appendChild(b);
+  });
+}
+function selectCam(did) {
+  var cam = cams.filter(function (x) { return x.did === did; })[0];
+  if (!cam) return;
+  playCamera(cam);
+}
+function retry() {
+  var did = current && current.did;
+  loadCams(true, did);
+}
+function refreshCams() {
+  loadCams(true);
+}
+function loadCams(force, preferDid) {
+  var seq = ++loadSeq;
+  refreshBtn.disabled = true;
+  setLoading(force ? '正在重新拉取摄像头…' : '正在读取摄像头…');
+  hideError();
+  stopPlay();
+  barHint.textContent = '正在读取摄像头…';
+  fetch('/api/cameras' + (force ? '?refresh=1' : ''))
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (seq !== loadSeq) return;
+      refreshBtn.disabled = false;
+      if (!data || !data.ok) {
+        setLoading('');
+        countEl.textContent = '—';
+        barHint.textContent = '摄像头不可用';
+        showError('摄像头列表加载失败', (data && data.error) || '请稍后重试');
+        return;
+      }
+      cams = data.cameras || [];
+      countEl.textContent = cams.length + ' 路摄像头' + (data.transcode ? '' : ' · 缺少 ffmpeg');
+      if (!cams.length) {
+        setLoading('');
+        barHint.textContent = '没有摄像头';
+        showError('没有找到摄像头', '当前小米账号下没有可用的摄像头，或摄像头不在当前家庭。');
+        return;
+      }
+      current = null;
+      var first = cams.filter(function (x) { return preferDid && x.did === preferDid; })[0]
+        || cams.filter(function (x) { return x.online && x.stream; })[0] || cams[0];
+      playCamera(first);
+    })
+    .catch(function (e) {
+      if (seq !== loadSeq) return;
+      refreshBtn.disabled = false;
+      setLoading('');
+      showError('无法读取摄像头列表', String(e).slice(0, 160));
+    });
+}
+loadCams(false, initialDid);
+</script>
+</body></html>

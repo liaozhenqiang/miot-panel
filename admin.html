@@ -1,0 +1,234 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>米家面板 · 后台</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--line:#e2e7ef;--txt:#1b2433;--muted:#667085;--accent:#ff6a00;--ok:#16803c;--err:#b42318;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:'PingFang SC','Noto Sans CJK SC',sans-serif;background:var(--bg);color:var(--txt);padding:20px;}
+.wrap{max-width:1180px;margin:0 auto;}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+h1{font-size:24px;font-weight:700;}
+header .links{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+a{color:var(--accent);text-decoration:none;font-weight:600;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 5px 18px rgba(21,35,58,.04);}
+.card h2{font-size:17px;font-weight:700;margin-bottom:14px;}
+.hidden{display:none!important;}
+.sub{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:12px;}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+.grid.two{grid-template-columns:repeat(2,1fr);}
+label{display:block;font-size:13px;color:#475467;margin:10px 0 6px;font-weight:600;}
+input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;font-size:14px;color:var(--txt);font-family:inherit;}
+textarea{min-height:90px;resize:vertical;}
+button{border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:650;cursor:pointer;background:#e8edf5;color:#25324a;font-family:inherit;}
+button.primary{background:var(--accent);color:#fff;}
+button.danger{background:#fff;color:var(--err);border:1px solid #f3c6c1;}
+button.small{padding:8px 12px;font-size:13px;}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.msg{font-size:13px;color:var(--err);min-height:18px;margin-top:10px;}
+.toast{position:fixed;left:50%;top:18px;transform:translateX(-50%) translateY(-16px);background:#166534;color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:50;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#9f1c1c;}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--muted);}
+.stat b{color:var(--txt);font-size:15px;}
+.tableWrap{overflow:auto;max-height:460px;border:1px solid var(--line);border-radius:12px;}
+table{border-collapse:collapse;width:100%;min-width:980px;font-size:13px;}
+th,td{padding:10px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle;}
+th{position:sticky;top:0;background:#f8fafc;color:#475467;z-index:2;font-weight:650;}
+tr:last-child td{border-bottom:none;}
+td input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);}
+td input.rename{padding:7px 8px;min-width:150px;}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;background:#eef2f7;color:#475467;white-space:nowrap;}
+.pill.ok{background:#e8f7ee;color:var(--ok);}
+.pill.off{background:#fdecea;color:var(--err);}
+.pill.home{background:#fff2e8;color:#b54708;}
+pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:12px;line-height:1.6;overflow:auto;max-height:360px;white-space:pre-wrap;}
+.hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px;}
+.sep{height:1px;background:var(--line);margin:14px 0;}
+.twoCols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;}}
+</style></head><body>
+<div class="wrap">
+  <header><h1>米家面板 · 后台</h1><div class="links"><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
+  <div class="toast" id="toast"></div>
+
+  <section class="card hidden" id="setupView">
+    <h2>首次使用 · 设置管理员 PIN</h2>
+    <div class="sub">这个 PIN 只用于保护本后台，不是小米账号密码。设置后请妥善保管。</div>
+    <label>管理员 PIN（4-20 位）</label><input id="setupPin" type="password" placeholder="设置 PIN">
+    <label>确认 PIN</label><input id="setupPin2" type="password" placeholder="再次输入">
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="doSetup()">设置并进入</button></div>
+    <div class="msg" id="setupMsg"></div>
+  </section>
+
+  <section class="card hidden" id="loginView">
+    <h2>管理员登录</h2>
+    <div class="sub">输入后台管理 PIN。</div>
+    <label>管理员 PIN</label><input id="loginPin" type="password" placeholder="PIN" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="doLogin()">登录</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <div id="adminView" class="hidden">
+    <div class="stats" id="stats"></div>
+
+    <section class="card">
+      <h2>家庭与页面</h2>
+      <div class="sub">过滤设备所在家庭，设置天气城市和每页卡片数。过滤前缀留空表示显示所有家庭。</div>
+      <div class="grid">
+        <div><label>家庭名称</label><input id="homeLabel" placeholder="如 我的家"></div>
+        <div><label>天气城市（wttr.in，如 Beijing）</label><input id="weatherLocation" placeholder="如 Beijing"></div>
+        <div><label>天气标题</label><input id="weatherLabel" placeholder="如 本地天气"></div>
+        <div><label>手机地区（小米云）</label><input id="country" placeholder="cn"></div>
+        <div><label>每页卡片数（4-12）</label><input id="pageSize" type="number" min="4" max="12"></div>
+      </div>
+      <div class="grid two">
+        <div><label>公网 IP 前缀（每行一个）</label><textarea id="wanPrefixes" placeholder="203.0.113.&#10;198.51.100."></textarea><div class="hint">设备详情里的“公网 IP”以此开头即属于该家庭。</div></div>
+        <div><label>局域网 IP 前缀（每行一个）</label><textarea id="lanPrefixes" placeholder="192.168.0.&#10;192.168.1."></textarea><div class="hint">设备局域网 IP 以此开头也视为该家庭。</div></div>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设置</button><button onclick="refreshData()">刷新云端设备/天气</button></div>
+    </section>
+
+    <section class="card">
+      <h2>设备显示与改名</h2>
+      <div class="sub">勾选“显示”并保存后，云端可读写的设备才会出现在面板。蓝牙/传感器等不可控设备即使勾选也不会显示。</div>
+      <div class="row" style="margin-bottom:10px"><input id="devSearch" placeholder="搜索名称/型号/IP" oninput="filterRows()" style="max-width:320px"><span class="pill" id="devCount"></span></div>
+      <div class="tableWrap"><table><thead><tr><th>显示</th><th>自定义名称</th><th>原名称 / 型号</th><th>角色</th><th>在线</th><th>局域网 IP</th><th>公网 IP</th></tr></thead><tbody id="devRows"></tbody></table></div>
+      <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设备设置</button></div>
+    </section>
+
+    <div class="twoCols">
+      <section class="card">
+        <h2>账号与安全</h2>
+        <div class="sub" id="accountInfo"></div>
+        <div class="row"><button class="danger" onclick="xiaomiLogout()">退出小米账号</button></div>
+        <div class="sep"></div>
+        <label>修改后台 PIN</label>
+        <div class="row"><input id="newPin" type="password" placeholder="新 PIN（4-20 位）" style="max-width:260px"><button onclick="changePin()">修改 PIN</button></div>
+      </section>
+      <section class="card">
+        <h2>维护</h2>
+        <div class="sub">重置只影响面板排版/主题，不会删除设备或登录态。</div>
+        <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="loadLogs()">查看日志</button></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>服务日志</h2>
+      <pre id="logs">点“查看日志”加载最近 120 行。</pre>
+    </section>
+  </div>
+</div>
+<script>
+var API='', state=null;
+function $(id){return document.getElementById(id);}
+function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
+function toast(msg,err){var el=$('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
+async function api(path,body){
+  var opt={method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'}};
+  if(body)opt.body=JSON.stringify(body);
+  var r=await fetch(path,opt);var j={};try{j=await r.json();}catch(e){}
+  return {status:r.status,data:j};
+}
+async function load(){
+  try{
+    var r=await api('/api/admin/status');
+    if(r.status===401){show('loginView');return;}
+    if(r.data.setup){show('setupView');return;}
+    if(!r.data.ok){toast(r.data.msg||'加载失败',true);show('loginView');return;}
+    state=r.data;show('adminView');$('adminLogout').classList.remove('hidden');render();
+  }catch(e){toast('加载失败：'+e,true);}
+}
+function render(){
+  var c=state.config||{};
+  $('homeLabel').value=c.home_label||'';$('weatherLocation').value=c.weather_location||'';
+  $('weatherLabel').value=c.weather_label||'';$('country').value=c.country||'cn';$('pageSize').value=c.page_size||10;
+  $('wanPrefixes').value=(c.wan_prefixes||[]).join('\n');$('lanPrefixes').value=(c.lan_prefixes||[]).join('\n');
+  $('accountInfo').innerHTML='小米账号：<b>'+(state.logged_in?'已登录':'未登录')+'</b> · 云端设备：<b>'+((state.devices||[]).length)+'</b> · 服务端口：<b>'+state.port+'</b>';
+  renderDevices();
+}
+function renderDevices(){
+  var rows=state.devices||[];
+  $('devCount').textContent='共 '+rows.length+' 台';
+  $('devRows').innerHTML=rows.map(function(d){
+    var rename=d.rename||'';
+    return '<tr data-search="'+esc((d.name||'')+' '+(d.model||'')+' '+(d.localip||'')+' '+(d.internet_ip||'')).toLowerCase()+'">'
+      +'<td><input type="checkbox" class="shown" data-did="'+esc(d.did)+'" '+(d.hidden?'':'checked')+'></td>'
+      +'<td><input class="rename" data-did="'+esc(d.did)+'" value="'+esc(rename)+'" placeholder="'+esc(d.name||'')+'"></td>'
+      +'<td><b>'+esc(d.name||'')+'</b><div class="hint">'+esc(d.model||'')+'</div></td>'
+      +'<td>'+esc(d.role||'')+'</td>'
+      +'<td>'+(d.online?'<span class="pill ok">在线</span>':'<span class="pill off">离线</span>')+'</td>'
+      +'<td>'+esc(d.localip||'-')+'</td>'
+      +'<td>'+esc(d.internet_ip||'-')+(d.home_match===false?' <span class="pill home">其他家庭</span>':'')+'</td></tr>';
+  }).join('');
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function filterRows(){
+  var q=($('devSearch').value||'').toLowerCase();var shown=0;
+  Array.prototype.forEach.call($('devRows').querySelectorAll('tr'),function(tr){
+    var ok=!q||(tr.dataset.search||'').indexOf(q)>=0;tr.style.display=ok?'':'none';if(ok)shown++;
+  });
+  $('devCount').textContent='显示 '+shown;
+}
+function splitPrefixes(v){return v.split(/[\n,，]+/).map(function(x){return x.trim();}).filter(Boolean);}
+async function saveConfig(){
+  var hidden=[],renames={};
+  Array.prototype.forEach.call($('devRows').querySelectorAll('tr'),function(tr){
+    var box=tr.querySelector('.shown');if(box&&!box.checked)hidden.push(box.dataset.did);
+    var rn=tr.querySelector('.rename');if(rn&&rn.value.trim())renames[rn.dataset.did]=rn.value.trim();
+  });
+  var body={
+    home_label:$('homeLabel').value.trim(),weather_location:$('weatherLocation').value.trim(),
+    weather_label:$('weatherLabel').value.trim(),country:$('country').value.trim(),
+    page_size:Number($('pageSize').value)||10,
+    wan_prefixes:splitPrefixes($('wanPrefixes').value),lan_prefixes:splitPrefixes($('lanPrefixes').value),
+    hidden_devices:hidden,renames:renames
+  };
+  var r=await api('/api/admin/save',body);
+  if(r.data.ok){toast('已保存，面板稍后刷新');setTimeout(load,1200);}
+  else toast(r.data.msg||'保存失败',true);
+}
+async function doSetup(){
+  var p=$('setupPin').value,p2=$('setupPin2').value,m=$('setupMsg');
+  if(p.length<4||p.length>20){m.textContent='PIN 长度需为 4-20 位';return;}
+  if(p!==p2){m.textContent='两次输入的 PIN 不一致';return;}
+  m.textContent='';
+  var r=await api('/api/admin/setup',{pin:p});
+  if(r.data.ok)load();else m.textContent=r.data.msg||'设置失败';
+}
+async function doLogin(){
+  var p=$('loginPin').value,m=$('loginMsg');if(!p){m.textContent='请输入 PIN';return;}
+  var r=await api('/api/admin/login',{pin:p});
+  if(r.data.ok)load();else m.textContent=r.data.msg||'登录失败';
+}
+async function adminLogout(){
+  await api('/api/admin/logout',{});state=null;$('adminLogout').classList.add('hidden');
+  show('loginView');
+}
+async function changePin(){
+  var p=$('newPin').value;if(p.length<4||p.length>20){toast('PIN 长度需为 4-20 位',true);return;}
+  var r=await api('/api/admin/pin',{pin:p});
+  if(r.data.ok){toast('PIN 已修改');$('newPin').value='';}else toast(r.data.msg||'修改失败',true);
+}
+async function xiaomiLogout(){
+  if(!confirm('退出小米账号后面板需要重新扫码登录，确定继续？'))return;
+  var r=await api('/api/admin/xiaomi_logout',{});
+  if(r.data.ok){toast('已退出小米账号');load();}else toast('操作失败',true);
+}
+async function resetPanel(what){
+  if(!confirm('确定恢复默认？'))return;
+  var r=await api('/api/admin/reset',{what:what});
+  if(r.data.ok){toast('已恢复');load();}else toast('操作失败',true);
+}
+async function loadLogs(){
+  var r=await api('/api/admin/logs');
+  if(r.data.ok){$('logs').textContent=(r.data.lines||[]).join('\n');$('logs').scrollTop=$('logs').scrollHeight;}
+  else toast('日志加载失败',true);
+}
+async function refreshData(){
+  var r=await api('/api/admin/refresh',{});
+  if(r.data.ok){toast('已触发刷新');setTimeout(load,2500);}else toast('刷新失败',true);
+}
+load();
+</script></body></html>
