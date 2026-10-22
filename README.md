@@ -42,6 +42,8 @@ cd miot-panel-dist
 sudo bash install.sh
 ```
 
+发布包下载：<https://github.com/liaozhenqiang/onecloud-miot-panel/releases/latest>
+
 默认安装到 `/opt/miot-panel`，监听 80，服务名 `miot-cloud`。
 
 自定义：
