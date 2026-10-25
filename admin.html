@@ -47,7 +47,55 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 .hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px;}
 .sep{height:1px;background:var(--line);margin:14px 0;}
 .twoCols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-@media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;}}
+.musicFrame{width:100%;height:78vh;min-height:620px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:12px;}
+.musicStatus{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px;}
+.musicDetails{border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:12px;overflow:hidden;}
+.musicDetails>summary{cursor:pointer;padding:13px 16px;font-weight:700;font-size:14px;background:#f8fafc;list-style:none;}
+.musicDetails>summary::-webkit-details-marker{display:none;}
+.musicDetails>summary:after{content:'+';float:right;color:var(--muted);font-weight:600;}
+.musicDetails[open]>summary:after{content:'−';}
+.musicDetails .mbody{padding:14px 16px 16px;}
+.qrBox{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px;}
+.qrBox img{width:220px;height:220px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px;}
+.qrSide{flex:1;min-width:220px;line-height:1.8;font-size:13px;color:#475467;}
+.deviceList{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
+.deviceItem{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fbfcfe;}
+.deviceHead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;}
+.deviceHead b{font-size:14px;}
+.deviceCtl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);}
+.deviceCtl input[type=range]{width:130px;accent-color:var(--accent);}
+.deviceCtl input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);}
+.sourceChecks{display:flex;flex-wrap:wrap;gap:10px 16px;margin:10px 0;}
+.sourceChecks label{display:flex;align-items:center;gap:7px;margin:0;font-weight:500;color:#344054;}
+.sourceChecks input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);}
+.inlineCheck{display:flex;align-items:center;gap:8px;font-weight:500;margin:8px 0;}
+.inlineCheck input{width:18px;height:18px;accent-color:var(--accent);}
+.miniBtn{padding:6px 10px;font-size:12px;border-radius:8px;}
+.groupPanel{border-top:1px solid var(--line);margin-top:16px;padding-top:14px;}
+.groupList{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;}
+.groupItem{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:#fbfcfe;font-size:13px;}
+.groupItem b{font-size:14px;}
+.groupItem .spacer{flex:1;}
+.aiHead{font-size:14px;font-weight:700;margin:2px 0 4px;}
+.testOut{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;}
+.themeSwatches{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 12px;}
+.themeSwatch{width:70px;height:42px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;overflow:hidden;}
+.themeSwatch.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,106,0,.18);}
+.themeSwatch.apple{border-radius:18px 18px 8px 18px;box-shadow:inset 0 0 0 3px rgba(255,255,255,.75);}
+.themeSwatch.flyme{border-radius:4px;}
+.themeSwatch.cyber{clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);}
+.themeSwatch.morandi{border-radius:14px 4px 14px 4px;}
+.themeSwatch.pixel{border-radius:0;box-shadow:3px 3px 0 #39ff14;}
+.themeSwatch span{position:absolute;left:5px;bottom:4px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 2px #000;}
+.pageList{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.pageItem{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:#fbfcfe;font-size:13px;}
+.pageItem b{font-size:14px;}
+.pageItem .spacer{flex:1;}
+.pageEditor{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;}
+.pageEditor textarea.html{min-height:320px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.55;white-space:pre;}
+#systemPrompt{min-height:150px;}
+#triggerWords{min-height:104px;}
+@media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;} .musicFrame{height:70vh;min-height:500px;} .deviceCtl input[type=range]{width:100%;} .qrBox img{width:180px;height:180px;}}
 </style></head><body>
 <div class="wrap">
   <header><h1>米家面板 · 后台</h1><div class="links"><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
@@ -72,6 +120,211 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 
   <div id="adminView" class="hidden">
     <div class="stats" id="stats"></div>
+
+    <section class="card">
+      <h2>音乐与 AI 音箱</h2>
+      <div class="sub" id="musicInfo">Songloft 音乐中心 + 小爱 MIoT 插件。扫码绑定小米账号后，可在后台统一管理：无限听歌、多房间、语音口令、大模型人设与小爱原生 TTS。</div>
+      <div class="musicStatus" id="musicStatus"></div>
+      <div class="row">
+        <button class="primary" id="musicOpenBtn" onclick="toggleMusic()">在后台打开音乐中心</button>
+        <button onclick="openMusicWindow()">新窗口打开</button>
+        <button onclick="refreshMusicAll()">刷新全部</button>
+      </div>
+
+      <details class="musicDetails" open>
+        <summary>① 绑定小爱音箱</summary>
+        <div class="mbody">
+          <div class="sub" id="accountLine">正在读取绑定状态…</div>
+          <div class="row">
+            <button class="primary" id="qrStartBtn" onclick="startMusicQR()">扫码绑定小米账号</button>
+            <button class="danger hidden" id="unbindBtn" onclick="deleteMusicAccount()">解绑账号</button>
+            <button onclick="loadMusicState(true)">刷新状态</button>
+          </div>
+          <div class="qrBox hidden" id="qrBox">
+            <div style="text-align:center">
+              <img id="qrImg" alt="小米扫码登录二维码">
+              <div class="hint" id="qrFallback"></div>
+            </div>
+            <div class="qrSide">
+              <b>用米家 App 扫码登录</b><br>
+              1. 打开米家 App → 我的 → 右上角扫一扫<br>
+              2. 扫码后确认登录，不要走短信验证码<br>
+              3. 成功后会自动启用账号下所有音箱（至少 2 台）并建立多房间组<br>
+              <div class="testOut" id="qrState">等待扫码…</div>
+              <div class="hint">登录态只保存在本机的 Songloft 插件里，用于小爱语音与音箱投放；不会改动面板现有的米家登录。</div>
+            </div>
+          </div>
+          <div class="hint">遇到小米提示“验证码发送过多（70022）”时不要重试短信，改用扫码即可。</div>
+          <div class="hint">扫码成功后，面板设备控制会自动复用这只小米账号的 xiaomiio 登录，无需再在面板里单独登录一次；通过本页解绑会同时移除面板复用登录。</div>
+        </div>
+      </details>
+
+      <details class="musicDetails" open>
+        <summary>② 音箱与多房间</summary>
+        <div class="mbody">
+          <div class="row">
+            <button onclick="enableAllMusicDevices()">全部启用</button>
+            <button onclick="groupAllMusicDevices()">全部音箱一键组网</button>
+            <button onclick="loadMusicDevices()">刷新音箱</button>
+            <span class="hint" id="groupInfo"></span>
+          </div>
+          <div class="deviceList" id="musicDeviceList">尚未读取音箱，请先扫码绑定。</div>
+          <div class="groupPanel">
+            <div class="aiHead">多房间分组</div>
+            <div class="hint">可以按房间创建多个组，组内播放同步。成员至少 2 台，一台音箱只能属于一个组；不建组时各音箱独立播放。</div>
+            <div class="groupList" id="groupList">暂无分组</div>
+            <div class="grid">
+              <div><label>分组名称</label><input id="groupName" maxlength="30" value="全屋音箱"></div>
+              <div><label>选择成员</label><div class="sourceChecks" id="groupMemberChecks"></div></div>
+            </div>
+            <div class="row">
+              <button class="primary" onclick="saveMusicGroup()">保存分组</button>
+              <button onclick="groupAllMusicDevices()">全部音箱一键组网</button>
+              <span class="hint" id="groupEditHint"></span>
+            </div>
+            <div class="msg" id="groupMsg"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="musicDetails">
+        <summary>③ 音源与在线搜索</summary>
+        <div class="mbody">
+          <div class="grid">
+            <div><label>音箱可访问的服务器地址</label><input id="sourceHost" placeholder="http://192.168.1.10:58091"></div>
+            <div><label>默认音质</label><select id="sourceQuality">
+              <option value="standard">标准 128k</option><option value="exhigh">较高 320k</option>
+              <option value="lossless">无损 FLAC</option><option value="hires">Hi-Res</option>
+            </select></div>
+            <div><label>在线搜索测试</label><input id="searchTestText" value="晴天" placeholder="歌名 / 歌手"><div class="hint">测试会实际取一小段音频，确认音箱能拉到流。</div></div>
+          </div>
+          <div class="sourceChecks" id="sourceChecks"></div>
+          <label class="inlineCheck"><input type="checkbox" id="externalEnabled"> 启用在线搜索：本地曲库找不到时联网找歌</label>
+          <label class="inlineCheck"><input type="checkbox" id="noImportEnabled"> 不入库直接播放（推荐，省空间、即点即播）</label>
+          <div class="row"><button class="primary" onclick="saveMusicSource()">保存音源设置</button><button onclick="testMusicSearch()">测试在线搜索</button></div>
+          <div class="msg" id="sourceMsg"></div>
+          <div class="hint" id="sourceStatus"></div>
+          <div class="hint">在线音源由第三方服务提供，可能涉及平台版权与服务条款；仅建议在个人自用、已获得合法访问权的内容范围内使用，风险由使用者自行承担。</div>
+        </div>
+      </details>
+
+      <details class="musicDetails">
+        <summary>④ 大模型 / 自定义人设 / TTS</summary>
+        <div class="mbody">
+          <div class="aiHead">语音指令理解</div>
+          <div class="grid">
+            <div><label>服务商预设</label><select id="aiPreset" onchange="applyAIPreset()">
+              <option value="">自定义接口（手动填写）</option>
+            </select><div class="hint">内置主流 OpenAI 兼容服务商；切换后会改接口地址和默认模型，Key 需换成对应服务商的。</div></div>
+            <div><label>OpenAI 兼容接口地址</label><input id="aiApiUrl" placeholder="https://api.deepseek.com/v1"></div>
+            <div><label>API Key <span class="pill" id="aiKeyBadge"></span></label><input id="aiApiKey" type="password" autocomplete="new-password" oninput="onAIKeyInput()" placeholder="留空保持已保存的 Key"><label class="inlineCheck"><input type="checkbox" id="aiKeyClear" onchange="onAIKeyClearChange()"> 清除已保存的 Key</label></div>
+            <div><label>模型</label><input id="aiModel" placeholder="deepseek-chat"></div>
+            <div><label>超时（秒）</label><input id="aiTimeout" type="number" min="1" max="30" value="6"></div>
+          </div>
+          <div class="hint">用于理解“把客厅空调调到 26 度”“播放周杰伦”“音量调到 30”等自然语言。默认值是通义 DashScope，可改成 DeepSeek（https://api.deepseek.com/v1）、OpenAI、Moonshot 等任意 OpenAI 兼容地址。</div>
+          <div class="sep"></div>
+          <label class="inlineCheck"><input type="checkbox" id="voiceEnabled"> 启用语音口令控制</label>
+          <label class="inlineCheck"><input type="checkbox" id="monitorEnabled"> 启用小爱对话监听（语音点歌与 AI 对话必需）</label>
+          <div class="sep"></div>
+          <div class="aiHead">AI 对话人设（回答由小爱原生 TTS 播报）</div>
+          <label class="inlineCheck"><input type="checkbox" id="chatEnabled"> 启用 AI 对话</label>
+          <div class="grid">
+            <div><label>连接方式</label><select id="chatConnection" onchange="toggleChatIndependent()">
+              <option value="analysis">共用上面的 AI 接口（推荐）</option>
+              <option value="independent">使用独立接口</option>
+            </select></div>
+            <div><label>对话模型（留空沿用上面的模型）</label><input id="chatModel" placeholder="deepseek-chat"></div>
+            <div><label>对话超时（秒）</label><input id="chatTimeout" type="number" min="1" max="30" value="30"></div>
+          </div>
+          <div class="grid hidden" id="chatIndependent">
+            <div><label>对话服务商预设</label><select id="chatPreset" onchange="applyChatPreset()">
+              <option value="">自定义接口（手动填写）</option>
+            </select><div class="hint">独立对话连接使用这里的地址、模型和 Key。</div></div>
+            <div><label>对话接口地址</label><input id="chatApiUrl" placeholder="https://api.openai.com/v1"></div>
+            <div><label>对话 API Key <span class="pill" id="chatKeyBadge"></span></label><input id="chatApiKey" type="password" autocomplete="new-password" oninput="onChatKeyInput()" placeholder="留空保持已保存的 Key"><label class="inlineCheck"><input type="checkbox" id="chatKeyClear" onchange="onChatKeyClearChange()"> 清除已保存的 Key</label></div>
+          </div>
+          <label>人设提示词</label><textarea id="systemPrompt" maxlength="4000" placeholder="你是…"></textarea>
+          <div class="grid">
+            <div><label>触发词（逗号或换行分隔）</label><textarea id="triggerWords" placeholder="请问&#10;问一下"></textarea></div>
+            <div><label>多轮上下文轮数</label><input id="contextTurns" type="number" min="0" max="24" value="3"><label>回答后继续听（秒）</label><input id="followupSeconds" type="number" min="0" max="300" value="60"></div>
+          </div>
+          <div class="sourceChecks">
+            <label><input type="checkbox" id="chatFallback"> AI 未命中音乐意图时也交给对话</label>
+            <label><input type="checkbox" id="chatMemory"> 记住对话偏好</label>
+            <label><input type="checkbox" id="chatResume"> 回答完恢复音乐</label>
+            <label><input type="checkbox" id="chatWaiting"> 思考时先播报提示</label>
+            <label><input type="checkbox" id="chatStreaming"> 流式接收回答</label>
+          </div>
+          <div class="row"><button class="primary" onclick="saveMusicAI()">保存 AI / 人设</button><button onclick="checkMusicAIKey()">检测接口 / Key</button><button onclick="testAIAnalyze()">测试指令理解</button></div>
+          <div class="msg" id="aiMsg"></div>
+          <div class="hint">如果服务商返回 401 invalid_api_key，说明“Key 不是当前接口地址所属服务商的”，或 Key 已失效/复制不全；先选对服务商再重新填 Key。TTS 默认使用小爱原生语音；插件不提供第三方音色替换。</div>
+          <div class="hint">小爱原生回答先由小米云端生成，插件通过云端轮询发现提问后才会打断，通常有 1–2 秒延迟；短句可能仍会听到原生回答。后台已把轮询调到 1 秒以减少重叠，但无法通过小米云 API 完全消除；要彻底避免需替换原生语音助手（如自定义固件）或改用面板/手机麦克风提问。</div>
+        </div>
+      </details>
+
+      <details class="musicDetails">
+        <summary>⑤ 测试与常用控制</summary>
+        <div class="mbody">
+          <div class="grid">
+            <div><label>目标音箱</label><select id="testDevice"></select></div>
+            <div><label>TTS 播报文字</label><input id="testTtsText" value="你好，我是你的家庭音乐助手。"></div>
+          </div>
+          <div class="row"><button onclick="testMusicTTS()">TTS 播报测试</button></div>
+          <div class="grid">
+            <div><label>语音口令测试</label><input id="testVoiceText" value="播放晴天"></div>
+            <div><label>AI 对话测试</label><input id="testChatText" value="用一句话介绍一下你自己"></div>
+          </div>
+          <div class="row"><button onclick="testMusicVoice()">执行语音口令</button><button onclick="testMusicChat()">让音箱回答</button></div>
+          <div class="testOut hidden" id="testOut"></div>
+          <div class="hint">测试使用已保存的配置。如果在 ④ 改了“启用 AI 对话”、人设或模型，请先点“保存 AI / 人设”，否则仍按旧配置运行。</div>
+        </div>
+      </details>
+
+      <iframe class="musicFrame hidden" id="musicFrame" title="Songloft 音乐中心"></iframe>
+      <div class="hint">音乐中心已启用后台免登录：点“在后台打开音乐中心”会直接用当前管理员会话进入，不再显示 Songloft 登录页。服务器地址建议保持 <b id="musicHost">http://设备IP:58091</b>；修改后请点“保存音源设置”。</div>
+    </section>
+
+    <section class="card">
+      <h2>前场音箱助手</h2>
+      <div class="sub">在面板首页显示已绑定的小爱音箱卡片。点开后可文字提问；语音提问使用音箱自己的麦克风（面板本身没有麦克风），按提示对音箱说“小爱同学，请问……”。</div>
+      <label class="inlineCheck"><input type="checkbox" id="spkPanelEnabled"> 在面板首页显示音箱卡片</label>
+      <label class="inlineCheck"><input type="checkbox" id="spkTextEnabled"> 允许文字提问</label>
+      <label class="inlineCheck"><input type="checkbox" id="spkVoiceEnabled"> 允许语音提问（对音箱说话）</label>
+      <div class="grid">
+        <div><label>回答方式</label><select id="spkAnswerMode">
+          <option value="speak">音箱播报（小爱原生 TTS）</option>
+          <option value="text">仅面板显示（静音）</option>
+        </select></div>
+        <div><label>问题最大字数</label><input id="spkMaxChars" type="number" min="20" max="500" value="200"></div>
+        <div><label>默认音箱</label><select id="spkDefault"><option value="">自动（优先在线）</option></select></div>
+      </div>
+      <label>显示在面板的音箱</label>
+      <div class="sourceChecks" id="spkAdminList">绑定小爱音箱后在这里选择。</div>
+      <div class="row"><button class="primary" onclick="saveSpeakerPanelConfig()">保存助手设置</button><button onclick="loadMusicDevices()">刷新音箱列表</button></div>
+      <div class="msg" id="spkMsg"></div>
+      <div class="hint">语音提问不依赖面板麦克风，因此手机、7 寸屏、不同小米账号都能用；换音箱/换账号后重新绑定会自动出现在列表里。</div>
+    </section>
+
+    <section class="card">
+      <h2>外观与自定义页面</h2>
+      <div class="sub">内置 7 个主题：经典黑夜/白天 + 5 套风格主题。苹果风（毛玻璃/大圆角）、魅族风（居中时钟/扁平卡片）、赛博霓虹（网格/霓虹/方形）、莫兰迪（暖砂纸/宋体/异形圆角）、像素终端（CRT/等宽/硬阴影）。面板右上角可依次切换，后台可指定当前主题。</div>
+      <div class="row"><select id="adminTheme" style="max-width:280px">
+        <option value="dark">经典黑夜</option><option value="light">经典白天</option>
+        <option value="apple">苹果风</option><option value="flyme">魅族风</option>
+        <option value="cyber">赛博霓虹</option><option value="morandi">莫兰迪</option><option value="pixel">像素终端</option>
+      </select><button class="primary" onclick="saveAdminTheme()">应用主题</button><span class="hint" id="themeAdminMsg"></span></div>
+      <div class="themeSwatches" id="themeSwatches"></div>
+      <div class="sep"></div>
+      <div class="row"><button onclick="newCustomPage()">新建自定义页面</button><button onclick="useBuiltinPage()">使用内置面板</button><span class="hint" id="activePageInfo"></span></div>
+      <div class="pageList" id="customPages">正在读取自定义页面…</div>
+      <div class="pageEditor hidden" id="pageEditor">
+        <div class="grid"><div><label>页面名称</label><input id="pageName" maxlength="40" placeholder="例如 客厅概览"></div><div><label>页面 ID</label><input id="pageId" disabled></div></div>
+        <label>完整 HTML（会直接作为前台首页）</label><textarea id="pageHtml" class="html" spellcheck="false"></textarea>
+        <div class="row"><button class="primary" onclick="saveCustomPage(false)">保存</button><button onclick="saveCustomPage(true)">保存并启用</button><button onclick="previewCustomPage()">预览</button><button class="danger" onclick="deleteCustomPage()">删除</button><button onclick="cancelPageEditor()">取消</button></div>
+        <div class="msg" id="pageMsg"></div>
+        <div class="hint">页面只能由 PIN 管理员编辑，会直接在前台作为首页加载。不要粘贴不信任的 HTML/JS。可调用面板现有 API（/api/devices、/api/status、/api/speakers 等）；切换/修改激活页面后，前台约 8 秒内自动刷新。</div>
+      </div>
+    </section>
 
     <section class="card">
       <h2>家庭与页面</h2>
@@ -102,7 +355,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <section class="card">
         <h2>账号与安全</h2>
         <div class="sub" id="accountInfo"></div>
-        <div class="row"><button class="danger" onclick="xiaomiLogout()">退出小米账号</button></div>
+        <div class="row"><button class="danger" id="xiaomiLogoutBtn" onclick="xiaomiLogout()">退出小米账号</button></div>
         <div class="sep"></div>
         <label>修改后台 PIN</label>
         <div class="row"><input id="newPin" type="password" placeholder="新 PIN（4-20 位）" style="max-width:260px"><button onclick="changePin()">修改 PIN</button></div>
@@ -116,15 +369,23 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 
     <section class="card">
       <h2>服务日志</h2>
+      <div class="row" style="margin-bottom:10px"><button class="danger small" onclick="clearLogs()">清理历史日志</button><span class="hint">会清理系统 journal 历史日志（含其他服务），不可恢复。</span></div>
       <pre id="logs">点“查看日志”加载最近 120 行。</pre>
     </section>
   </div>
 </div>
 <script>
-var API='', state=null;
+var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='';
 function $(id){return document.getElementById(id);}
 function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
 function toast(msg,err){var el=$('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
+window.addEventListener('message',function(e){
+  if(!e.data||e.data.type!=='panel-sso-done')return;
+  if(!musicSSOOrigin||e.origin!==musicSSOOrigin)return;
+  var f=$('musicFrame');
+  if(f&&!f.classList.contains('hidden'))f.src=musicSSOOrigin+'/';
+  toast('音乐中心已免登录进入');
+});
 async function api(path,body){
   var opt={method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'}};
   if(body)opt.body=JSON.stringify(body);
@@ -137,16 +398,728 @@ async function load(){
     if(r.status===401){show('loginView');return;}
     if(r.data.setup){show('setupView');return;}
     if(!r.data.ok){toast(r.data.msg||'加载失败',true);show('loginView');return;}
-    state=r.data;show('adminView');$('adminLogout').classList.remove('hidden');render();
+    state=r.data;show('adminView');$('adminLogout').classList.remove('hidden');render();loadMusicInfo();
   }catch(e){toast('加载失败：'+e,true);}
+}
+var MUSIC_SOURCE_ORDER=['qq','kuwo','migu','bilibili','netease','kugou','qianqian','soda','apple'];
+var MUSIC_SOURCE_LABELS={netease:'网易云',qq:'QQ音乐',kugou:'酷狗',kuwo:'酷我',migu:'咪咕',qianqian:'千千',soda:'汽水',apple:'Apple Music',bilibili:'Bilibili'};
+var musicDeviceGroups=[], musicQRLock=false, musicEditingGroupId='';
+function musicPill(text,kind){return '<span class="pill '+(kind||'')+'">'+esc(text)+'</span>';}
+async function loadMusicInfo(){
+  try{
+    var r=await api('/api/admin/music_info');
+    if(r.status===200&&r.data.ok){
+      var d=r.data;
+      musicURL='http://'+location.hostname+':'+(d.port||58091)+'/';
+      $('musicHost').textContent=musicURL;
+    }
+  }catch(e){}
+  await loadMusicState(true);
+}
+async function loadMusicState(force){
+  var r=await api('/api/admin/music_state');
+  if(r.status!==200||!r.data){$('musicInfo').textContent='音乐中心状态读取失败';return;}
+  musicState=r.data;
+  renderMusicStatus();
+  if(!musicLoaded||force){renderMusicForms();musicLoaded=true;}
+  if((musicState.accounts||[]).length&&(!musicDeviceGroups.length||force))loadMusicDevices();
+}
+function renderMusicStatus(){
+  var m=musicState||{},sl=m.songloft||{},plugins=m.plugins||{},gmd=m.gmd||{},miot=m.miot||{};
+  var accts=m.accounts||[];
+  var miotPlugin=plugins.miot||null;
+  var html='';
+  html+=musicPill('Songloft '+(sl.version||'')+(sl.active?' 运行中':' 未运行'),sl.active?'ok':'off');
+  html+=musicPill('小爱插件'+(miotPlugin?(' '+miotPlugin.version+(miotPlugin.active?' 已启用':' 未启用')):' 未安装'),miotPlugin&&miotPlugin.active?'ok':'off');
+  html+=musicPill('在线音源 '+(gmd.active?'运行中':'未运行'),gmd.active?'ok':'off');
+  html+=musicPill(accts.length?'小米账号已绑定':'小米账号未绑定',accts.length?'ok':'off');
+  html+=musicPill(m.sso_ready?'音乐中心免登录已就绪':'音乐中心免登录未安装',m.sso_ready?'ok':'off');
+  if(miot.conversation_monitor_enabled)html+=musicPill('语音监听已开',(m.conversation||{}).running?'ok':'off');
+  $('musicStatus').innerHTML=html;
+  var info='Songloft 音乐中心 + 小爱 MIoT 插件';
+  if(m.error)info+=' · '+m.error;
+  if(miot.server_host)info+=' · 音箱拉流地址 '+miot.server_host;
+  $('musicInfo').textContent=info;
+  if(accts.length){
+    $('accountLine').innerHTML='已绑定：<b>'+esc(accts[0].account||accts[0].id)+'</b>'+(accts.length>1?(' 等 '+accts.length+' 个账号'):'')+' · 登录方式 '+esc(accts[0].login_method||accts[0].auth_type||'-');
+  }else{
+    $('accountLine').textContent='尚未绑定小米账号。扫码绑定后才能通过小爱语音点歌、对话和投放音乐。';
+  }
+  $('qrStartBtn').textContent=accts.length?'重新扫码绑定':'扫码绑定小米账号';
+  $('unbindBtn').classList.toggle('hidden',!accts.length);
+  var groups=m.groups||[];
+  $('groupInfo').textContent=groups.length?('分组：'+groups.map(function(g){return (g.name||'分组')+'('+(g.member_count||0)+'台)';}).join('、')):'尚未建立设备分组';
+  var providers=m.providers||[];
+  var srcNames=(miot.external_search_sources||[]).map(function(s){return s.name||s.url;}).join('、');
+  $('sourceStatus').textContent='搜索提供方：'+(providers.length?providers.map(function(p){return (p.name||p.id)+(p.active?'（可用）':'（不可用）');}).join('、'):'无')+
+    ' · 外部搜索'+(miot.external_search_enabled?'已开启':'未开启')+
+    (srcNames?(' · 已配置 '+srcNames):'');
+}
+function renderKeyBadge(badgeId,keyInputId,clearId,saved){
+  var el=$(badgeId),v=$(keyInputId).value,clear=$(clearId).checked;
+  if(v){el.textContent='新 Key 待保存';el.className='pill home';}
+  else if(clear){el.textContent='将清除';el.className='pill off';}
+  else if(saved){el.textContent='已保存';el.className='pill ok';}
+  else{el.textContent='未设置';el.className='pill off';}
+}
+function updateAIKeyBadge(){renderKeyBadge('aiKeyBadge','aiApiKey','aiKeyClear',!!((musicState&&musicState.ai||{}).key_set));}
+function updateChatKeyBadge(){renderKeyBadge('chatKeyBadge','chatApiKey','chatKeyClear',!!((musicState&&musicState.chat||{}).key_set));}
+function onAIKeyInput(){if($('aiApiKey').value)$('aiKeyClear').checked=false;updateAIKeyBadge();}
+function onAIKeyClearChange(){if($('aiKeyClear').checked)$('aiApiKey').value='';$('aiApiKey').placeholder=$('aiKeyClear').checked?'保存时将清除已保存的 Key':'已保存，留空保持不变';updateAIKeyBadge();}
+function onChatKeyInput(){if($('chatApiKey').value)$('chatKeyClear').checked=false;updateChatKeyBadge();}
+function onChatKeyClearChange(){if($('chatKeyClear').checked)$('chatApiKey').value='';$('chatApiKey').placeholder=$('chatKeyClear').checked?'保存时将清除已保存的 Key':'已保存，留空保持不变';updateChatKeyBadge();}
+function renderMusicForms(){
+  if(!musicState)return;
+  var ai=musicState.ai||{},chat=musicState.chat||{},miot=musicState.miot||{},gmd=musicState.gmd_config||{};
+  $('aiApiUrl').value=ai.api_url||'';
+  $('aiModel').value=ai.model||'';
+  $('aiTimeout').value=ai.timeout||6;
+  $('aiPreset').value=detectAIPreset(ai.api_url);
+  $('aiApiKey').value='';$('aiKeyClear').checked=false;$('aiApiKey').placeholder=ai.key_set?'已保存，留空保持不变':'填写 API Key';
+  updateAIKeyBadge();
+  $('voiceEnabled').checked=!!miot.voice_command_enabled;
+  $('monitorEnabled').checked=!!miot.conversation_monitor_enabled;
+  $('chatEnabled').checked=!!chat.enabled;
+  $('chatConnection').value=chat.connection||'analysis';
+  $('chatModel').value=chat.model||'';
+  $('chatTimeout').value=chat.timeout||30;
+  $('chatApiUrl').value=chat.api_url||'';
+  $('chatPreset').value=detectAIPreset(chat.api_url);
+  $('chatApiKey').value='';$('chatKeyClear').checked=false;
+  $('chatApiKey').placeholder=chat.key_set?'已保存，留空保持不变':'填写 API Key';
+  updateChatKeyBadge();
+  $('systemPrompt').value=chat.system_prompt||'你是友善的语音助手。请用简洁、适合听觉的中文回答，避免 Markdown、代码和长篇罗列，通常不超过300字。';
+  $('triggerWords').value=(chat.trigger_words||['请问','问一下']).join('\n');
+  $('contextTurns').value=(chat.context_turns==null?3:chat.context_turns);
+  $('followupSeconds').value=(chat.followup_seconds==null?60:chat.followup_seconds);
+  $('chatFallback').checked=!!chat.fallback_enabled;
+  $('chatMemory').checked=!!chat.memory_enabled;
+  $('chatResume').checked=chat.resume_music!==false;
+  $('chatWaiting').checked=chat.waiting_feedback!==false;
+  $('chatStreaming').checked=chat.streaming_enabled!==false;
+  var host=miot.server_host||('http://'+location.hostname+':58091');
+  $('sourceHost').value=host;
+  $('sourceQuality').value=gmd.defaultQuality||'exhigh';
+  $('externalEnabled').checked=miot.external_search_enabled!==false;
+  $('noImportEnabled').checked=miot.external_search_no_import!==false;
+  renderMusicSourceChecks(gmd.sources&&gmd.sources.length?gmd.sources:['qq','kuwo','migu','bilibili']);
+  toggleChatIndependent();
+}
+function renderMusicSourceChecks(selected){
+  var sel={};(selected||[]).forEach(function(s){sel[s]=true;});
+  $('sourceChecks').innerHTML=MUSIC_SOURCE_ORDER.map(function(s){
+    return '<label><input type="checkbox" id="src_'+s+'" '+(sel[s]?'checked':'')+'> '+esc(MUSIC_SOURCE_LABELS[s]||s)+'</label>';
+  }).join('');
+}
+function toggleChatIndependent(){
+  var independent=$('chatConnection').value==='independent';
+  $('chatIndependent').classList.toggle('hidden',!independent);
+}
+async function loadMusicDevices(){
+  var box=$('musicDeviceList');
+  if(!box)return;
+  box.textContent='正在读取音箱…';
+  var r=await api('/api/admin/music_devices');
+  if(r.status!==200||!r.data.ok){
+    box.textContent=r.data&&r.data.error?r.data.error:'读取音箱失败';
+    return;
+  }
+  musicDeviceGroups=r.data.accounts||[];
+  renderMusicDevices();
+  renderTestDevices();
+  renderSpeakerAdminList();
+}
+function renderMusicDevices(){
+  var box=$('musicDeviceList');
+  var total=0;
+  var html=musicDeviceGroups.map(function(acc){
+    return (acc.devices||[]).map(function(d){
+      total++;
+      var online=String(d.presence||'').toLowerCase()==='online';
+      var a=esc(acc.account_id), id=esc(d.device_id);
+      return '<div class="deviceItem">'
+        +'<div class="deviceHead"><b>'+esc(d.name||d.device_id)+'</b>'
+        +'<span class="pill">'+esc(d.model||d.hardware||'-')+'</span>'
+        +musicPill(online?'在线':'离线',online?'ok':'off')
+        +'<span class="hint">账号 '+esc(acc.account_name||acc.account_id)+'</span>'
+        +'<label class="inlineCheck" style="margin-left:auto"><input type="checkbox" data-a="'+a+'" data-d="'+id+'" '+(d.managed?'checked':'')+' onchange="setMusicManaged(this)"> 启用管理</label></div>'
+        +'<div class="deviceCtl"><span>音量</span><input type="range" min="0" max="100" value="'+(Number(d.volume)||0)+'" data-a="'+a+'" data-d="'+id+'" oninput="this.nextElementSibling.textContent=this.value" onchange="setMusicVolume(this)"><span>'+(Number(d.volume)||0)+'</span>'
+        +'<button class="miniBtn" data-a="'+a+'" data-d="'+id+'" onclick="pickMusicTestDevice(this)">设为测试</button>'
+        +'<button class="miniBtn" data-a="'+a+'" data-d="'+id+'" onclick="quickMusicTTS(this)">TTS 播报</button></div></div>';
+    }).join('');
+  }).join('');
+  box.innerHTML=total?html:'没有读取到音箱。请确认小米账号已绑定，并且账号下有小爱音箱。';
+  renderMusicGroups();
+  renderGroupMemberChecks();
+}
+function renderTestDevices(){
+  var sel=$('testDevice'),cur=sel.value;
+  var opts=[],first='';
+  musicDeviceGroups.forEach(function(acc){
+    (acc.devices||[]).forEach(function(d){
+      if(!d.managed)return;
+      var val=acc.account_id+'|'+d.device_id;
+      if(!first)first=val;
+      opts.push('<option value="'+esc(val)+'">'+esc((d.name||d.device_id)+' · '+(acc.account_name||''))+'</option>');
+    });
+  });
+  sel.innerHTML=opts.length?opts.join(''):'<option value="">请先启用音箱</option>';
+  if(cur&&opts.some(function(x){return x.indexOf('value="'+cur+'"')>=0;}))sel.value=cur;
+  else if(first)sel.value=first;
+}
+function musicTarget(){
+  var v=$('testDevice').value||'';
+  if(v.indexOf('|')<0)return null;
+  var p=v.split('|');
+  return {account_id:p[0],device_id:p.slice(1).join('|')};
+}
+function setMusicMsg(m,text,err){
+  if(!m)return;m.textContent=text||'';m.style.color=err?'var(--err)':'var(--ok)';
+}
+async function startMusicQR(){
+  if(musicQR){stopMusicQR();}
+  var btn=$('qrStartBtn');btn.disabled=true;
+  var r=await api('/api/admin/music/qr_start',{});
+  btn.disabled=false;
+  if(r.status!==200||!r.data.ok){
+    toast((r.data&&r.data.error)||'二维码获取失败',true);return;
+  }
+  musicQR={account_id:r.data.account_id,login_url:r.data.login_url||''};
+  $('qrBox').classList.remove('hidden');
+  $('qrState').textContent='等待扫码…（二维码有效期约 2 分钟）';
+  var img=$('qrImg');img.style.display='';img.src=r.data.qrcode_url||'';
+  img.onerror=function(){
+    img.style.display='none';
+    var u=musicQR&&musicQR.login_url||'';
+    $('qrFallback').innerHTML=u&&/^https:\/\//i.test(u)?('图片加载失败，<a href="'+esc(u)+'" target="_blank" rel="noopener">点此打开小米登录页</a>'):'二维码图片加载失败，请重新获取。';
+  };
+  $('qrFallback').textContent='';
+  if(musicTimer)clearInterval(musicTimer);
+  musicTimer=setInterval(pollMusicQR,2500);
+  pollMusicQR();
+}
+async function pollMusicQR(){
+  if(!musicQR||musicQRLock)return;
+  musicQRLock=true;
+  var r=await api('/api/admin/music/qr_poll',{account_id:musicQR.account_id});
+  musicQRLock=false;
+  if(!r.data||!r.data.ok){
+    $('qrState').textContent=(r.data&&r.data.error)||'扫码状态读取失败';
+    return;
+  }
+  var st=r.data.state;
+  if(st==='success'){
+    $('qrState').textContent='绑定成功，正在自动启用音箱、多房间并同步面板登录…';
+    stopMusicQR(true);
+    setTimeout(function(){load();},1200);
+  }else if(st==='error'||st==='failed'){
+    $('qrState').textContent='扫码失败：'+(r.data.message||'请重新获取二维码');
+    stopMusicQR();
+  }else if(st==='scanned'){
+    $('qrState').textContent='已扫码，请在手机上确认登录…';
+  }else{
+    $('qrState').textContent='等待扫码…';
+  }
+}
+function stopMusicQR(keepBox){
+  if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+  musicQR=null;musicQRLock=false;
+  $('qrStartBtn').disabled=false;
+  if(!keepBox)$('qrBox').classList.add('hidden');
+}
+async function deleteMusicAccount(){
+  if(!musicState||!(musicState.accounts||[]).length)return;
+  if(!confirm('解绑后语音点歌、对话、音箱投放会停止，面板也会失去这次小米账号登录（需要重新扫码或在面板登录），确定继续？'))return;
+  var r=await api('/api/admin/music/account_delete',{account_id:musicState.accounts[0].id});
+  if(r.data&&r.data.ok){toast('已解绑');load();}
+  else toast((r.data&&r.data.error)||'解绑失败',true);
+}
+async function enableAllMusicDevices(){
+  var r=await api('/api/admin/music/device_all',{managed:true});
+  if(r.data&&r.data.ok){toast('已启用 '+(r.data.updated||0)+' 台音箱');loadMusicDevices();}
+  else toast((r.data&&r.data.error)||'操作失败',true);
+}
+function musicDeviceIndex(){
+  var idx={};
+  musicDeviceGroups.forEach(function(acc){
+    (acc.devices||[]).forEach(function(d){
+      idx[acc.account_id+'|'+d.device_id]={name:d.name||d.device_id,managed:!!d.managed,account:acc.account_name||acc.account_id};
+    });
+  });
+  return idx;
+}
+function renderMusicGroups(){
+  var groups=(musicState&&musicState.groups)||[],idx=musicDeviceIndex();
+  var el=$('groupList');if(!el)return;
+  if(!groups.length){el.textContent='暂无分组。建组后组内音箱会同步播放。';return;}
+  el.innerHTML=groups.map(function(g){
+    var names=(g.members||[]).map(function(m){
+      var k=m.account_id+'|'+m.device_id;return idx[k]?idx[k].name:m.device_id;
+    });
+    return '<div class="groupItem"><b>'+esc(g.name||'分组')+'</b><span class="pill">'+((g.member_count||names.length)||0)+' 台</span>'
+      +'<span class="hint">'+esc(names.join('、')||'无成员')+'</span><span class="spacer"></span>'
+      +'<button class="miniBtn" onclick="editMusicGroup(\''+esc(g.id)+'\')">编辑</button>'
+      +'<button class="miniBtn danger" onclick="deleteMusicGroup(\''+esc(g.id)+'\')">删除</button></div>';
+  }).join('');
+  var info=$('groupInfo');if(info)info.textContent='分组：'+groups.map(function(g){return (g.name||'分组')+'('+(g.member_count||0)+'台)';}).join('、');
+}
+function renderGroupMemberChecks(selectedKeys){
+  var el=$('groupMemberChecks');if(!el)return;
+  var idx=musicDeviceIndex(),keys=Object.keys(idx);
+  var selected={};
+  if(selectedKeys&&selectedKeys.length)selectedKeys.forEach(function(k){selected[k]=true;});
+  else keys.forEach(function(k){if(idx[k].managed)selected[k]=true;});
+  if(!keys.length){el.textContent='暂无可选音箱';return;}
+  el.innerHTML=keys.map(function(k,i){
+    var d=idx[k];
+    return '<label><input type="checkbox" id="gmk_'+i+'" data-key="'+esc(k)+'" '+(selected[k]?'checked':'')+'> '+esc(d.name)+(d.managed?'':'（未启用）')+'</label>';
+  }).join('');
+}
+function editMusicGroup(id){
+  var g=((musicState&&musicState.groups)||[]).find(function(x){return x.id===id;});
+  if(!g)return;
+  musicEditingGroupId=id;
+  $('groupName').value=g.name||'';
+  renderGroupMemberChecks((g.members||[]).map(function(m){return m.account_id+'|'+m.device_id;}));
+  $('groupEditHint').textContent='正在编辑：'+(g.name||id);
+  setMusicMsg($('groupMsg'),'修改成员或名称后点“保存分组”。');
+  $('groupName').scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function deleteMusicGroup(id){
+  if(!confirm('删除这个分组？组内音箱会恢复独立播放。'))return;
+  var r=await api('/api/admin/music/group',{action:'delete',group_id:id});
+  if(r.data&&r.data.ok){toast('分组已删除');musicEditingGroupId='';$('groupEditHint').textContent='';loadMusicState(true);loadMusicDevices();}
+  else toast((r.data&&r.data.error)||'删除失败',true);
+}
+async function saveMusicGroup(){
+  var name=($('groupName').value||'').trim();
+  var members=[];
+  Array.prototype.forEach.call($('groupMemberChecks').querySelectorAll('input[type=checkbox]'),function(box){
+    if(!box.checked)return;
+    var p=(box.dataset.key||'').split('|');
+    if(p.length>=2)members.push({account_id:p[0],device_id:p.slice(1).join('|')});
+  });
+  if(!name){setMusicMsg($('groupMsg'),'请填写分组名称。',true);return;}
+  if(members.length<2){setMusicMsg($('groupMsg'),'至少选择两台音箱。',true);return;}
+  setMusicMsg($('groupMsg'),'保存中…');
+  var body={action:'save',name:name,members:members};
+  if(musicEditingGroupId)body.group_id=musicEditingGroupId;
+  var r=await api('/api/admin/music/group',body);
+  if(r.data&&r.data.ok){
+    setMusicMsg($('groupMsg'),'分组已保存（'+members.length+' 台）。');
+    musicEditingGroupId='';$('groupEditHint').textContent='';
+    loadMusicState(true);loadMusicDevices();
+  }else setMusicMsg($('groupMsg'),(r.data&&r.data.error)||'保存失败',true);
+}
+async function groupAllMusicDevices(){
+  var r=await api('/api/admin/music/group_all',{name:'全屋音箱'});
+  if(r.data&&r.data.ok){toast('已建立多房间组（'+r.data.count+' 台）');loadMusicState(true);loadMusicDevices();}
+  else toast((r.data&&r.data.error)||'组网失败',true);
+}
+async function setMusicManaged(el){
+  var r=await api('/api/admin/music/device',{account_id:el.dataset.a,device_id:el.dataset.d,managed:el.checked});
+  if(!r.data||!r.data.ok){el.checked=!el.checked;toast((r.data&&r.data.error)||'修改失败',true);}
+  else{toast(el.checked?'已启用该音箱':'已停用该音箱');loadMusicDevices();}
+}
+async function setMusicVolume(el){
+  var v=Number(el.value)||0;
+  var r=await api('/api/admin/music/device',{account_id:el.dataset.a,device_id:el.dataset.d,volume:v});
+  if(!r.data||!r.data.ok)toast((r.data&&r.data.error)||'音量设置失败',true);
+  else toast('音量已调到 '+v);
+}
+function pickMusicTestDevice(el){
+  var sel=$('testDevice');
+  var val=el.dataset.a+'|'+el.dataset.d;
+  if(sel.querySelector('option[value="'+val.replace(/"/g,'\\"')+'"]'))sel.value=val;
+  toast('已选择测试音箱');
+  var d=el.closest('details');if(d)d.open=true;
+}
+async function quickMusicTTS(el){
+  var r=await api('/api/admin/music/tts_test',{account_id:el.dataset.a,device_id:el.dataset.d,text:'你好，我是你的家庭音乐助手。'});
+  toast(r.data&&r.data.ok?'TTS 已下发':'TTS 下发失败',!(r.data&&r.data.ok));
+}
+var AI_PRESETS={
+  dashscope:{label:'阿里云百炼（中国大陆）',group:'国内',url:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-flash',note:'Key 从阿里云百炼控制台获取。'},
+  'dashscope-intl':{label:'阿里云百炼（国际）',group:'国内',url:'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',model:'qwen-flash',note:'国际站账号选这个地址；国内 Key 不通用。'},
+  deepseek:{label:'DeepSeek',group:'国内',url:'https://api.deepseek.com/v1',model:'deepseek-chat',note:'Key 从 platform.deepseek.com 获取。'},
+  moonshot:{label:'Moonshot Kimi',group:'国内',url:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k',note:'Key 从 platform.moonshot.cn 获取。'},
+  bigmodel:{label:'智谱 BigModel',group:'国内',url:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4-flash',note:'Key 从 open.bigmodel.cn 获取。'},
+  ark:{label:'火山方舟（豆包）',group:'国内',url:'https://ark.cn-beijing.volces.com/api/v3',model:'',note:'模型要填火山方舟“推理接入点 ID”（ep-...），不是模型展示名。'},
+  qianfan:{label:'百度千帆',group:'国内',url:'https://qianfan.baidubce.com/v2',model:'ernie-speed-128k',note:'使用百度智能云千帆 v2 的 API Key。'},
+  hunyuan:{label:'腾讯混元',group:'国内',url:'https://api.hunyuan.cloud.tencent.com/v1',model:'hunyuan-lite',note:'使用腾讯云混元的 OpenAI 兼容 Key。'},
+  spark:{label:'讯飞星火',group:'国内',url:'https://spark-api-open.xf-yun.com/v1',model:'generalv3.5',note:'部分账号的 Key 需要填成 APIKey:APISecret 组合。'},
+  minimax:{label:'MiniMax',group:'国内',url:'https://api.minimax.chat/v1',model:'MiniMax-Text-01',note:'Key 从 MiniMax 开放平台获取。'},
+  yi:{label:'零一万物 01.AI',group:'国内',url:'https://api.lingyiwanwu.com/v1',model:'yi-lightning',note:'Key 从 platform.lingyiwanwu.com 获取。'},
+  siliconflow:{label:'硅基流动 SiliconFlow',group:'国内',url:'https://api.siliconflow.cn/v1',model:'Qwen/Qwen3-8B',note:'模型名要用平台完整 ID，可在“检测接口 / Key”返回的列表里选。'},
+  ai302:{label:'302.AI',group:'国内',url:'https://api.302.ai/v1',model:'gpt-4o-mini',note:'聚合服务商，Key 从 302.AI 获取。'},
+  openai:{label:'OpenAI',group:'国际',url:'https://api.openai.com/v1',model:'gpt-4o-mini',note:'需要能访问 api.openai.com 的网络。'},
+  gemini:{label:'Google Gemini（OpenAI 兼容）',group:'国际',url:'https://generativelanguage.googleapis.com/v1beta/openai/',model:'gemini-2.5-flash',note:'使用 Gemini API Key，走 OpenAI 兼容入口。'},
+  xai:{label:'xAI Grok',group:'国际',url:'https://api.x.ai/v1',model:'grok-3-mini',note:'Key 从 console.x.ai 获取。'},
+  mistral:{label:'Mistral',group:'国际',url:'https://api.mistral.ai/v1',model:'mistral-small-latest',note:'Key 从 console.mistral.ai 获取。'},
+  groq:{label:'Groq',group:'国际',url:'https://api.groq.com/openai/v1',model:'llama-3.3-70b-versatile',note:'Key 从 console.groq.com 获取。'},
+  together:{label:'Together AI',group:'国际',url:'https://api.together.xyz/v1',model:'meta-llama/Llama-3.3-70B-Instruct-Turbo',note:'Key 从 api.together.xyz 获取。'},
+  openrouter:{label:'OpenRouter（聚合/Claude）',group:'国际',url:'https://openrouter.ai/api/v1',model:'openai/gpt-4o-mini',note:'Claude 原生协议不兼容，可在 OpenRouter 里选 anthropic/claude-* 模型。'},
+  ollama:{label:'Ollama（本地/局域网）',group:'本地 / 网关',url:'http://127.0.0.1:11434/v1',model:'qwen2.5:7b',note:'127.0.0.1 可能被 Songloft 宿主拦截；建议填 Ollama 所在机器的局域网 IP。'},
+  lmstudio:{label:'LM Studio（本地/局域网）',group:'本地 / 网关',url:'http://127.0.0.1:1234/v1',model:'local-model',note:'同样建议填 LM Studio 所在机器的局域网 IP。'}
+};
+var AI_PRESET_ORDER={
+  '国内':['dashscope','dashscope-intl','deepseek','moonshot','bigmodel','ark','qianfan','hunyuan','spark','minimax','yi','siliconflow','ai302'],
+  '国际':['openai','gemini','xai','mistral','groq','together','openrouter'],
+  '本地 / 网关':['ollama','lmstudio']
+};
+function initAIPresets(selectId){
+  var el=$(selectId);if(!el)return;
+  var html='<option value="">自定义接口（手动填写）</option>';
+  Object.keys(AI_PRESET_ORDER).forEach(function(group){
+    html+='<optgroup label="'+esc(group)+'">';
+    AI_PRESET_ORDER[group].forEach(function(key){
+      var p=AI_PRESETS[key];if(p)html+='<option value="'+esc(key)+'">'+esc(p.label)+'</option>';
+    });
+    html+='</optgroup>';
+  });
+  el.innerHTML=html;
+}
+function detectAIPreset(url){
+  var u=String(url||'').trim().toLowerCase().replace(/\/+$/,'');
+  if(!u)return '';
+  var found='';
+  Object.keys(AI_PRESETS).forEach(function(key){
+    var p=AI_PRESETS[key];
+    if(String(p.url).toLowerCase().replace(/\/+$/,'')===u)found=key;
+  });
+  return found;
+}
+function applyPresetTo(selectId,urlId,modelId){
+  var key=$(selectId).value,p=AI_PRESETS[key];
+  if(!p)return;
+  $(urlId).value=p.url;
+  $(modelId).value=p.model||'';
+  setMusicMsg($('aiMsg'),'已切换到 '+p.label+'。'+(p.note||'')+' Key 必须换成该服务商的；填好后保存，再点“检测接口 / Key”。');
+}
+function applyAIPreset(){applyPresetTo('aiPreset','aiApiUrl','aiModel');}
+function applyChatPreset(){applyPresetTo('chatPreset','chatApiUrl','chatModel');}
+async function checkMusicAIKey(){
+  setMusicMsg($('aiMsg'),'正在用已保存的接口和 Key 检测…');
+  var r=await api('/api/admin/music/ai_check',{});
+  var host=r.data&&r.data.host?('（'+r.data.host+'）'):'';
+  if(r.data&&r.data.ok){
+    setMusicMsg($('aiMsg'),'接口可用'+host+'，返回 '+(r.data.count||0)+' 个模型'+(r.data.models&&r.data.models.length?('：'+r.data.models.slice(0,8).join('、')):''));
+  }else{
+    setMusicMsg($('aiMsg'),'检测失败'+host+'：'+((r.data&&r.data.error)||'未知错误')+'。请确认服务商、Key、模型是否匹配。',true);
+  }
+}
+async function saveMusicAI(){
+  var msg=$('aiMsg');setMusicMsg(msg,'保存中…');
+  var voice=$('voiceEnabled').checked,monitor=$('monitorEnabled').checked;
+  if((voice||monitor)&&!(musicState.accounts||[]).length){
+    setMusicMsg(msg,'请先扫码绑定小米账号，再开启语音控制。',true);return;
+  }
+  var chatOn=$('chatEnabled').checked,independent=$('chatConnection').value==='independent';
+  var aiKeySaved=!!((musicState&&musicState.ai||{}).key_set);
+  var chatKeySaved=!!((musicState&&musicState.chat||{}).key_set);
+  if((voice||(chatOn&&!independent))&&!$('aiApiKey').value.trim()&&($('aiKeyClear').checked||!aiKeySaved)){
+    setMusicMsg(msg,'请填写当前 AI 服务商的 API Key；如果勾选了“清除已保存的 Key”，请取消勾选。',true);return;
+  }
+  if(chatOn&&independent&&!$('chatApiKey').value.trim()&&($('chatKeyClear').checked||!chatKeySaved)){
+    setMusicMsg(msg,'请填写独立对话服务商的 API Key，或取消“清除已保存的 Key”。',true);return;
+  }
+  var body={
+    ai_enabled:voice,
+    ai_api_url:$('aiApiUrl').value.trim(),ai_model:$('aiModel').value.trim(),
+    ai_timeout:Number($('aiTimeout').value)||6,
+    ai_api_key:$('aiApiKey').value,ai_api_key_clear:$('aiKeyClear').checked,
+    voice_command_enabled:voice,conversation_monitor_enabled:monitor,
+    enabled:$('chatEnabled').checked,
+    connection:$('chatConnection').value,
+    model:$('chatModel').value.trim(),timeout:Number($('chatTimeout').value)||30,
+    system_prompt:$('systemPrompt').value.trim(),
+    trigger_words:$('triggerWords').value,
+    context_turns:Number($('contextTurns').value)||0,
+    followup_seconds:Number($('followupSeconds').value)||0,
+    fallback_enabled:$('chatFallback').checked,memory_enabled:$('chatMemory').checked,
+    resume_music:$('chatResume').checked,waiting_feedback:$('chatWaiting').checked,
+    streaming_enabled:$('chatStreaming').checked
+  };
+  if($('chatConnection').value==='independent'){
+    body.api_url=$('chatApiUrl').value.trim();
+    body.api_key=$('chatApiKey').value;
+    body.api_key_clear=$('chatKeyClear').checked;
+  }
+  var r=await api('/api/admin/music/ai',body);
+  if(r.data&&r.data.ok){
+    setMusicMsg(msg,'已保存。建议先点“测试指令理解”，再用下面的“执行语音口令/让音箱回答”验证。');
+    loadMusicState(true);
+  }else{
+    setMusicMsg(msg,(r.data&&r.data.error)||'保存失败',true);
+  }
+}
+async function saveMusicSource(){
+  var sources=[];MUSIC_SOURCE_ORDER.forEach(function(s){var el=$('src_'+s);if(el&&el.checked)sources.push(s);});
+  if(!sources.length){setMusicMsg($('sourceMsg'),'至少选择一个在线音源。',true);return;}
+  setMusicMsg($('sourceMsg'),'保存中…');
+  var r=await api('/api/admin/music/source',{
+    server_host:$('sourceHost').value.trim(),
+    external_enabled:$('externalEnabled').checked,
+    no_import:$('noImportEnabled').checked,
+    quality:$('sourceQuality').value,
+    sources:sources
+  });
+  if(r.data&&r.data.ok){setMusicMsg($('sourceMsg'),'已保存。音箱拉流地址：'+(r.data.server_host||''));loadMusicState(true);}
+  else setMusicMsg($('sourceMsg'),(r.data&&r.data.error)||'保存失败',true);
+}
+async function testMusicSearch(){
+  var kw=($('searchTestText').value||'').trim();
+  if(!kw){setMusicMsg($('sourceMsg'),'请输入测试歌曲名',true);return;}
+  setMusicMsg($('sourceMsg'),'搜索中…');
+  var r=await api('/api/admin/music/search_test',{keyword:kw});
+  if(r.data&&r.data.ok&&r.data.found){
+    var ok=r.data.stream_ok,ct=String(r.data.content_type||'');
+    var how=ct.indexOf('mpeg')>=0||ct.indexOf('mp3')>=0?'MP3 直推':'非 MP3，播放时会由服务端实时转码';
+    setMusicMsg($('sourceMsg'),(ok?'找到并验证可拉流：':'找到但拉流失败：')+(r.data.title||'')+' - '+(r.data.artist||'')+(ct?(' · '+ct+'（'+how+'）'):''),!ok);
+  }else{
+    setMusicMsg($('sourceMsg'),(r.data&&(r.data.error||r.data.msg))||'没有找到结果',true);
+  }
+}
+async function testAIAnalyze(){
+  var q=($('testVoiceText').value||'').trim();
+  if(!q){toast('请输入测试口令',true);return;}
+  setMusicMsg($('aiMsg'),'解析中…');
+  var r=await api('/api/admin/music/ai_test',{text:q});
+  if(r.data&&r.data.ok){
+    var d=r.data.data||{};
+    setMusicMsg($('aiMsg'),'意图：'+(d.action||'-')+' · 参数：'+JSON.stringify(d.params||{})+' · 置信度：'+(d.confidence||'-')+' · '+(r.data.elapsed_ms||0)+'ms');
+  }else setMusicMsg($('aiMsg'),(r.data&&r.data.error)||'解析失败',true);
+}
+async function testMusicTTS(){
+  var t=musicTarget();var text=($('testTtsText').value||'').trim();
+  if(!t){toast('请先选择目标音箱',true);return;}
+  var out=$('testOut');out.classList.remove('hidden');out.textContent='正在下发 TTS…';
+  var r=await api('/api/admin/music/tts_test',{account_id:t.account_id,device_id:t.device_id,text:text});
+  out.textContent=r.data&&r.data.ok?'TTS 下发成功，音箱应开始播报。':('TTS 失败：'+((r.data&&r.data.error)||'未知错误'));
+}
+async function testMusicVoice(){
+  var t=musicTarget();var text=($('testVoiceText').value||'').trim();
+  if(!t){toast('请先选择目标音箱',true);return;}
+  var out=$('testOut');out.classList.remove('hidden');out.textContent='正在执行口令，可能要几秒…';
+  var r=await api('/api/admin/music/voice_test',{account_id:t.account_id,device_id:t.device_id,text:text});
+  out.textContent=r.data&&r.data.ok?('口令已执行：\n'+JSON.stringify(r.data.data||{},null,2)):('执行失败：'+((r.data&&r.data.error)||'未知错误'));
+}
+async function testMusicChat(){
+  var t=musicTarget();var text=($('testChatText').value||'').trim();
+  if(!t){toast('请先选择目标音箱',true);return;}
+  var out=$('testOut');out.classList.remove('hidden');out.textContent='已提交给大模型，正在等待回答和 TTS…';
+  var r=await api('/api/admin/music/chat_test',{account_id:t.account_id,device_id:t.device_id,text:text});
+  if(r.data&&r.data.ok){
+    out.textContent='阶段：'+(r.data.phase||'-')+'\n回答：'+(r.data.answer||'（暂未拿到文本，音箱可能仍在播报）')+(r.data.error?('\n错误：'+r.data.error):'');
+  }else{
+    var err=String((r.data&&r.data.error)||'未知错误');
+    if(err.indexOf('未启用')>=0)err+='。请回到 ④ 勾选“启用 AI 对话”，再点“保存 AI / 人设”，然后重新测试。';
+    out.textContent='AI 对话失败：'+err;
+  }
+}
+async function refreshMusicAll(){
+  await loadMusicInfo();
+  await loadMusicDevices();
+  toast('已刷新音乐与音箱状态');
+}
+async function getMusicSSOURL(){
+  var r=await api('/api/admin/music/web_sso');
+  if(r.status!==200||!r.data||!r.data.ok){
+    toast((r.data&&r.data.error)||'音乐中心免登录失败',true);
+    return '';
+  }
+  var url=r.data.url||'';
+  try{musicSSOOrigin=new URL(url).origin;}catch(e){musicSSOOrigin='';}
+  return url;
+}
+async function toggleMusic(){
+  var f=$('musicFrame'),btn=$('musicOpenBtn');
+  if(!f.classList.contains('hidden')){
+    f.classList.add('hidden');
+    f.src='about:blank';
+    btn.textContent='在后台打开音乐中心';
+    return;
+  }
+  btn.disabled=true;var old=btn.textContent;btn.textContent='正在免登录…';
+  var url=await getMusicSSOURL();
+  btn.disabled=false;btn.textContent=old;
+  if(!url)return;
+  f.src=url;
+  f.classList.remove('hidden');
+  btn.textContent='收起音乐中心';
+  setTimeout(function(){f.scrollIntoView({behavior:'smooth',block:'start'});},50);
+}
+async function openMusicWindow(){
+  var w=window.open('about:blank','_blank');
+  if(!w){toast('浏览器拦截了新窗口，请允许弹窗后重试',true);return;}
+  var url=await getMusicSSOURL();
+  if(!url){try{w.close();}catch(e){}return;}
+  try{w.opener=null;}catch(e){}
+  w.location=url;
+}
+function speakerAdminKey(a,d){return String(a)+'|'+String(d);}
+function renderSpeakerPanelSettings(){
+  var c=(state&&state.config)||{};
+  $('spkPanelEnabled').checked=c.speaker_panel_enabled!==false;
+  $('spkTextEnabled').checked=c.speaker_text_enabled!==false;
+  $('spkVoiceEnabled').checked=c.speaker_voice_enabled!==false;
+  $('spkAnswerMode').value=c.speaker_answer_mode||'speak';
+  $('spkMaxChars').value=c.speaker_max_chars||200;
+  renderSpeakerAdminList();
+}
+function renderSpeakerAdminList(){
+  var wrap=$('spkAdminList');if(!wrap)return;
+  var c=(state&&state.config)||{};
+  var hidden={};(c.speaker_hidden||[]).forEach(function(k){hidden[k]=true;});
+  var rows=[],opts=['<option value="">自动（优先在线）</option>'];
+  (musicDeviceGroups||[]).forEach(function(acc){
+    (acc.devices||[]).forEach(function(d){
+      if(!d.managed)return;
+      var key=speakerAdminKey(acc.account_id,d.device_id);
+      var label=(d.name||d.device_id)+(acc.account_name?(' · '+acc.account_name):'');
+      rows.push('<label><input type="checkbox" data-key="'+esc(key)+'" '+(hidden[key]?'':'checked')+'> '+esc(label)+'</label>');
+      opts.push('<option value="'+esc(key)+'">'+esc(label)+'</option>');
+    });
+  });
+  if(!rows.length){wrap.textContent='还没有已启用的音箱，请先在小爱插件中扫码绑定并启用。';}
+  else wrap.innerHTML=rows.join('');
+  var sel=$('spkDefault');if(sel){var cur=sel.value||c.speaker_default||'';sel.innerHTML=opts.join('');sel.value=cur;if(sel.value!==cur)sel.value='';}
+}
+async function saveSpeakerPanelConfig(){
+  var hidden=[];Array.prototype.forEach.call($('spkAdminList').querySelectorAll('input[type=checkbox]'),function(box){if(!box.checked)hidden.push(box.dataset.key);});
+  var body={
+    speaker_panel_enabled:$('spkPanelEnabled').checked,
+    speaker_text_enabled:$('spkTextEnabled').checked,
+    speaker_voice_enabled:$('spkVoiceEnabled').checked,
+    speaker_answer_mode:$('spkAnswerMode').value,
+    speaker_max_chars:Number($('spkMaxChars').value)||200,
+    speaker_default:$('spkDefault').value,
+    speaker_hidden:hidden
+  };
+  if(body.speaker_default&&hidden.indexOf(body.speaker_default)>=0)body.speaker_default='';
+  var r=await api('/api/admin/save',body);
+  if(r.data&&r.data.ok){
+    state.config=r.data.config||state.config;
+    setMusicMsg($('spkMsg'),'已保存。面板会在下次刷新时显示/隐藏音箱卡片。');
+    renderSpeakerPanelSettings();
+  }else setMusicMsg($('spkMsg'),(r.data&&r.data.msg)||'保存失败',true);
+}
+var THEME_DEFS=[
+  {id:'dark',label:'经典黑夜',bg:'linear-gradient(135deg,#151a26,#0b0e14)',fg:'#ff7a18'},
+  {id:'light',label:'经典白天',bg:'linear-gradient(135deg,#f7f9fc,#eef2f7)',fg:'#ff6a00'},
+  {id:'apple',label:'苹果风',bg:'linear-gradient(135deg,#dbeafe,#f8fafc 55%,#e9d5ff)',fg:'#0071e3'},
+  {id:'flyme',label:'魅族风',bg:'linear-gradient(135deg,#ffffff,#eef4fb)',fg:'#0084ff'},
+  {id:'cyber',label:'赛博霓虹',bg:'linear-gradient(135deg,#02060b,#04222a)',fg:'#00f0ff'},
+  {id:'morandi',label:'莫兰迪',bg:'linear-gradient(135deg,#efe8dd,#dfe8df)',fg:'#6f8f76'},
+  {id:'pixel',label:'像素终端',bg:'linear-gradient(135deg,#050805,#0a2a0a)',fg:'#39ff14'}
+];
+var CUSTOM_PAGE_STARTER='<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">\n<title>我的面板</title>\n<style>\n:root{--bg:#0b0e14;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.12);--txt:#eef2f7;--muted:#8f9aaa;--accent:#ff7a18;}\n*{box-sizing:border-box}\nhtml,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 88% -10%,rgba(255,105,0,.18),transparent 60%),linear-gradient(165deg,#151a26,#0b0e14);color:var(--txt);font-family:\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;}\n.wrap{max-width:1400px;margin:0 auto;padding:28px}\n.clock{font-size:96px;font-weight:700;line-height:1;color:#ffb36b}\n.date{color:var(--muted);font-size:20px;margin-top:8px}\n.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:24px}\n.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}\n.card h3{margin:0 0 8px;font-size:18px}.muted{color:var(--muted);font-size:13px;line-height:1.6}\na{color:var(--accent)}\n</style>\n</head>\n<body>\n<div class="wrap">\n  <div class="clock" id="clock">--:--</div>\n  <div class="date" id="date"></div>\n  <div class="grid">\n    <div class="card"><h3>天气</h3><div id="weather" class="muted">读取中…</div></div>\n    <div class="card"><h3>设备</h3><div id="devices" class="muted">读取中…</div></div>\n    <div class="card"><h3>链接</h3><div class="muted"><a href="/panel">内置面板</a> · <a href="/admin">后台管理</a></div></div>\n  </div>\n</div>\n<script>\nfunction tick(){var d=new Date();document.getElementById("clock").textContent=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");document.getElementById("date").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日";}\ntick();setInterval(tick,1000);\nfetch("/api/status").then(function(r){return r.json()}).then(function(s){var w=s.weather||{};document.getElementById("weather").textContent=(w.temp!==undefined?w.temp+"°C ":"")+(w.text||"暂无天气");});\nfetch("/api/devices").then(function(r){return r.json()}).then(function(d){document.getElementById("devices").textContent=(d.devices||[]).length+" 张设备卡片";});\n<\/script>\n</body>\n</html>';
+var customPages=[], currentPageId='', pagesLoaded=false;
+function renderThemeSwatches(){
+  var cur=$('adminTheme').value||(state&&state.theme)||'dark';
+  $('themeSwatches').innerHTML=THEME_DEFS.map(function(t){
+    return '<div class="themeSwatch '+t.id+(t.id===cur?' sel':'')+'" style="background:'+t.bg+'" onclick="pickTheme(\''+t.id+'\')"><span style="color:'+t.fg+'">'+esc(t.label)+'</span></div>';
+  }).join('');
+}
+async function saveAdminTheme(){
+  var t=$('adminTheme').value||'dark';
+  var r=await api('/api/theme',{theme:t});
+  if(r.data&&r.data.ok){
+    state.theme=t;
+    renderThemeSwatches();
+    setMusicMsg($('themeAdminMsg'),'已应用 '+(THEME_DEFS.find(function(x){return x.id===t;})||{}).label+'，前台会在下次刷新时生效。');
+  }else setMusicMsg($('themeAdminMsg'),(r.data&&r.data.msg)||'主题保存失败',true);
+}
+function pickTheme(id){$('adminTheme').value=id;saveAdminTheme();}
+async function loadCustomPages(){
+  var r=await api('/api/admin/pages');
+  if(r.status!==200||!r.data||!r.data.ok){
+    $('customPages').textContent='读取自定义页面失败';
+    return;
+  }
+  customPages=r.data.items||[];pagesLoaded=true;
+  var active=r.data.active||'';
+  $('activePageInfo').textContent=active?('当前前台：自定义页面'):'当前前台：内置面板';
+  if(!customPages.length){$('customPages').textContent='还没有自定义页面。点“新建自定义页面”开始。';return;}
+  $('customPages').innerHTML=customPages.map(function(p){
+    var isActive=p.id===active;
+    return '<div class="pageItem"><b>'+esc(p.name||p.id)+'</b>'+(isActive?'<span class="pill ok">当前</span>':'')
+      +'<span class="hint">'+esc(p.id)+' · '+(p.size||0)+' 字节</span><span class="spacer"></span>'
+      +'<button class="miniBtn" onclick="editCustomPage(\''+esc(p.id)+'\')">编辑</button>'
+      +'<button class="miniBtn" onclick="previewCustomPageId(\''+esc(p.id)+'\')">预览</button>'
+      +'<button class="miniBtn primary" onclick="activateCustomPageId(\''+esc(p.id)+'\')" '+(isActive?'disabled':'')+'>'+(isActive?'已启用':'启用')+'</button>'
+      +'<button class="miniBtn danger" onclick="deleteCustomPageId(\''+esc(p.id)+'\')">删除</button></div>';
+  }).join('');
+}
+function showPageEditor(id,name,html){
+  currentPageId=id||'';
+  $('pageId').value=id||'(保存后生成)';
+  $('pageName').value=name||'';
+  $('pageHtml').value=html||'';
+  $('pageMsg').textContent='';
+  $('pageEditor').classList.remove('hidden');
+  $('pageEditor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function newCustomPage(){showPageEditor('','我的页面',CUSTOM_PAGE_STARTER);}
+async function editCustomPage(id){
+  var r=await api('/api/admin/pages?id='+encodeURIComponent(id));
+  if(r.data&&r.data.ok){showPageEditor(id,(r.data.page||{}).name||'',r.data.html||'');}
+  else toast('读取页面失败',true);
+}
+async function saveCustomPage(activate){
+  var name=$('pageName').value.trim(),html=$('pageHtml').value;
+  if(!name){setMusicMsg($('pageMsg'),'请填写页面名称',true);return;}
+  if(!html.trim()){setMusicMsg($('pageMsg'),'页面 HTML 不能为空',true);return;}
+  setMusicMsg($('pageMsg'),'保存中…');
+  var r=await api('/api/admin/pages',{action:'save',id:currentPageId,name:name,html:html,activate:!!activate});
+  if(r.data&&r.data.ok){
+    currentPageId=r.data.id||currentPageId;
+    $('pageId').value=currentPageId;
+    setMusicMsg($('pageMsg'),activate?'已保存并设为前台页面（约 8 秒内切换）':'已保存');
+    loadCustomPages();
+  }else setMusicMsg($('pageMsg'),(r.data&&r.data.msg)||'保存失败',true);
+}
+async function activateCustomPageId(id){
+  var r=await api('/api/admin/pages',{action:'activate',id:id});
+  if(r.data&&r.data.ok){toast('已切换前台页面');loadCustomPages();}
+  else toast((r.data&&r.data.msg)||'启用失败',true);
+}
+async function useBuiltinPage(){
+  var r=await api('/api/admin/pages',{action:'deactivate'});
+  if(r.data&&r.data.ok){toast('已恢复内置面板');loadCustomPages();}
+  else toast((r.data&&r.data.msg)||'操作失败',true);
+}
+async function deleteCustomPageId(id){
+  if(!confirm('删除这个自定义页面？'))return;
+  var r=await api('/api/admin/pages',{action:'delete',id:id});
+  if(r.data&&r.data.ok){toast('页面已删除');if(currentPageId===id)cancelPageEditor();loadCustomPages();}
+  else toast((r.data&&r.data.msg)||'删除失败',true);
+}
+function previewCustomPageId(id){window.open('/custom/'+encodeURIComponent(id),'_blank','noopener');}
+function previewCustomPage(){if(currentPageId)previewCustomPageId(currentPageId);else toast('请先保存页面',true);}
+function deleteCustomPage(){if(currentPageId)deleteCustomPageId(currentPageId);else toast('请先保存页面',true);}
+function cancelPageEditor(){$('pageEditor').classList.add('hidden');currentPageId='';$('pageMsg').textContent='';}
+async function clearLogs(){
+  if(!confirm('清理系统 journal 历史日志（包括其他服务），不可恢复。确定继续？'))return;
+  var r=await api('/api/admin/logs_clear',{});
+  if(r.data&&r.data.ok){toast('历史日志已清理');$('logs').textContent='历史日志已清理。\n'+(r.data.before?('之前：'+r.data.before+'\n'):'')+(r.data.after?('现在：'+r.data.after):'');}
+  else toast((r.data&&r.data.msg)||'清理失败',true);
 }
 function render(){
   var c=state.config||{};
   $('homeLabel').value=c.home_label||'';$('weatherLocation').value=c.weather_location||'';
   $('weatherLabel').value=c.weather_label||'';$('country').value=c.country||'cn';$('pageSize').value=c.page_size||10;
   $('wanPrefixes').value=(c.wan_prefixes||[]).join('\n');$('lanPrefixes').value=(c.lan_prefixes||[]).join('\n');
-  $('accountInfo').innerHTML='小米账号：<b>'+(state.logged_in?'已登录':'未登录')+'</b> · 云端设备：<b>'+((state.devices||[]).length)+'</b> · 服务端口：<b>'+state.port+'</b>';
+  var src=state.auth_source||'panel';
+  var srcText=src==='plugin'?'来自小爱插件（设备控制共用）':'面板独立登录';
+  $('accountInfo').innerHTML='小米账号：<b>'+(state.logged_in?'已登录':'未登录')+'</b>'+(state.logged_in?(' · '+esc(srcText)):'')+' · 云端设备：<b>'+((state.devices||[]).length)+'</b> · 服务端口：<b>'+state.port+'</b>'
+    +(state.logged_in&&src==='plugin'?'<div class="hint">设备控制和音箱共用这次小爱扫码登录；如需解绑，请在“音乐与 AI 音箱”里操作。</div>':'');
+  $('xiaomiLogoutBtn').classList.toggle('hidden',!state.logged_in||src==='plugin');
   renderDevices();
+  renderSpeakerPanelSettings();
+  $('adminTheme').value=state.theme||'dark';
+  renderThemeSwatches();
+  if(!pagesLoaded)loadCustomPages();
 }
 function renderDevices(){
   var rows=state.devices||[];
@@ -203,6 +1176,8 @@ async function doLogin(){
   if(r.data.ok)load();else m.textContent=r.data.msg||'登录失败';
 }
 async function adminLogout(){
+  if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+  musicQR=null;musicQRLock=false;
   await api('/api/admin/logout',{});state=null;$('adminLogout').classList.add('hidden');
   show('loginView');
 }
@@ -214,7 +1189,7 @@ async function changePin(){
 async function xiaomiLogout(){
   if(!confirm('退出小米账号后面板需要重新扫码登录，确定继续？'))return;
   var r=await api('/api/admin/xiaomi_logout',{});
-  if(r.data.ok){toast('已退出小米账号');load();}else toast('操作失败',true);
+  if(r.data.ok){toast('已退出小米账号');load();}else toast(r.data.msg||'操作失败',true);
 }
 async function resetPanel(what){
   if(!confirm('确定恢复默认？'))return;
@@ -230,5 +1205,7 @@ async function refreshData(){
   var r=await api('/api/admin/refresh',{});
   if(r.data.ok){toast('已触发刷新');setTimeout(load,2500);}else toast('刷新失败',true);
 }
+initAIPresets('aiPreset');
+initAIPresets('chatPreset');
 load();
 </script></body></html>

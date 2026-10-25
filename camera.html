@@ -66,6 +66,129 @@ iframe{display:block;width:100%;height:100%;border:0;background:#000;}
   .left{flex-wrap:wrap;gap:6px;}
   .errText{font-size:16px;}
 }
+/* —— 跟随面板主题：摄像头页同步配色与结构 —— */
+body.light{--bg:#eef2f7;--panel:#ffffff;--panel2:#f8fafc;--line:rgba(15,23,42,.10);--text:#172033;--muted:#5b6678;--accent:#ff6a00;--ok:#2f9e63;--bad:#d93025;background:linear-gradient(165deg,#f7f9fc,#eef2f7 60%,#fdf6ef);}
+body.light .bar{background:#fff;border-bottom-color:var(--line);}
+body.light .side{background:#fff;border-right-color:var(--line);}
+body.light .cam{background:#f8fafc;border-color:#eef1f5;}
+body.light .cam.active{background:#fff3e6;border-color:rgba(255,106,0,.35);}
+body.light .cam.active .camState{color:#c2410c;}
+body.light a.btn,body.light button.btn{background:#fff;border-color:#e2e8f0;color:#172033;}
+body.light a.btn:active,body.light button.btn:active{background:#f1f5f9;}
+body.light button.btn.primary{background:#ff6a00;border-color:#ff6a00;color:#fff;}
+body.light .loading,body.light .errBox{background:rgba(247,249,252,.92);}
+body.light .loadText{color:#172033;}
+body.light .errText{color:#b42318;}
+body.light .errSub{color:#5b6678;}
+
+body.theme-apple{
+  --bg:#eef1f6;--panel:rgba(255,255,255,.74);--panel2:rgba(255,255,255,.64);--line:rgba(15,23,42,.08);
+  --text:#1d1d1f;--muted:#6e6e73;--accent:#0071e3;--ok:#34c759;--bad:#ff3b30;
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','PingFang SC','Helvetica Neue',sans-serif;
+  background:radial-gradient(900px 600px at 10% -10%,rgba(255,214,102,.34),transparent 60%),radial-gradient(900px 700px at 90% 0%,rgba(94,92,230,.20),transparent 56%),radial-gradient(820px 700px at 50% 112%,rgba(100,210,255,.22),transparent 60%),linear-gradient(160deg,#f8f9fc,#eef1f6 55%,#e9edf5);
+}
+body.theme-apple .bar{background:rgba(255,255,255,.74);backdrop-filter:blur(20px) saturate(160%);border-bottom:1px solid rgba(255,255,255,.92);}
+body.theme-apple .title{font-weight:600;letter-spacing:-.4px;}
+body.theme-apple .main{padding:16px;gap:16px;}
+body.theme-apple .side{background:rgba(255,255,255,.64);border:1px solid rgba(255,255,255,.92);border-radius:28px;overflow:hidden;box-shadow:0 14px 38px rgba(31,41,55,.10);}
+body.theme-apple .cam{background:rgba(255,255,255,.72);border:1px solid rgba(255,255,255,.95);border-radius:20px;box-shadow:0 6px 16px rgba(31,41,55,.06);}
+body.theme-apple .cam.active{background:rgba(0,113,227,.12);border-color:rgba(0,113,227,.24);}
+body.theme-apple .cam.active .camState{color:#0071e3;}
+body.theme-apple .stage{border:1px solid rgba(255,255,255,.92);border-radius:28px;box-shadow:0 18px 44px rgba(31,41,55,.12);}
+body.theme-apple a.btn,body.theme-apple button.btn{background:rgba(255,255,255,.74);border-color:rgba(255,255,255,.95);color:#1d1d1f;border-radius:999px;box-shadow:0 6px 16px rgba(31,41,55,.08);}
+body.theme-apple button.btn.primary{background:#0071e3;border-color:#0071e3;color:#fff;}
+body.theme-apple .homeFloat{background:#0071e3;border-radius:999px;box-shadow:0 10px 26px rgba(0,113,227,.28);}
+body.theme-apple .loading,body.theme-apple .errBox{background:rgba(248,250,252,.92);}
+body.theme-apple .loadText{color:#1d1d1f;}
+body.theme-apple .errText{color:#b42318;}
+body.theme-apple .errSub{color:#6e6e73;}
+
+body.theme-flyme{
+  --bg:#f4f6f9;--panel:#ffffff;--panel2:#f7f9fc;--line:#e8ecf2;--text:#17181a;--muted:#8a9099;
+  --accent:#0084ff;--ok:#32c46b;--bad:#ff4d4f;background:#f4f6f9;
+  font-family:'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif;
+}
+body.theme-flyme .bar{background:#fff;border-bottom:1px solid #e8ecf2;}
+body.theme-flyme .title{font-weight:600;}
+body.theme-flyme .main{padding:12px;gap:12px;}
+body.theme-flyme .side{background:#fff;border:1px solid #e8ecf2;border-radius:14px;overflow:hidden;}
+body.theme-flyme .cam{background:#f7f9fc;border:1px solid transparent;border-radius:10px;box-shadow:none;}
+body.theme-flyme .cam.active{background:#eaf4ff;border-color:rgba(0,132,255,.24);}
+body.theme-flyme .cam.active .camState{color:#0084ff;}
+body.theme-flyme .stage{border:1px solid #e8ecf2;border-radius:14px;}
+body.theme-flyme a.btn,body.theme-flyme button.btn{background:#fff;border-color:#e8ecf2;color:#17181a;border-radius:10px;box-shadow:none;}
+body.theme-flyme button.btn.primary{background:#0084ff;border-color:#0084ff;color:#fff;}
+body.theme-flyme .homeFloat{background:#0084ff;border-radius:10px;box-shadow:0 8px 20px rgba(0,132,255,.22);}
+body.theme-flyme .loading,body.theme-flyme .errBox{background:rgba(247,249,252,.94);}
+body.theme-flyme .loadText{color:#17181a;}
+body.theme-flyme .errText{color:#d4380d;}
+body.theme-flyme .errSub{color:#8a9099;}
+
+body.theme-cyber{
+  --bg:#02060b;--panel:rgba(3,12,20,.94);--panel2:rgba(0,240,255,.05);--line:rgba(0,240,255,.22);
+  --text:#d8fbff;--muted:#5c8f99;--accent:#00f0ff;--ok:#39ff88;--bad:#ff3d6e;
+  font-family:Consolas,'Courier New','Microsoft YaHei',monospace;
+  background:linear-gradient(rgba(0,240,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,.045) 1px,transparent 1px),radial-gradient(900px 600px at 85% -10%,rgba(255,43,214,.16),transparent 60%),#02060b;
+  background-size:44px 44px,44px 44px,auto,auto;
+}
+body.theme-cyber .bar{background:rgba(2,8,14,.94);border-bottom:1px solid var(--line);}
+body.theme-cyber .title{letter-spacing:2px;color:#eaffff;text-shadow:0 0 14px rgba(0,240,255,.45);}
+body.theme-cyber .main{padding:12px;gap:12px;}
+body.theme-cyber .side{background:rgba(3,12,20,.88);border:1px solid var(--line);}
+body.theme-cyber .cam{background:linear-gradient(90deg,rgba(0,240,255,.06),rgba(3,12,20,.9));border:1px solid rgba(0,240,255,.16);border-radius:0;}
+body.theme-cyber .cam.active{background:rgba(0,240,255,.12);border-color:var(--accent);box-shadow:0 0 16px rgba(0,240,255,.18);}
+body.theme-cyber .cam.active .camState{color:var(--accent);}
+body.theme-cyber .stage{border:1px solid var(--line);box-shadow:0 0 22px rgba(0,240,255,.10);}
+body.theme-cyber .stage:after{content:'';position:absolute;inset:10px;z-index:3;pointer-events:none;border:1px solid rgba(0,240,255,.12);}
+body.theme-cyber a.btn,body.theme-cyber button.btn{background:rgba(0,240,255,.06);border:1px solid rgba(0,240,255,.35);color:#c9feff;border-radius:0;letter-spacing:1px;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);}
+body.theme-cyber button.btn.primary{background:var(--accent);border-color:var(--accent);color:#001014;box-shadow:0 0 18px rgba(0,240,255,.28);}
+body.theme-cyber .homeFloat{background:#001014;color:var(--accent);border:1px solid var(--accent);border-radius:0;box-shadow:0 0 18px rgba(0,240,255,.28);}
+body.theme-cyber .loading,body.theme-cyber .errBox{background:rgba(0,4,8,.92);}
+body.theme-cyber .hintBar{background:rgba(0,8,12,.72);border:1px solid rgba(0,240,255,.16);border-radius:0;color:rgba(200,255,255,.75);font-family:monospace;}
+
+body.theme-morandi{
+  --bg:#f1ece4;--panel:rgba(255,252,247,.92);--panel2:rgba(255,252,247,.80);--line:rgba(120,105,90,.14);
+  --text:#3f3a35;--muted:#8b8176;--accent:#7d9b83;--ok:#7d9b83;--bad:#b56a63;
+  font-family:Georgia,'Songti SC','Noto Serif CJK SC','Microsoft YaHei',serif;
+  background:radial-gradient(900px 700px at 10% -10%,rgba(192,138,125,.16),transparent 60%),radial-gradient(800px 700px at 95% 10%,rgba(125,155,131,.18),transparent 55%),repeating-linear-gradient(0deg,rgba(120,105,90,.022) 0 1px,transparent 1px 4px),#f1ece4;
+}
+body.theme-morandi .bar{background:rgba(255,252,247,.88);border-bottom:1px solid var(--line);}
+body.theme-morandi .title{font-family:Georgia,'Songti SC','Noto Serif CJK SC',serif;letter-spacing:.5px;}
+body.theme-morandi .main{padding:14px;gap:14px;}
+body.theme-morandi .side{background:rgba(255,252,247,.88);border:1px solid var(--line);border-radius:26px 10px 26px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(107,93,79,.07);}
+body.theme-morandi .cam{background:rgba(255,252,247,.90);border:1px solid var(--line);border-radius:16px 6px 16px 6px;}
+body.theme-morandi .cam.active{background:rgba(125,155,131,.16);border-color:rgba(125,155,131,.32);}
+body.theme-morandi .cam.active .camState{color:#6f8f76;}
+body.theme-morandi .stage{border:1px solid var(--line);border-radius:26px 10px 26px 10px;box-shadow:0 8px 24px rgba(107,93,79,.08);}
+body.theme-morandi a.btn,body.theme-morandi button.btn{background:rgba(255,252,247,.86);border-color:var(--line);color:#4a443d;border-radius:14px 6px 14px 6px;}
+body.theme-morandi button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+body.theme-morandi .homeFloat{background:var(--accent);border-radius:14px 6px 14px 6px;box-shadow:0 8px 20px rgba(111,143,118,.22);}
+body.theme-morandi .loading,body.theme-morandi .errBox{background:rgba(247,242,234,.94);}
+body.theme-morandi .loadText{color:#4a443d;}
+body.theme-morandi .errText{color:#a05a52;}
+body.theme-morandi .errSub{color:#8b8176;}
+
+body.theme-pixel{
+  --bg:#050805;--panel:#050c05;--panel2:#071007;--line:#1f7a1f;--text:#b7ffb7;--muted:#5f9e5f;
+  --accent:#39ff14;--ok:#39ff14;--bad:#ff4d4d;
+  font-family:'Courier New',Consolas,'Microsoft YaHei',monospace;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0 1px,transparent 1px 3px),radial-gradient(900px 600px at 85% -10%,rgba(57,255,20,.10),transparent 60%),#050805;
+}
+body.theme-pixel .bar{background:#050c05;border-bottom:2px solid #1f7a1f;}
+body.theme-pixel .title{letter-spacing:2px;color:var(--accent);text-shadow:3px 3px 0 rgba(57,255,20,.16);}
+body.theme-pixel .main{padding:12px;gap:12px;}
+body.theme-pixel .side{background:#050c05;border:2px solid #1f7a1f;border-right:2px solid #1f7a1f;}
+body.theme-pixel .cam{background:#071007;border:2px solid #1f7a1f;border-radius:0;box-shadow:4px 4px 0 #0a260a;}
+body.theme-pixel .cam.active{background:#0a1a0a;border-color:var(--accent);box-shadow:4px 4px 0 #123f12;}
+body.theme-pixel .cam.active .camState{color:var(--accent);}
+body.theme-pixel .dot{border-radius:0;box-shadow:none;}
+body.theme-pixel .cam.on .dot{box-shadow:none;}
+body.theme-pixel .stage{border:2px solid #1f7a1f;box-shadow:6px 6px 0 #0a260a;}
+body.theme-pixel a.btn,body.theme-pixel button.btn{background:#071007;border:2px solid #1f7a1f;color:var(--accent);border-radius:0;box-shadow:3px 3px 0 #0a260a;letter-spacing:1px;}
+body.theme-pixel button.btn.primary{background:var(--accent);border-color:var(--accent);color:#031003;}
+body.theme-pixel .homeFloat{background:var(--accent);border:2px solid var(--accent);color:#031003;border-radius:0;box-shadow:5px 5px 0 #0f3d0f;}
+body.theme-pixel .loading,body.theme-pixel .errBox{background:rgba(0,8,0,.92);}
+body.theme-pixel .hintBar{border:1px solid #1f7a1f;border-radius:0;background:rgba(5,8,5,.82);color:#7fce7f;font-family:monospace;}
 </style></head><body>
 <div class="bar">
   <div class="left">
@@ -74,6 +197,7 @@ iframe{display:block;width:100%;height:100%;border:0;background:#000;}
   </div>
   <div class="actions">
     <a class="btn" href="/">返回面板</a>
+    <button class="btn" id="themeBtn" onclick="toggleTheme()" title="切换面板风格主题">主题</button>
     <button class="btn" id="refreshBtn" onclick="refreshCams()">刷新</button>
   </div>
 </div>
@@ -117,6 +241,40 @@ var listEl = document.getElementById('camList');
 var countEl = document.getElementById('camCount');
 var barHint = document.getElementById('barHint');
 var refreshBtn = document.getElementById('refreshBtn');
+
+var THEME_IDS = ['dark','light','apple','flyme','cyber','morandi','pixel'];
+var THEME_LABELS = {dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
+var theme = 'dark';
+var themeBtn = document.getElementById('themeBtn');
+function applyTheme(t) {
+  if (THEME_IDS.indexOf(t) < 0) t = 'dark';
+  theme = t;
+  document.body.classList.remove('light','theme-apple','theme-flyme','theme-cyber','theme-morandi','theme-pixel');
+  if (t === 'light' || t === 'apple' || t === 'flyme' || t === 'morandi') document.body.classList.add('light');
+  if (t !== 'dark' && t !== 'light') document.body.classList.add('theme-' + t);
+  document.documentElement.style.colorScheme = document.body.classList.contains('light') ? 'light' : 'dark';
+  if (themeBtn) {
+    themeBtn.textContent = THEME_LABELS[t] || '主题';
+    themeBtn.title = '当前主题：' + (THEME_LABELS[t] || t) + '；点击切换下一个主题';
+  }
+}
+function toggleTheme() {
+  var prev = theme, idx = THEME_IDS.indexOf(theme);
+  var next = THEME_IDS[(idx + 1) % THEME_IDS.length];
+  applyTheme(next);
+  fetch('/api/theme', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({theme:next})})
+    .then(function (r) { return r.json(); })
+    .then(function (r) { if (r && r.ok) applyTheme(r.theme || next); else applyTheme(prev); })
+    .catch(function () { applyTheme(prev); });
+}
+function syncTheme() {
+  fetch('/api/status', {cache:'no-store'})
+    .then(function (r) { return r.json(); })
+    .then(function (s) { if (s && s.theme) applyTheme(s.theme); })
+    .catch(function () {});
+}
+syncTheme();
+setInterval(syncTheme, 15000);
 
 function setLoading(text) {
   if (text) { loadText.textContent = text; loading.hidden = false; }

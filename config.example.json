@@ -8,6 +8,13 @@
   "page_size": 10,
   "hidden_devices": [],
   "renames": {},
+  "speaker_panel_enabled": true,
+  "speaker_text_enabled": true,
+  "speaker_voice_enabled": true,
+  "speaker_answer_mode": "speak",
+  "speaker_max_chars": 200,
+  "speaker_hidden": [],
+  "speaker_default": "",
   "admin_pin_salt": "",
   "admin_pin_hash": ""
 }

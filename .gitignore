@@ -10,3 +10,6 @@ cloud_states.json
 __pycache__/
 *.pyc
 .DS_Store
+micloud_auth.panel-backup.json
+pages/
+pages.json

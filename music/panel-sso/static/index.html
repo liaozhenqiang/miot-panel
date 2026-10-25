@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>正在进入音乐中心</title>
+<style>
+html,body{height:100%;margin:0;background:#f4f6fb;color:#1b2433;font-family:"PingFang SC","Noto Sans CJK SC",sans-serif;}
+.wrap{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:24px;text-align:center;box-sizing:border-box;}
+.spinner{width:42px;height:42px;border:4px solid #dbe3ef;border-top-color:#ff6a00;border-radius:50%;animation:spin .9s linear infinite;}
+h2{font-size:20px;margin:0;}
+p{font-size:14px;color:#667085;margin:0;line-height:1.7;max-width:460px;}
+a{color:#ff6a00;font-weight:700;text-decoration:none;margin-top:8px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap" id="box">
+  <div class="spinner"></div>
+  <h2 id="title">正在进入音乐中心</h2>
+  <p id="msg">正在完成免登录验证…</p>
+</div>
+<script>
+(function(){
+  var title=document.getElementById("title"),msg=document.getElementById("msg"),box=document.getElementById("box");
+  function b64d(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";var bin=atob(s),bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);return new TextDecoder().decode(bytes);}
+  function openDb(){return new Promise(function(res,rej){var q=indexedDB.open("songloft",1);q.onupgradeneeded=function(){var db=q.result;if(!db.objectStoreNames.contains("kv"))db.createObjectStore("kv");};q.onsuccess=function(){res(q.result);};q.onerror=function(){rej(q.error||new Error("IndexedDB 打开失败"));};});}
+  function putAll(db,data){return new Promise(function(res,rej){var expiresAt=new Date(Date.now()+Number(data.expires_in||3600)*1000).toISOString();var tx=db.transaction("kv","readwrite"),st=tx.objectStore("kv");st.put(data.access_token,"secure.access_token");st.put(data.refresh_token||"","secure.refresh_token");st.put(expiresAt,"secure.token_expires_at");st.put(location.origin,"prefs.server_url");st.put(data.username||"","prefs.last_username");tx.oncomplete=function(){res();};tx.onerror=function(){rej(tx.error||new Error("写入登录态失败"));};});}
+  async function main(){
+    var raw=(location.hash||"").replace(/^#/,"");
+    if(!raw){location.replace("/");return;}
+    try{
+      var data=JSON.parse(b64d(raw));
+      if(!data.access_token)throw new Error("登录令牌无效");
+      var db=await openDb();
+      await putAll(db,data);
+      try{if(window.parent&&window.parent!==window)window.parent.postMessage({type:"panel-sso-done"},"*");}catch(e){}
+      title.textContent="登录成功";
+      msg.textContent="正在进入音乐中心…";
+      location.replace("/");
+    }catch(e){
+      title.textContent="自动登录失败";
+      msg.textContent=(e&&e.message)||String(e);
+      var a=document.createElement("a");a.href="/";a.textContent="手动打开音乐中心";box.appendChild(a);
+    }
+  }
+  main();
+})();
+</script>
+</body>
+</html>
