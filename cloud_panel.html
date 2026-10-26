@@ -933,9 +933,9 @@ function cardHTML(d,wide){
       var ba=(bv&&bv.value!==null&&bv.value!==undefined)?Number(bv.value):null;
       var extras=vals.filter(function(v){return v&&['temp','humidity','battery'].indexOf(v.key)<0;});
       hh+='<div class="sensorMain"><div class="sensorTemp">'+t+'<small>°C</small></div><div class="sensorHum">湿度<b>'+hu+'%</b></div>'+(ba!==null?'<div class="sensorBat">电量 '+ba+'%</div>':'')+'</div>';
-      if(extras.length)hh+='<div class="sensorExtras">'+extras.map(function(v){return '<span>'+esc(v.label)+' <b>'+esc(v.value)+esc(v.unit||'')+'</b></span>';}).join('')+'</div>';
+      if(extras.length)hh+='<div class="sensorExtras">'+extras.map(function(v){return '<span>'+esc(v.label)+' <b>'+esc(v.display!==undefined&&v.display!==null?v.display:v.value)+esc(v.unit||'')+'</b></span>';}).join('')+'</div>';
     }else{
-      hh+='<div class="sensorList">'+vals.map(function(v){return '<div class="sensorRow">'+esc(v.label)+'<b>'+esc(v.value)+esc(v.unit||'')+'</b></div>';}).join('')+'</div>';
+      hh+='<div class="sensorList">'+vals.map(function(v){return '<div class="sensorRow">'+esc(v.label)+'<b>'+esc(v.display!==undefined&&v.display!==null?v.display:v.value)+esc(v.unit||'')+'</b></div>';}).join('')+'</div>';
     }
     hh+='<div class="sensorHint">云端只读 · 自动刷新</div></div>';
     return hh;

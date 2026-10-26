@@ -937,6 +937,8 @@ SENSOR_PROP_KEYS = {
     "relative-humidity": ("humidity", "湿度", "%"),
     "humidity": ("humidity", "湿度", "%"),
     "battery-level": ("battery", "电量", "%"),
+    "battery": ("battery", "电量", "%"),
+    "voltage": ("voltage", "电压", "V"),
     "pm2.5": ("pm25", "PM2.5", "µg/m³"),
     "pm2.5-density": ("pm25", "PM2.5", "µg/m³"),
     "pm10-density": ("pm10", "PM10", "µg/m³"),
@@ -945,11 +947,52 @@ SENSOR_PROP_KEYS = {
     "formaldehyde-density": ("formaldehyde", "甲醛", "mg/m³"),
     "illumination": ("illumination", "光照", "lx"),
     "atmospheric-pressure": ("pressure", "气压", "hPa"),
+    "contact-state": ("contact", "开合", ""),
+    "motion-state": ("motion", "移动", ""),
+    "occupancy-status": ("occupancy", "有人", ""),
+    "occupancy-state": ("occupancy", "有人", ""),
+    "submersion-state": ("water", "漏水", ""),
+    "smoke-state": ("smoke", "烟雾", ""),
+    "smoke-concentration": ("smoke_conc", "烟雾浓度", ""),
+    "gas-concentration": ("gas_conc", "燃气浓度", ""),
+    "gas-leak": ("gas", "燃气", ""),
+    "fault": ("fault", "故障", ""),
+    "status": ("status", "状态", ""),
+    "ph": ("ph", "pH", ""),
+    "tds": ("tds", "TDS", "ppm"),
+    "ec": ("ec", "EC", "µS/cm"),
+    "salinity": ("salinity", "盐度", ""),
+    "orp": ("orp", "ORP", "mV"),
+    "chlorine": ("chlorine", "余氯", "mg/L"),
 }
 SENSOR_PROP_ORDER = {
     "temp": 0, "humidity": 1, "battery": 2, "pm25": 3, "pm10": 4,
-    "co2": 5, "tvoc": 6, "formaldehyde": 7, "illumination": 8, "pressure": 9,
+    "co2": 5, "tvoc": 6, "formaldehyde": 7, "illumination": 8,
+    "pressure": 9, "contact": 10, "motion": 11, "occupancy": 12,
+    "water": 13, "smoke": 14, "gas": 15, "fault": 16, "status": 17,
+    "smoke_conc": 18, "gas_conc": 19, "voltage": 20, "ph": 21, "tds": 22,
+    "ec": 23, "salinity": 24, "orp": 25, "chlorine": 26,
 }
+SENSOR_BOOL_TEXT = {
+    "contact": ("打开", "关闭"),
+    "motion": ("有人", "无人"),
+    "occupancy": ("有人", "无人"),
+    "water": ("漏水", "正常"),
+    "fault": ("故障", "正常"),
+    "gas": ("泄漏", "正常"),
+    "smoke": ("报警", "正常"),
+}
+
+
+def _sensor_display(key, value):
+    pair = SENSOR_BOOL_TEXT.get(key)
+    if not pair:
+        return None
+    if isinstance(value, str):
+        truth = value.strip().lower() in ("1", "true", "on", "open", "yes")
+    else:
+        truth = bool(value)
+    return pair[0] if truth else pair[1]
 
 
 def _load_sensor_models():
@@ -2770,7 +2813,8 @@ class Handler(BaseHTTPRequestHandler):
                 values = st.get("values") or {}
                 item["values"] = [
                     {"key": p["key"], "label": p["label"], "unit": p["unit"],
-                     "value": values[p["key"]]}
+                     "value": values[p["key"]],
+                     "display": _sensor_display(p["key"], values[p["key"]])}
                     for p in _sensor_props(d["model"])
                     if p["key"] in values and values[p["key"]] is not None
                 ]
