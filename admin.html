@@ -369,7 +369,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 
     <section class="card">
       <h2>服务日志</h2>
-      <div class="row" style="margin-bottom:10px"><button class="danger small" onclick="clearLogs()">清理历史日志</button><span class="hint">会清理系统 journal 历史日志（含其他服务），不可恢复。</span></div>
+      <div class="row" style="margin-bottom:10px"><button class="danger small" onclick="clearLogs()">清理历史日志</button><span class="hint">Linux 清理 journald（含其他服务）；Windows/Docker 清理面板日志文件。不可恢复。</span></div>
       <pre id="logs">点“查看日志”加载最近 120 行。</pre>
     </section>
   </div>
@@ -1100,7 +1100,7 @@ function previewCustomPage(){if(currentPageId)previewCustomPageId(currentPageId)
 function deleteCustomPage(){if(currentPageId)deleteCustomPageId(currentPageId);else toast('请先保存页面',true);}
 function cancelPageEditor(){$('pageEditor').classList.add('hidden');currentPageId='';$('pageMsg').textContent='';}
 async function clearLogs(){
-  if(!confirm('清理系统 journal 历史日志（包括其他服务），不可恢复。确定继续？'))return;
+  if(!confirm('清理历史日志（Linux 为 journald，含其他服务；Windows 为面板日志文件），不可恢复。确定继续？'))return;
   var r=await api('/api/admin/logs_clear',{});
   if(r.data&&r.data.ok){toast('历史日志已清理');$('logs').textContent='历史日志已清理。\n'+(r.data.before?('之前：'+r.data.before+'\n'):'')+(r.data.after?('现在：'+r.data.after):'');}
   else toast((r.data&&r.data.msg)||'清理失败',true);

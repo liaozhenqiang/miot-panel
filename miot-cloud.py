@@ -31,8 +31,10 @@ BLE/Zigbee 子设备和传感器通常无法通过云端 RPC 读写，面板会�
 摄像头通过面板登录态换取 P2P 临时密钥，交给 go2rtc + ffmpeg 播放。
 """
 import os
+import sys
 import json
 import time
+import socket
 import threading
 import logging
 import urllib.parse
@@ -58,10 +60,82 @@ try:
 except Exception:
     segno = None
 
-LOG = logging.getLogger("miot-cloud")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+def _default_root():
+    env = os.environ.get("MIOT_ROOT")
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "miot-panel")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/miot-panel")
+    return "/etc/miio-bridge"
 
-ROOT = os.environ.get("MIOT_ROOT", "/etc/miio-bridge")
+APP_DIR = os.path.abspath(os.path.expanduser(
+    os.environ.get("MIOT_APP_DIR") or os.path.dirname(os.path.abspath(__file__))))
+ROOT = _default_root()
+LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
+LOG_FILE = os.path.abspath(os.path.expanduser(os.environ.get("MIOT_LOG_FILE") or (
+    os.path.join(ROOT, "miot-cloud.log") if os.name == "nt" else ""))) if (
+        os.environ.get("MIOT_LOG_FILE") or os.name == "nt") else ""
+
+LOG = logging.getLogger("miot-cloud")
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT,
+                    handlers=[logging.StreamHandler()])
+
+def _attach_file_log():
+    if not LOG_FILE:
+        return
+    try:
+        log_dir = os.path.dirname(LOG_FILE)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        for h in logging.getLogger().handlers:
+            if isinstance(h, logging.FileHandler) and os.path.abspath(h.baseFilename) == LOG_FILE:
+                return
+        fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+        fh.setFormatter(logging.Formatter(LOG_FORMAT))
+        logging.getLogger().addHandler(fh)
+    except Exception:
+        pass
+
+_attach_file_log()
+
+def _journald_available():
+    return os.name != "nt" and shutil.which("journalctl") is not None
+
+def _read_file_log(lines=120):
+    if not LOG_FILE:
+        return []
+    try:
+        with open(LOG_FILE, encoding="utf-8", errors="replace") as f:
+            content = f.readlines()
+        return [x.rstrip("\r\n") for x in content[-lines:] if x.strip()]
+    except Exception:
+        return []
+
+def _clear_file_log():
+    if not LOG_FILE:
+        return False
+    for h in list(logging.getLogger().handlers):
+        if isinstance(h, logging.FileHandler) and os.path.abspath(h.baseFilename) == LOG_FILE:
+            try:
+                h.flush()
+                h.close()
+            except Exception:
+                pass
+            logging.getLogger().removeHandler(h)
+    try:
+        log_dir = os.path.dirname(LOG_FILE)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with open(LOG_FILE, "w", encoding="utf-8"):
+            pass
+    except Exception:
+        return False
+    _attach_file_log()
+    return True
+
 AUTH_FILE = os.path.join(ROOT, "micloud_auth.json")
 PLUGIN_ACCOUNT_FILE = os.environ.get(
     "MIOT_PLUGIN_ACCOUNT_FILE",
@@ -77,9 +151,9 @@ PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
-    PORT = int(os.environ.get("MIOT_PORT", "80"))
+    PORT = int(os.environ.get("MIOT_PORT") or ("8080" if os.name == "nt" else "80"))
 except ValueError:
-    PORT = 80
+    PORT = 8080 if os.name == "nt" else 80
 
 GO2RTC_API = os.environ.get("MIOT_GO2RTC", "http://127.0.0.1:1984")
 SONGLOFT_API = os.environ.get("MIOT_SONGLOFT", "http://127.0.0.1:58091")
@@ -224,13 +298,34 @@ def config_value(key, default=None):
 
 def get_lan_ip():
     """取本机局域网 IPv4，用于生成手机扫码登录的二维码 URL。"""
+    override = os.environ.get("MIOT_LAN_IP")
+    if override:
+        return override.strip()
     try:
-        out = subprocess.run(["hostname", "-I"], capture_output=True,
-                             text=True, timeout=3).stdout.split()
-        for ip in out:
-            if ip.startswith("127.") or ":" in ip:
-                continue
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        if ip and not ip.startswith("127."):
             return ip
+    except Exception:
+        pass
+    if os.name != "nt":
+        try:
+            out = subprocess.run(["hostname", "-I"], capture_output=True,
+                                 text=True, timeout=3).stdout.split()
+            for ip in out:
+                if ip.startswith("127.") or ":" in ip:
+                    continue
+                return ip
+        except Exception:
+            pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if ip and not ip.startswith("127."):
+                return ip
     except Exception:
         pass
     return "127.0.0.1"
@@ -1510,17 +1605,32 @@ def poll_loop():
 
 # ----------------------------------------------------------------- HTTP
 try:
-    PANEL_HTML = open(os.path.join(ROOT, "cloud_panel.html"), encoding="utf-8").read()
+    PANEL_HTML = open(os.path.join(APP_DIR, "cloud_panel.html"), encoding="utf-8").read()
 except OSError:
     PANEL_HTML = "<h1>cloud_panel.html 缺失</h1>"
 try:
-    ADMIN_HTML = open(os.path.join(ROOT, "admin.html"), encoding="utf-8").read()
+    ADMIN_HTML = open(os.path.join(APP_DIR, "admin.html"), encoding="utf-8").read()
 except OSError:
     ADMIN_HTML = "<h1>admin.html 缺失</h1>"
 try:
-    CAMERA_HTML = open(os.path.join(ROOT, "camera.html"), encoding="utf-8").read()
+    CAMERA_HTML = open(os.path.join(APP_DIR, "camera.html"), encoding="utf-8").read()
 except OSError:
     CAMERA_HTML = "<h1>camera.html 缺失</h1>"
+
+def _read_app_asset(name, binary=False):
+    try:
+        with open(os.path.join(APP_DIR, name), "rb" if binary else "r",
+                  **({} if binary else {"encoding": "utf-8"})) as f:
+            return f.read()
+    except OSError:
+        return b"" if binary else ""
+
+PWA_MANIFEST = _read_app_asset("manifest.webmanifest")
+PWA_SW = _read_app_asset("sw.js")
+PWA_ICONS = {
+    "/icons/icon-192.png": _read_app_asset("icons/icon-192.png", True),
+    "/icons/icon-512.png": _read_app_asset("icons/icon-512.png", True),
+}
 
 
 LOGIN_HTML = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -2294,13 +2404,40 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, html, "text/html; charset=utf-8")
         elif u.path == "/login":
-            qr_url = "http://%s:%d/login?m=phone" % (LAN_IP, PORT)
+            host = (self.headers.get("Host") or "").strip()
+            hostname = host.rsplit(":", 1)[0].strip("[]").lower() if host else ""
+            if (not host) or hostname in ("127.0.0.1", "localhost", "::1"):
+                host = "%s:%d" % (LAN_IP, PORT)
+            elif PORT != 80 and ":" not in host:
+                host += ":%d" % PORT
+            qr_url = "http://%s/login?m=phone" % host
             html = LOGIN_HTML.replace("@@QR@@", build_qr(qr_url))
             self._send(200, html, "text/html; charset=utf-8")
         elif u.path in ("/admin", "/admin/"):
             self._send(200, ADMIN_HTML, "text/html; charset=utf-8")
         elif u.path in ("/camera", "/camera/"):
             self._send(200, CAMERA_HTML, "text/html; charset=utf-8")
+        elif u.path == "/manifest.webmanifest":
+            if PWA_MANIFEST:
+                self._send(200, PWA_MANIFEST, "application/manifest+json; charset=utf-8")
+            else:
+                self._send(404, {"error": "manifest missing"})
+        elif u.path == "/sw.js":
+            if PWA_SW:
+                self._send(200, PWA_SW, "application/javascript; charset=utf-8")
+            else:
+                self._send(404, {"error": "service worker missing"})
+        elif u.path in PWA_ICONS:
+            if PWA_ICONS[u.path]:
+                self._send(200, PWA_ICONS[u.path], "image/png")
+            else:
+                self._send(404, {"error": "icon missing"})
+        elif u.path == "/favicon.ico":
+            icon = PWA_ICONS.get("/icons/icon-192.png") or b""
+            if icon:
+                self._send(200, icon, "image/png")
+            else:
+                self._send(404, {"error": "favicon missing"})
         elif u.path == "/api/status":
             self.api_status()
         elif u.path == "/api/devices":
@@ -2915,33 +3052,47 @@ class Handler(BaseHTTPRequestHandler):
     def api_admin_logs_clear(self):
         if not self._admin_require():
             return
-        before = ""
-        after = ""
-        try:
-            before = subprocess.run(["journalctl", "--disk-usage"], capture_output=True,
-                                    timeout=15).stdout.decode("utf-8", "replace").strip()
-            subprocess.run(["journalctl", "--rotate"], capture_output=True, timeout=25)
-            subprocess.run(["journalctl", "--vacuum-time=1s"], capture_output=True, timeout=60)
-            after = subprocess.run(["journalctl", "--disk-usage"], capture_output=True,
-                                   timeout=15).stdout.decode("utf-8", "replace").strip()
-            LOG.info("admin cleared journal logs")
-            self._send(200, {"ok": True, "before": before, "after": after,
-                             "msg": "已清理系统历史 journal 日志"})
-        except Exception as e:
-            self._send(200, {"ok": False, "msg": "清理失败：%s" % str(e)[:160]})
+        if _journald_available():
+            before = ""
+            after = ""
+            try:
+                before = subprocess.run(["journalctl", "--disk-usage"], capture_output=True,
+                                        timeout=15).stdout.decode("utf-8", "replace").strip()
+                subprocess.run(["journalctl", "--rotate"], capture_output=True, timeout=25)
+                subprocess.run(["journalctl", "--vacuum-time=1s"], capture_output=True, timeout=60)
+                after = subprocess.run(["journalctl", "--disk-usage"], capture_output=True,
+                                       timeout=15).stdout.decode("utf-8", "replace").strip()
+                LOG.info("admin cleared journal logs")
+                self._send(200, {"ok": True, "before": before, "after": after,
+                                 "msg": "已清理系统历史 journal 日志"})
+                return
+            except Exception as e:
+                LOG.warning("journal clear failed: %s", e)
+        if _clear_file_log():
+            LOG.info("admin cleared file log: %s", LOG_FILE)
+            self._send(200, {"ok": True, "msg": "已清理面板日志文件",
+                             "file": os.path.basename(LOG_FILE)})
+            return
+        self._send(200, {"ok": False, "msg": "当前平台没有可清理的日志（未启用 journald 或文件日志）"})
 
     def api_admin_logs(self):
         if not self._admin_require():
             return
-        try:
-            out = subprocess.run(["journalctl", "-u", "miot-cloud", "-n", "120",
-                                  "--no-pager", "-o", "short"],
-                                 capture_output=True, timeout=10).stdout.decode(
-                                     "utf-8", "replace")
-            lines = [x for x in out.splitlines() if x.strip()]
-        except Exception as e:
-            lines = ["日志读取失败: %s" % e]
-        self._send(200, {"ok": True, "lines": lines})
+        lines = []
+        if _journald_available():
+            try:
+                out = subprocess.run(["journalctl", "-u", "miot-cloud", "-n", "120",
+                                      "--no-pager", "-o", "short"],
+                                     capture_output=True, timeout=10).stdout.decode(
+                                         "utf-8", "replace")
+                lines = [x for x in out.splitlines() if x.strip()]
+            except Exception:
+                lines = []
+        if not lines:
+            lines = _read_file_log(120)
+        if not lines:
+            lines = ["暂无日志：Linux 使用 journald，Windows/Docker 可在设置 MIOT_LOG_FILE 后查看文件日志。"]
+        self._send(200, {"ok": True, "lines": lines, "platform": "windows" if os.name == "nt" else sys.platform})
 
     def api_admin_music_info(self, u=None):
         if not self._admin_require():

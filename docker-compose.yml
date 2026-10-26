@@ -1,0 +1,24 @@
+services:
+  panel:
+    build: .
+    image: onecloud-miot-panel:0.3.0
+    container_name: miot-panel
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - panel-data:/data
+    environment:
+      MIOT_ROOT: /data
+      MIOT_APP_DIR: /app
+      MIOT_PORT: "8080"
+      MIOT_LOG_FILE: /data/miot-cloud.log
+      # 手机扫码登录时改成宿主机的局域网 IP，否则二维码可能指向容器内部地址
+      # MIOT_LAN_IP: 192.168.1.10
+      # 可选：外部 go2rtc / Songloft / go-music-dl
+      # MIOT_GO2RTC: http://192.168.1.10:1984
+      # MIOT_SONGLOFT: http://192.168.1.10:58091
+      # MIOT_GO_MUSIC_DL: http://192.168.1.10:8080
+
+volumes:
+  panel-data:

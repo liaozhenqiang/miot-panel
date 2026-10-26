@@ -1,0 +1,12 @@
+.git
+.github
+.work
+marketing
+screenshots
+miot-panel-dist.tar.gz
+*.tar.gz
+__pycache__
+*.pyc
+*.pyo
+*.log
+data

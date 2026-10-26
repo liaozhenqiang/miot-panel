@@ -1,6 +1,12 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>米家面板</title><style>
 :root{--bg:#0b0e14;--card:rgba(255,255,255,.055);--line:rgba(255,255,255,.09);--txt:#eef2f7;--muted:#8f9aaa;--accent:#ff7a18;--green:#43d17d;--red:#ff5f6d;}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
@@ -728,6 +734,7 @@ body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-
 <script>
 var API='';
 if(navigator.maxTouchPoints>0||'ontouchstart' in window)document.body.classList.add('touch');
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
 document.addEventListener('contextmenu',function(e){e.preventDefault();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){var a=document.getElementById('assistant');if(a&&!a.classList.contains('hidden'))closeAssistant();}});
 var devices=[], camCards=[], speakerCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='dark', statusData=null;

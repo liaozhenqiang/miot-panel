@@ -6,6 +6,12 @@
 
 > 演示图为苹果风主题的合成示例，不含真实账号、设备、内网 IP 或摄像头画面。
 
+## 下载
+
+最新发布包：<https://github.com/liaozhenqiang/onecloud-miot-panel/releases/latest>
+
+Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NAS 可直接加载通用多架构镜像，也可用构建上下文自行构建。
+
 ## 功能
 
 - 触屏墙面板：全屏、响应式、时钟、天气、日历、家庭用电、设备卡片
@@ -22,16 +28,107 @@
 - 7 套主题与自定义首页：经典黑夜/白天 + 5 套结构级风格主题（苹果风/魅族风/赛博霓虹/莫兰迪/像素终端），摄像头页同步主题；后台可创建、编辑、预览、启用完整 HTML 自定义页面，内置面板始终保留在 `/panel`
 - 日志清理：后台可一键清理系统 journal 历史日志（含其他服务，不可恢复）
 
+## 支持平台
+
+| 平台 | 推荐方式 | 状态 |
+|---|---|---|
+| Linux 各发行版 / NAS | Docker 多架构镜像，或 systemd 源码安装 | 支持 |
+| Windows 10/11 | 一键安装 EXE（内置 Python、开机自启）/ 便携 ZIP / Edge kiosk | 支持 |
+| macOS | Python 源码 + launchd/登录项手动配置（非 root 用 8080 端口） | 可运行，未做安装器 |
+| Android 手机/平板 | 浏览器/PWA/Fully Kiosk 客户端，连接局域网内的面板服务 | 推荐作为客户端 |
+| Android 当主机 | Termux 等方式 | 不推荐，后台保活和媒体依赖复杂 |
+
+核心服务是 Python 3.9+ + 标准库 HTTP 服务，前端是静态 HTML；因此 Linux、Windows、macOS 都能直接运行。摄像头、音乐和 go2rtc 仍是可选外部模块。
+
 ## 环境要求
 
-- Linux（Debian/Ubuntu 优先，其他发行版也可），Python 3.9+
-- 可访问公网（小米云、天气）
-- 手机与设备在同一局域网（扫码登录用）
-- 可选：触摸屏 + Chromium/Xorg 做 kiosk；没有也可以直接用浏览器
+- Python 3.9+（源码/Windows）；
+- Docker（推荐跨发行版、NAS 和 Windows Docker）；
+- 可访问公网（小米云、天气）；
+- 手机与设备在同一局域网（扫码登录用）；
+- 可选：Chrome/Edge/Chromium 做 kiosk；摄像头需要 go2rtc + ffmpeg；音乐需要 Songloft、MIoT 插件和 go-music-dl。
 
 ## 安装
 
-从源码：
+### Docker（推荐）
+
+Release 提供自解压安装器：
+
+```bash
+sudo bash miot-panel-v0.3.0-docker-installer.run
+```
+
+或手动使用 compose：
+
+```bash
+docker compose up -d --build
+# 面板：http://设备IP:8080/
+# 后台：http://设备IP:8080/admin
+# 日志：docker compose logs -f
+```
+
+数据保存在 Docker 命名卷 `panel-data` 中。手机扫码时，如果二维码指向容器内部地址，在 `docker-compose.yml` 里设置 `MIOT_LAN_IP: 你的宿主机局域网IP`。
+
+多架构构建（amd64 / arm64 / armv7）：
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t onecloud-miot-panel:0.3.0 .
+```
+
+Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
+
+```bash
+docker load -i miot-panel-v0.3.0-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data onecloud-miot-panel:0.3.0
+```
+
+该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
+
+容器不内置 go2rtc、ffmpeg、Songloft 和 go-music-dl；需要摄像头/音乐时，让容器通过 `MIOT_GO2RTC`、`MIOT_SONGLOFT`、`MIOT_GO_MUSIC_DL` 访问宿主机或另一台设备上的服务。
+
+### Windows 10/11
+
+**推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
+
+- `miot-panel-v0.3.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+
+下面的源码安装脚本适合开发者，仍需要自己安装 Python。
+
+1. 安装 Python 3.9+（安装时勾选“Add Python to PATH”）。
+2. 解压发布包，在 `windows` 目录打开 PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+默认安装到 `%LOCALAPPDATA%\Programs\miot-panel`，数据在 `%LOCALAPPDATA%\miot-panel-data`，端口 **8080**，启动后使用 Edge/Chrome 应用模式打开。
+
+可选参数：
+
+```powershell
+# 全屏 kiosk，并设置登录时自动启动
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Kiosk -AtLogon
+
+# 允许局域网设备访问（需要管理员 PowerShell）
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -OpenFirewall
+```
+
+Windows 下日志写入 `%LOCALAPPDATA%\miot-panel-data\miot-cloud.log`，后台“清理历史日志”会清理这个文件。再次启动：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\start-panel.ps1"
+```
+
+### Linux 一键安装
+
+Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
+
+```bash
+sudo bash miot-panel-v0.3.0-linux-installer.run
+```
+
+手动源码安装：
 
 ```bash
 git clone https://github.com/liaozhenqiang/onecloud-miot-panel.git
@@ -49,7 +146,7 @@ sudo bash install.sh
 
 发布包下载：<https://github.com/liaozhenqiang/onecloud-miot-panel/releases/latest>
 
-默认安装到 `/opt/miot-panel`，监听 80，服务名 `miot-cloud`。
+默认安装到 `/opt/miot-panel`，监听 **80**，服务名 `miot-cloud`。
 
 自定义：
 
@@ -59,11 +156,32 @@ MIOT_ROOT=/etc/miot-panel MIOT_PORT=8080 sudo -E bash install.sh
 
 安装完成后：
 
-- 面板：`http://设备IP/`
-- 后台：`http://设备IP/admin/`（首次进入设置管理员 PIN）
+- 面板：`http://设备IP/`（Docker/Windows 默认 `http://设备IP:8080/`）
+- 后台：`http://设备IP/admin/`
 - 小米登录：面板未登录时会跳到 `/login`，手机扫二维码登录
 
-如果 80 端口被占用，使用 `MIOT_PORT=8080` 重新安装。
+### Android / iOS 客户端
+
+Android 平板、手机和 iPhone 不需要安装后端：把服务跑在 Docker/NAS/Linux/Windows 上，然后用浏览器打开 `http://服务IP:8080/`。
+
+- 可“添加到主屏幕”作为快捷入口；
+- 完整 PWA 安装（独立窗口）需要 **HTTPS 或 localhost**；局域网 HTTP 通常只能加桌面快捷方式；
+- 做墙屏/看店屏可用 Fully Kiosk Browser、WallPanel 等 WebView kiosk，建议固定充电和网络；
+- 不推荐在普通 Android 手机上直接跑 Python + go2rtc + ffmpeg 宿主，后台保活/端口/媒体依赖成本很高；Termux 仅适合爱好者。
+
+### 跨平台配置
+
+| 环境变量 | 说明 |
+|---|---|
+| `MIOT_ROOT` | 运行数据目录（配置、登录态、排版、页面、日志） |
+| `MIOT_APP_DIR` | 程序/HTML/PWA 静态文件目录，Docker 里是 `/app` |
+| `MIOT_PORT` | 监听端口；Linux 源码默认 80，Windows/Docker 默认 8080 |
+| `MIOT_LOG_FILE` | 文件日志路径；Windows 自动启用，Docker 默认 `/data/miot-cloud.log` |
+| `MIOT_LAN_IP` | 扫码登录二维码使用的宿主机局域网 IP（Docker/NAT 场景建议设置） |
+| `MIOT_GO2RTC` | 可选，go2rtc API 地址 |
+| `MIOT_SONGLOFT` / `MIOT_GO_MUSIC_DL` | 可选，音乐服务地址 |
+
+Linux 默认使用 journald，Windows/Docker 使用文件日志；后台日志页会按平台显示和清理。
 
 ## 第一次使用
 
@@ -232,7 +350,7 @@ apt install -y --no-install-recommends ffmpeg
 
 **说明与限制**
 
-- 在线搜索默认启用 `qq / kuwo / migu / bilibili`；网易云、酷狗等源在不同网络/风控下可能失败，可在后台勾选测试。
+- 在线搜索建议只勾选实测可出流的音源（本机实测 `kuwo / migu / qianqian / soda`）；`qq` 不稳定，`kugou` 在未配置 Cookie 时常见 `404 Failed to get URL`。配置对应平台 Cookie 后可再启用该音源，并用后台“测试在线搜索”复验。
 - 在线歌曲常为 FLAC/M4A；音箱不能直接解码时，Songloft 会用 ffmpeg 实时转 MP3，S805 会有一定 CPU 占用。
 - 实时转码需要 Songloft 能回源到本机/局域网音源。新版面板保存音源或扫码成功时会自动把设备局域网 IP 加入
   Songloft 的 `proxy-private-allowlist`；旧版/手工部署需要在 Songloft 设置里加入 `http://设备IP:58091` 对应 IP，
@@ -296,6 +414,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 
 ## 更新日志
 
+- **v0.3.0**（2026-10-26）：新增 Windows x64 一键安装 EXE（内置 Python、桌面/开始菜单、开机自启、kiosk 选项、卸载器）与便携 ZIP；新增 Linux `.run` 自解压安装（自动 Python、systemd 自启）与 Docker `.run` 一键 compose；新增 PWA manifest/service worker/图标、Android 客户端部署说明；配置目录拆分为 APP_DIR/ROOT，支持 Linux/Windows/macOS 数据路径、跨平台日志读取/清理、Windows 默认 8080 端口、跨平台局域网 IP 与扫码 Host 处理；提供 linux/amd64、arm64、armv7 通用多架构镜像 tar。
 - **v0.2.0**（2026-10-25）：`/admin` 音乐与 AI 音箱统一管理；Songloft + MIoT 插件；小爱扫码绑定；多房间；go-music-dl 在线搜歌；语音口令；OpenAI 兼容大模型、自定义人设与小爱原生 TTS；音乐中心后台免登录（IndexedDB SSO 桥，不再二次输入账号密码）；小爱扫码后的 `xiaomiio` 票据自动合并为面板设备登录（一次扫码同时控制设备与音箱，保留面板独立登录回退）；首页音箱卡片与文字/语音助手，后台支持开关、默认设备、按音箱显隐和静音回答；新增 5 套结构级风格主题（苹果/魅族/赛博/莫兰迪/像素，共 7 套）、大号触屏按钮与统一图标、摄像头页主题同步、自定义 HTML 首页管理与日志清理；云端控制改用官方 v2 miotspec 批量读写，修复盲控设备的状态与控制，并避免逐台轮询触发限流。
 - **v0.1.1**（2026-10-23）：7 寸 1080p 字号与空调卡片布局优化；手机 ≤860px 单列滚动、隐藏分页、紧凑工具栏；手机排版编辑与滚动位置保持修复。
 - **v0.1.0**：首个可移植版本（云端设备控制、天气/日历/用电、摄像头卡片、PIN 后台）。
@@ -310,7 +429,10 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - `requirements.txt`：Python 依赖（micloud、segno）
 - `LICENSE`：MIT 许可证
 - `screenshots/homepage-demo.png`：苹果风主题的合成演示图
-- `install.sh`：安装脚本
+- `install.sh`：Linux 源码/安装包安装脚本
+- `Dockerfile` / `docker-compose.yml` / `.dockerignore`：Docker 多架构部署
+- `windows/`：Windows 安装、启动、停止和 kiosk 脚本
+- `manifest.webmanifest` / `sw.js` / `icons/`：PWA 安装与图标
 - `miot-cloud.service` / `go2rtc.service`：systemd 参考单元
 - `music/panel-sso.jsplugin.zip`：音乐中心免登录桥（Songloft 插件成品）
 - `music/panel-sso/`：免登录桥源码（plugin.json / src / static）
