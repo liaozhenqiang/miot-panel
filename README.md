@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.3.3-docker-installer.run
+sudo bash miot-panel-v0.3.4-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.3 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.4 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.3.3-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.3
+docker load -i miot-panel-v0.3.4-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.4
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.3.3-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.3.3-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.3.4-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.4-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.3.3-linux-installer.run
+sudo bash miot-panel-v0.3.4-linux-installer.run
 ```
 
 手动源码安装：
@@ -344,7 +344,9 @@ apt install -y --no-install-recommends ffmpeg
 2. Songloft 以独立系统用户运行，监听 `58091`；把 `miot.jsplugin.zip` 放到
    `/var/lib/songloft/jsplugins/` 后重启。
 3. go-music-dl 以独立系统用户运行，监听 `8080`；把 `go-music-dl.jsplugin.zip`
-   放到同一插件目录后重启 Songloft。
+   放到同一插件目录后重启 Songloft。go-music-dl 开启 Web 管理员登录时，还要把它
+   的管理员账号写进插件的「账号登录」，否则扫码登录会提示“请先登录”：
+   在 `music/` 目录执行 `sudo python3 fix-gmd-auth.py`。
 4. 安装免登录桥 `music/panel-sso.jsplugin.zip`（本项目自带源码与成品）到同一插件目录，
    重启 Songloft。它是静态入口，安装后可以在 Songloft 后台把它禁用：静态页仍然可用，
    且不会出现在插件宫格中。
@@ -368,6 +370,7 @@ apt install -y --no-install-recommends ffmpeg
   或改用面板/手机麦克风提问。
 - 长期偏好记忆（ChatMemory）在部分模型上可能返回非严格 JSON，导致提取警告；默认不影响对话，可在 AI 设置里关闭。
 - 部分平台的高品质音质需要登录平台账号/Cookie，请在 go-music-dl 自己的 Web 后台配置；本面板不代管这些 Cookie。
+- Songloft 扫码登录提示“请先登录”时，说明 go-music-dl 开启了 Web 管理员登录，而 GoMusicDL 插件的「账号登录」为空。执行 `sudo python3 music/fix-gmd-auth.py` 自动写入并自检；手工填写时，先刷新插件设置页，避免空账号保存后覆盖凭据。`QQ 音乐（微信）` 入口受上游约 15 秒状态查询与插件 8 秒轮询超时限制，建议用「QQ 音乐」。
 - 第三方音源涉及平台版权与服务条款。请只访问你本人拥有合法使用权的内容，并自行承担合规责任；不要把 8080/58091 暴露到公网。
 - 大模型 Key 保存在 Songloft 插件的本地存储中（`/var/lib/songloft`，权限 600/700）；面板 API 只返回“是否已设置”，不会回显 Key。
 - 如果出现 `401 invalid_api_key`：说明 Key 与当前接口地址不匹配。阿里云百炼（中国大陆）用 `https://dashscope.aliyuncs.com/compatible-mode/v1`，国际站用 `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`；DeepSeek 用 `https://api.deepseek.com/v1`；Moonshot 用 `https://api.moonshot.cn/v1`。换服务商后必须重新填该服务商的 Key，可先用“检测接口 / Key”。
@@ -421,6 +424,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 
 ## 更新日志
 
+- **v0.3.4（2026-10-27）**：修复按文档部署 go-music-dl 并开启 Web 管理员登录后，Songloft 扫码登录提示“请先登录”（上游 401）的问题。新增 `music/fix-gmd-auth.py`：在本机读取 Songloft 与 go-music-dl 管理员凭据，写入 GoMusicDL 插件「账号登录」并逐个音源自检，密码不回显、不联网；文档补充 go-music-dl 账号文件格式、设置页旧状态覆盖凭据的注意事项，以及 QQ 音乐（微信）入口 8 秒轮询超时的上游限制。Windows 卸载器修复从安装目录启动时偶发清理不完整的问题：改为等待进程退出后再删除，并保留用户数据。面板主服务、设备控制与传感器代码无改动。
 - **v0.3.3（2026-10-26）**：温湿度/环境传感器改为 MIoT 规格自动发现，不再限定具体型号；支持温度、湿度、电量、PM2.5、CO₂ 等可读属性，没数据的 BLE 设备自动隐藏。新增全量 MIoT 型号索引（46,159 个型号）和通用属性/动作控制：卡片“更多”自动生成开关、滑杆、枚举、动作按钮；已对当前 15 台可控设备逐台写入当前值验证。安全加固：登录/验证码/管理 PIN/控制接口按 IP 限流，请求体上限 1MB、连接超时 30 秒，文件日志 5MB×3 轮转，轮询状态使用快照锁，依赖版本锁定；天气源增加 Open-Meteo 备用；总闸/门锁类通用操作二次确认；控制操作写入审计日志。
 - **v0.3.0**（2026-10-26）：新增 Windows x64 一键安装 EXE（内置 Python、桌面/开始菜单、开机自启、kiosk 选项、卸载器）与便携 ZIP；新增 Linux `.run` 自解压安装（自动 Python、systemd 自启）与 Docker `.run` 一键 compose；新增 PWA manifest/service worker/图标、Android 客户端部署说明；配置目录拆分为 APP_DIR/ROOT，支持 Linux/Windows/macOS 数据路径、跨平台日志读取/清理、Windows 默认 8080 端口、跨平台局域网 IP 与扫码 Host 处理；提供 linux/amd64、arm64、armv7 通用多架构镜像 tar。
 - **v0.2.0**（2026-10-25）：`/admin` 音乐与 AI 音箱统一管理；Songloft + MIoT 插件；小爱扫码绑定；多房间；go-music-dl 在线搜歌；语音口令；OpenAI 兼容大模型、自定义人设与小爱原生 TTS；音乐中心后台免登录（IndexedDB SSO 桥，不再二次输入账号密码）；小爱扫码后的 `xiaomiio` 票据自动合并为面板设备登录（一次扫码同时控制设备与音箱，保留面板独立登录回退）；首页音箱卡片与文字/语音助手，后台支持开关、默认设备、按音箱显隐和静音回答；新增 5 套结构级风格主题（苹果/魅族/赛博/莫兰迪/像素，共 7 套）、大号触屏按钮与统一图标、摄像头页主题同步、自定义 HTML 首页管理与日志清理；云端控制改用官方 v2 miotspec 批量读写，修复盲控设备的状态与控制，并避免逐台轮询触发限流。

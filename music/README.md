@@ -120,7 +120,34 @@ ReadWritePaths=/var/lib/go-music-dl
 WantedBy=multi-user.target
 ```
 
-首次启动后日志会打印 `Web setup token`。打开 `http://设备IP:8080/music/setup`，用该令牌创建 go-music-dl 管理员；令牌只用一次，创建后即失效。把管理员密码保存在本机 600 文件里，不要发到公开 Issue。
+首次启动后日志会打印 `Web setup token`。打开 `http://设备IP:8080/music/setup`，用该令牌创建 go-music-dl 管理员；令牌只用一次，创建后即失效。把管理员密码保存在本机 600 文件里，不要发到公开 Issue，建议格式：
+
+```bash
+sudo install -d -m 700 /etc/go-music-dl
+sudo tee /etc/go-music-dl/admin.txt >/dev/null <<'EOF'
+username=admin
+password=换成你的密码
+EOF
+sudo chmod 600 /etc/go-music-dl/admin.txt
+```
+
+### 扫码登录提示“请先登录”（401）
+
+go-music-dl 开启 Web 管理员登录后，Songloft 的 GoMusicDL 插件访问 `/music/qr_login/*` 必须带管理员会话。插件「账号登录」为空时上游返回 401，弹窗只能显示“请先登录”。
+
+本包自带修复脚本（只在本机读取账号文件、调用 127.0.0.1，不回显密码）：
+
+```bash
+# 在解压包的 music/ 目录执行
+sudo python3 fix-gmd-auth.py            # 写入并自检
+sudo python3 fix-gmd-auth.py --check    # 只检查，不修改
+```
+
+脚本读取 `/etc/songloft/songloft.env` 和 `/etc/go-music-dl/admin.txt`（`username=` / `password=`），写入 Songloft → GoMusicDL →「账号登录」，然后逐个音源测试二维码接口。路径不同时用 `--songloft-env`、`--gmd-admin` 指定；管理员密码也可以从 `GMD_ADMIN_USER` / `GMD_ADMIN_PASS` 环境变量传入。
+
+也可以手工在插件设置「账号登录」里填 go-music-dl 管理员账号密码。注意：设置页如果是在写入之前打开的，先刷新页面再保存；页面上“账号登录”为空时点保存，会用空值覆盖已有凭据。
+
+已知限制：`QQ 音乐（微信）` 的上游状态查询约 15 秒，而插件 2026.10.16 版的轮询超时是 8 秒，该入口创建二维码后仍会提示“无法连接 go-music-dl”；请改用「QQ 音乐」入口。
 
 ## 3. 面板配置
 
