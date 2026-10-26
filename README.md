@@ -6,9 +6,15 @@
 
 > 演示图为苹果风主题的合成示例，不含真实账号、设备、内网 IP 或摄像头画面。
 
+## 交流群
+
+QQ 群：**378097343**（miot-panel 交流群）。扫码加入，反馈部署问题、功能建议和更新通知。
+
+<img src="screenshots/qq-group.png" alt="miot-panel QQ 交流群二维码" width="240">
+
 ## 下载
 
-最新发布包：<https://github.com/liaozhenqiang/onecloud-miot-panel/releases/latest>
+最新发布包：<https://github.com/liaozhenqiang/miot-panel/releases/latest>
 
 Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NAS 可直接加载通用多架构镜像，也可用构建上下文自行构建。
 
@@ -72,14 +78,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t onecloud-miot-panel:0.3.0 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.0 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
 docker load -i miot-panel-v0.3.0-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data onecloud-miot-panel:0.3.0
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.0
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -131,8 +137,8 @@ sudo bash miot-panel-v0.3.0-linux-installer.run
 手动源码安装：
 
 ```bash
-git clone https://github.com/liaozhenqiang/onecloud-miot-panel.git
-cd onecloud-miot-panel
+git clone https://github.com/liaozhenqiang/miot-panel.git
+cd miot-panel
 sudo bash install.sh
 ```
 
@@ -144,7 +150,7 @@ cd miot-panel-dist
 sudo bash install.sh
 ```
 
-发布包下载：<https://github.com/liaozhenqiang/onecloud-miot-panel/releases/latest>
+发布包下载：<https://github.com/liaozhenqiang/miot-panel/releases/latest>
 
 默认安装到 `/opt/miot-panel`，监听 **80**，服务名 `miot-cloud`。
 

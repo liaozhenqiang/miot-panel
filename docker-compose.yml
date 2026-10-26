@@ -1,7 +1,7 @@
 services:
   panel:
     build: .
-    image: onecloud-miot-panel:0.3.0
+    image: miot-panel:0.3.0
     container_name: miot-panel
     restart: unless-stopped
     ports:
