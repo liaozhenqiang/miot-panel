@@ -34,7 +34,7 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY miot-cloud.py cloud_panel.html admin.html camera.html \
-     manifest.webmanifest sw.js sensor_models.json /app/
+     manifest.webmanifest sw.js sensor_models.json miot_models.json.gz /app/
 COPY icons /app/icons
 
 RUN groupadd --gid 10001 panel \

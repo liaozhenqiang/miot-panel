@@ -67,6 +67,23 @@ body{background:
 .card.sensor .sensorRow b{display:block;font-size:22px;line-height:1.15;color:var(--txt);font-weight:700;}
 .card.sensor .sensorHint{font-size:13px;color:var(--muted);margin-top:8px;padding-left:12px;}
 .badge.sensor{background:rgba(67,209,125,.12);color:#43d17d;}
+.capsTools{display:flex;gap:6px;align-items:flex-start;flex-shrink:0;}
+.capsBtn{border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--muted);border-radius:9px;font-size:12px;line-height:1;padding:7px 8px;cursor:pointer;white-space:nowrap;}
+.capsBtn:hover{color:var(--txt);border-color:var(--accent);}
+.capsBody{flex:1;overflow:auto;padding:12px 20px 20px;display:grid;gap:4px;}
+.capsSection{font-size:13px;color:var(--muted);margin:8px 0 2px;font-weight:700;letter-spacing:.5px;}
+.capRow{display:grid;grid-template-columns:minmax(96px,.9fr) minmax(150px,1.4fr);gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);}
+.capRow .cl{font-size:15px;line-height:1.3;}
+.capRow .cl small{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
+.capRow select,.capRow input[type=number]{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--txt);font:inherit;font-size:15px;padding:8px 9px;}
+.capRange{display:flex;align-items:center;gap:8px;}
+.capRange input[type=range]{flex:1;accent-color:var(--accent);min-width:0;}
+.capVal{min-width:48px;text-align:right;color:var(--txt);font-size:14px;font-variant-numeric:tabular-nums;}
+.capToggle{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--muted);font-weight:700;font-size:14px;padding:9px 12px;cursor:pointer;}
+.capToggle.on{background:rgba(67,209,125,.16);border-color:rgba(67,209,125,.45);color:#43d17d;}
+.capActions{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0;}
+.capAction{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--txt);font-weight:650;font-size:14px;padding:9px 13px;cursor:pointer;}
+.capEmpty{font-size:14px;color:var(--muted);padding:18px 0;line-height:1.6;}
 .assistant{position:fixed;inset:0;z-index:80;background:rgba(8,12,22,.62);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:22px;}
 .assistantSheet{width:min(760px,100%);max-height:min(86vh,780px);background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 80px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden;}
 .assistantHead{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);}
@@ -728,6 +745,15 @@ body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-
   <div class="foot"><span id="foot">数据每 15 秒刷新 · 仅显示当前家庭</span><div class="dots" id="dots"></div><span id="updated"></span></div>
 </div>
 <div class="msg" id="msg"></div>
+<div class="assistant hidden" id="caps" onclick="if(event.target===this)closeCaps()">
+  <div class="assistantSheet" role="dialog" aria-modal="true" aria-labelledby="capsName">
+    <div class="assistantHead">
+      <div class="who"><b id="capsName">更多控制</b><span id="capsStatus">正在读取设备能力…</span></div>
+      <button class="assistantClose" onclick="closeCaps()" aria-label="关闭">×</button>
+    </div>
+    <div class="capsBody" id="capsBody"></div>
+  </div>
+</div>
 <div class="assistant hidden" id="assistant" onclick="if(event.target===this)closeAssistant()">
   <div class="assistantSheet" role="dialog" aria-modal="true" aria-labelledby="aName">
     <div class="assistantHead">
@@ -753,7 +779,7 @@ var API='';
 if(navigator.maxTouchPoints>0||'ontouchstart' in window)document.body.classList.add('touch');
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
 document.addEventListener('contextmenu',function(e){e.preventDefault();});
-document.addEventListener('keydown',function(e){if(e.key==='Escape'){var a=document.getElementById('assistant');if(a&&!a.classList.contains('hidden'))closeAssistant();}});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){var a=document.getElementById('assistant');if(a&&!a.classList.contains('hidden'))closeAssistant();var c=document.getElementById('caps');if(c&&!c.classList.contains('hidden'))closeCaps();}});
 var devices=[], camCards=[], speakerCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='dark', statusData=null;
 var speakerCfg={enabled:false,text_enabled:false,voice_enabled:false,answer_mode:'speak',max_chars:200,speakers:[]};
 var assistantSpeaker=null, assistantChatTimer=null, assistantVoiceTimer=null, assistantVoiceSince=0, assistantVoiceHeard=false, assistantVoiceBaseline='', assistantTaskId='', assistantLastAnswer='', voiceLastAnswer='', assistantVoiceStarted=0;
@@ -942,7 +968,7 @@ function cardHTML(d,wide){
   }
   var on=isOn(d.power);
   var h='<div class="card'+(wide?' span2':'')+(d.role==='ac'?' ac':'')+(on?' on':'')+(d.online?'':' offline')+(d.blind?' blind':'')+'">';
-  h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div>'+(d.blind?'<span class="badge blind">盲控</span>':'')+'</div>';
+  h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div><div class="capsTools">'+(d.blind?'<span class="badge blind">盲控</span>':'')+'<button class="capsBtn" onclick="event.stopPropagation();openCaps(\''+d.did+'\')" title="更多控制">更多</button></div></div>';
   if(d.blind){
     h+='<div class="blindHint">状态不可读 · 可直接发送开/关指令</div><div class="actions"><button class="btn small" onclick="blind(\''+d.did+'\',true,this)">开</button><button class="btn small ghost" onclick="blind(\''+d.did+'\',false,this)">关</button></div>';
     return h+'</div>';
@@ -1250,6 +1276,98 @@ function closeAssistant(){
   assistantSpeaker=null;
   aget('assistant').classList.add('hidden');
   document.body.classList.remove('assistantOpen');
+}
+var capsDid='',capsData=null;
+function openCaps(did){
+  if(editing)return;
+  capsDid=did;capsData=null;
+  aget('capsName').textContent='更多控制';
+  aget('capsStatus').textContent='正在读取设备能力…';
+  aget('capsBody').innerHTML='<div class="capEmpty">加载中…</div>';
+  aget('caps').classList.remove('hidden');
+  document.body.classList.add('assistantOpen');
+  loadCaps();
+}
+function closeCaps(){
+  capsDid='';capsData=null;
+  aget('caps').classList.add('hidden');
+  document.body.classList.remove('assistantOpen');
+}
+function loadCaps(){
+  if(!capsDid)return;
+  fetch(API+'/api/caps?did='+encodeURIComponent(capsDid)).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.ok){
+      aget('capsName').textContent=(d&&d.name)||'更多控制';
+      aget('capsStatus').textContent=(d&&d.error)||'读取失败';
+      aget('capsBody').innerHTML='<div class="capEmpty">'+esc((d&&d.error)||'该设备没有可用的通用控制')+'</div>';
+      return;
+    }
+    capsData=d;
+    aget('capsName').textContent=d.name||'更多控制';
+    aget('capsStatus').textContent=(d.online?'在线':'离线')+' · '+esc(d.model||'')+' · 通用 MIoT 控制';
+    renderCaps();
+  }).catch(function(e){
+    aget('capsStatus').textContent='读取失败';
+    aget('capsBody').innerHTML='<div class="capEmpty">读取失败：'+esc(e)+'</div>';
+  });
+}
+function capRangeLabel(el,unit){
+  var v=el.parentNode.querySelector('.capVal');
+  if(v)v.textContent=el.value+(unit||'');
+}
+function renderCaps(){
+  if(!capsData)return;
+  var props=capsData.props||[],actions=capsData.actions||[];
+  var html='';
+  if(props.length){
+    html+='<div class="capsSection">可写属性</div>';
+    html+=props.map(function(p){
+      var label='<div class="cl">'+esc(p.label||p.token)+'<small>'+esc(p.token)+'</small></div>';
+      var ctl='';
+      if(p.kind==='bool'){
+        var on=!!p.value;
+        ctl='<button class="capToggle'+(on?' on':'')+'" onclick="capSet('+p.siid+','+p.piid+','+(on?'false':'true')+',this)">'+(on?'已开启':'已关闭')+'</button>';
+      }else if(p.kind==='enum'){
+        var opts=(p.options||[]).map(function(o){return '<option value="'+esc(o.value)+'"'+(String(o.value)===String(p.value)?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
+        ctl='<select onchange="capSet('+p.siid+','+p.piid+',this.value,this)">'+opts+'</select>';
+      }else if(p.kind==='range'){
+        var r=p.range||[0,100,1],lo=Number(r[0]),hi=Number(r[1]),step=Number(r[2])||1;
+        var val=(p.value===null||p.value===undefined)?lo:p.value;
+        ctl='<div class="capRange"><input type="range" min="'+lo+'" max="'+hi+'" step="'+step+'" value="'+val+'" oninput="capRangeLabel(this,\''+esc(p.unit||'')+'\')" onchange="capSet('+p.siid+','+p.piid+',this.value,this)"><span class="capVal">'+esc(val)+(esc(p.unit||''))+'</span></div>';
+      }else if(p.kind==='number'){
+        ctl='<input type="number" value="'+(p.value===null||p.value===undefined?'':esc(p.value))+'" onchange="capSet('+p.siid+','+p.piid+',this.value,this)">';
+      }
+      if(!ctl)return '';
+      return '<div class="capRow">'+label+ctl+'</div>';
+    }).join('');
+  }
+  if(actions.length){
+    html+='<div class="capsSection">设备动作</div><div class="capActions">';
+    html+=actions.map(function(a){return '<button class="capAction" onclick="capAction('+a.siid+','+a.aiid+',this)">'+esc(a.label||a.token)+'</button>';}).join('');
+    html+='</div>';
+  }
+  if(!html)html='<div class="capEmpty">该设备没有可用的通用属性或动作。</div>';
+  aget('capsBody').innerHTML=html;
+}
+function capSet(siid,piid,value,el){
+  if(!capsDid)return;
+  if(el)el.disabled=true;
+  fetch(API+'/api/set_prop',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({did:capsDid,siid:siid,piid:piid,value:value})}).then(function(r){return r.json();}).then(function(d){
+    if(el)el.disabled=false;
+    if(d&&d.ok){toast('已写入');setTimeout(loadCaps,450);}
+    else toast((d&&d.msg)||'写入失败',true);
+  }).catch(function(e){if(el)el.disabled=false;toast('请求失败：'+e,true);});
+}
+function capAction(siid,aiid,el){
+  if(!capsDid)return;
+  if(el)el.disabled=true;
+  fetch(API+'/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({did:capsDid,siid:siid,aiid:aiid})}).then(function(r){return r.json();}).then(function(d){
+    if(el)el.disabled=false;
+    if(d&&d.ok){toast('已执行');setTimeout(loadCaps,500);}
+    else toast((d&&d.msg)||'执行失败',true);
+  }).catch(function(e){if(el)el.disabled=false;toast('请求失败：'+e,true);});
 }
 function stopSpeakerChat(){
   if(assistantChatTimer){clearTimeout(assistantChatTimer);assistantChatTimer=null;}

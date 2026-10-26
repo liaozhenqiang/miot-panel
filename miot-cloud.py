@@ -33,6 +33,7 @@ BLE/Zigbee 子设备和传感器通常无法通过云端 RPC 读写，面板会�
 import os
 import sys
 import json
+import gzip
 import time
 import socket
 import threading
@@ -1103,6 +1104,207 @@ def _sensor_props(model):
 _load_sensor_models()
 _load_sensor_specs()
 
+# ---- 通用设备能力：全量 model→type、可写属性/动作 ----
+MIOT_MODEL_FILE = os.path.join(APP_DIR, "miot_models.json.gz")
+DEVICE_SPEC_FILE = os.path.join(ROOT, "miot_device_specs.json")
+MIOT_MODEL_TYPES = {}
+DEVICE_SPECS = {}
+DEVICE_SPEC_TRY = {}
+DEVICE_SPEC_LOCK = threading.RLock()
+GEN_PROP_TOKENS = {
+    "on", "switch", "power", "mode", "target-temperature", "temperature",
+    "target-humidity", "humidity", "fan-level", "speed-level", "fan-percent",
+    "brightness", "color-temperature", "horizontal-swing", "vertical-swing",
+    "vertical-angle", "horizontal-angle", "swing", "sleep-mode", "eco", "heater",
+    "dryer", "uv", "winter-mode", "quick-cool-switch", "mute", "volume",
+    "play-loop-mode", "position", "target-position", "percentage", "light",
+    "memory", "default-power-on-state", "anti-flicker", "physical-controls-locked",
+    "child-lock", "lock-state", "ringtone",
+}
+GEN_PROP_LABELS = {
+    "on": "电源", "switch": "开关", "power": "电源", "mode": "模式",
+    "target-temperature": "目标温度", "temperature": "温度",
+    "target-humidity": "目标湿度", "humidity": "湿度", "fan-level": "风速",
+    "speed-level": "档位", "fan-percent": "风速百分比", "brightness": "亮度",
+    "color-temperature": "色温", "horizontal-swing": "左右摆风",
+    "vertical-swing": "上下摆风", "vertical-angle": "上下角度",
+    "horizontal-angle": "左右角度", "swing": "摆风",
+    "sleep-mode": "睡眠模式", "eco": "节能", "heater": "辅热", "dryer": "干燥",
+    "uv": "UV 杀菌", "winter-mode": "冬季模式", "quick-cool-switch": "快速制冷",
+    "mute": "静音", "volume": "音量", "play-loop-mode": "循环模式",
+    "position": "位置", "target-position": "目标位置", "percentage": "百分比",
+    "light": "指示灯", "memory": "断电记忆",
+    "default-power-on-state": "上电状态", "anti-flicker": "防闪烁",
+    "physical-controls-locked": "童锁", "child-lock": "童锁",
+    "lock-state": "锁定", "ringtone": "铃声",
+}
+GEN_UNITS = {"celsius": "°C", "percentage": "%", "arcdegrees": "°",
+             "minutes": "分钟", "seconds": "秒", "watt": "W", "V": "V"}
+GEN_ACTION_TOKENS = {
+    "toggle", "turn-left", "turn-right", "toggle-mode", "loop-gear",
+    "play", "pause", "stop", "previous", "next", "wake-up", "play-radio",
+    "start", "dock", "return-to-charge", "start-charge", "stop-charge",
+}
+GEN_ACTION_LABELS = {
+    "toggle": "切换", "turn-left": "左转", "turn-right": "右转",
+    "toggle-mode": "切换模式", "loop-gear": "循环档位", "play": "播放",
+    "pause": "暂停", "stop": "停止", "previous": "上一首", "next": "下一首",
+    "wake-up": "唤醒", "play-radio": "播放电台", "start": "启动",
+    "dock": "回充", "return-to-charge": "回充", "start-charge": "开始充电",
+    "stop-charge": "停止充电",
+}
+
+
+def _load_miot_models():
+    data = {}
+    try:
+        with gzip.open(MIOT_MODEL_FILE, "rt", encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            data = {str(k): str(v) for k, v in raw.items() if v}
+    except Exception as e:
+        LOG.warning("full miot model table unavailable: %s", e)
+    if not data:
+        data = dict(SENSOR_MODEL_TYPES)
+    MIOT_MODEL_TYPES.clear()
+    MIOT_MODEL_TYPES.update(data)
+
+
+def _load_device_specs():
+    try:
+        with open(DEVICE_SPEC_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for model, caps in raw.items():
+                if isinstance(caps, dict):
+                    DEVICE_SPECS[str(model)] = caps
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        LOG.warning("device spec cache load failed: %s", e)
+
+
+def _save_device_specs():
+    try:
+        os.makedirs(os.path.dirname(DEVICE_SPEC_FILE), exist_ok=True)
+        tmp = DEVICE_SPEC_FILE + ".tmp"
+        with DEVICE_SPEC_LOCK:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(DEVICE_SPECS, f, ensure_ascii=False, separators=(",", ":"))
+            os.replace(tmp, DEVICE_SPEC_FILE)
+        try:
+            os.chmod(DEVICE_SPEC_FILE, 0o600)
+        except OSError:
+            pass
+    except Exception as e:
+        LOG.warning("device spec cache save failed: %s", e)
+
+
+def _enum_options(raw):
+    out = []
+    for item in raw or []:
+        if not isinstance(item, dict) or "value" not in item:
+            continue
+        label = item.get("comment") or item.get("description")
+        if not label:
+            label = str(item.get("value"))
+        out.append({"value": item.get("value"), "label": str(label)})
+    return out
+
+
+def _device_caps(model):
+    model = str(model or "")
+    if not model:
+        return None
+    with DEVICE_SPEC_LOCK:
+        cached = DEVICE_SPECS.get(model)
+    if cached is not None:
+        return cached
+    now = time.time()
+    if now < DEVICE_SPEC_TRY.get(model, 0):
+        return None
+    DEVICE_SPEC_TRY[model] = now + 300
+    type_urn = MIOT_MODEL_TYPES.get(model)
+    if not type_urn:
+        return None
+    try:
+        req = urllib.request.Request(
+            SENSOR_SPEC_API + "?type=" + urllib.parse.quote(type_urn, safe=""),
+            headers={"User-Agent": "miot-panel/0.3"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            spec = json.loads(resp.read() or b"{}")
+    except Exception as e:
+        LOG.warning("device spec fetch failed: %s (%s)", model, e)
+        return None
+    props = []
+    actions = []
+    seen = set()
+    for svc in spec.get("services") or []:
+        if not isinstance(svc, dict):
+            continue
+        siid = svc.get("iid")
+        for prop in svc.get("properties") or []:
+            if not isinstance(prop, dict):
+                continue
+            ptype = str(prop.get("type") or "")
+            parts = ptype.split(":")
+            token = parts[3] if len(parts) > 3 and parts[2] == "property" else ""
+            if not token or token not in GEN_PROP_TOKENS or token in seen:
+                continue
+            if "write" not in (prop.get("access") or []):
+                continue
+            fmt = prop.get("format") or ""
+            if fmt == "string":
+                continue
+            piid = prop.get("iid")
+            if not isinstance(siid, int) or not isinstance(piid, int):
+                continue
+            options = _enum_options(prop.get("value-list"))
+            rng = prop.get("value-range")
+            if options:
+                kind = "enum"
+            elif isinstance(rng, list) and len(rng) >= 2:
+                kind = "range"
+            elif fmt == "bool":
+                kind = "bool"
+            elif fmt in ("uint8", "uint16", "uint32", "int8", "int16", "int32"):
+                kind = "number"
+            elif fmt in ("float",):
+                kind = "number"
+            else:
+                continue
+            seen.add(token)
+            unit = GEN_UNITS.get(prop.get("unit") or "", prop.get("unit") or "")
+            props.append({
+                "siid": siid, "piid": piid, "token": token,
+                "label": GEN_PROP_LABELS.get(token, token.replace("-", " ")),
+                "kind": kind, "format": fmt, "unit": unit,
+                "range": rng if kind == "range" else None,
+                "options": options,
+            })
+        for action in svc.get("actions") or []:
+            if not isinstance(action, dict):
+                continue
+            atype = str(action.get("type") or "")
+            parts = atype.split(":")
+            token = parts[3] if len(parts) > 3 and parts[2] == "action" else ""
+            if token not in GEN_ACTION_TOKENS or action.get("in"):
+                continue
+            aiid = action.get("iid")
+            if not isinstance(siid, int) or not isinstance(aiid, int):
+                continue
+            actions.append({"siid": siid, "aiid": aiid, "token": token,
+                            "label": GEN_ACTION_LABELS.get(token, token.replace("-", " "))})
+    caps = {"type": type_urn, "props": props, "actions": actions}
+    with DEVICE_SPEC_LOCK:
+        DEVICE_SPECS[model] = caps
+    _save_device_specs()
+    return caps
+
+
+_load_miot_models()
+_load_device_specs()
+
 # 计量属性：key -> (siid, piid, 倍率, 单位)
 MODEL_METRICS = {
     "lxzn.switch.cbcsmj": [
@@ -1595,6 +1797,111 @@ def cloud_set_prop(did, model, cmd, value):
     else:
         ok = jr.get("code") == 0 or jr.get("message") == "ok"
     return (True, None) if ok else (False, str(jr.get("message") or jr))
+
+def cloud_set_cap(did, siid, piid, value):
+    c = get_cloud()
+    if not c:
+        return False, "未登录"
+    try:
+        jr = _miotspec(c, "/v2/miotspec/prop/set",
+                       {"params": [{"did": did, "siid": siid,
+                                    "piid": piid, "value": value}]})
+        res = jr.get("result")
+        if isinstance(res, dict):
+            res = [res]
+        codes = [x.get("code") for x in (res or []) if isinstance(x, dict)]
+        if codes and all(code in (0, 1) for code in codes):
+            return True, None
+        msg = str((res[0] or {}).get("message") or jr.get("message") or "")[:160]
+        if msg:
+            return False, msg
+    except Exception as e:
+        LOG.warning("generic set failed: %s", str(e)[:120])
+    try:
+        jr = _rpc(c, did, "set_properties",
+                  [{"siid": siid, "piid": piid, "value": value}])
+        res = jr.get("result")
+        if isinstance(res, dict):
+            res = [res]
+        codes = [x.get("code") for x in (res or []) if isinstance(x, dict)]
+        if codes and all(code in (0, 1) for code in codes):
+            return True, None
+        return False, str(jr.get("message") or "写入失败")[:160]
+    except Exception as e:
+        return False, str(e)[:160]
+
+
+def cloud_call_action(did, siid, aiid):
+    c = get_cloud()
+    if not c:
+        return False, "未登录"
+    params = [{"did": did, "siid": siid, "aiid": aiid, "in": []}]
+    try:
+        jr = _miotspec(c, "/v2/miotspec/action", {"params": params})
+        res = jr.get("result")
+        if isinstance(res, dict):
+            res = [res]
+        codes = [x.get("code") for x in (res or []) if isinstance(x, dict)]
+        if codes and all(code in (0, 1) for code in codes):
+            return True, None
+        msg = str((res[0] or {}).get("message") or jr.get("message") or "")[:160]
+        if msg:
+            return False, msg
+    except Exception as e:
+        LOG.warning("generic action failed: %s", str(e)[:120])
+    try:
+        jr = _rpc(c, did, "do_action",
+                  [{"siid": siid, "aiid": aiid, "in": []}])
+        res = jr.get("result")
+        if isinstance(res, dict):
+            res = [res]
+        codes = [x.get("code") for x in (res or []) if isinstance(x, dict)]
+        if codes and all(code in (0, 1) for code in codes):
+            return True, None
+        return False, str(jr.get("message") or "动作执行失败")[:160]
+    except Exception as e:
+        return False, str(e)[:160]
+
+
+def _caps_values(c, did, props):
+    if not props:
+        return {}
+    try:
+        vals = _miotspec_values(
+            c, did, [(p["siid"], p["piid"]) for p in props])
+    except Exception:
+        return {}
+    return vals
+
+
+def _coerce_cap(prop, raw):
+    kind = prop.get("kind")
+    if kind == "bool":
+        if isinstance(raw, str):
+            return raw.strip().lower() in ("1", "true", "on", "open", "yes")
+        return bool(raw)
+    if kind == "enum":
+        for option in prop.get("options") or []:
+            if str(option.get("value")) == str(raw):
+                return option.get("value")
+        raise ValueError("不在可选范围内")
+    if kind == "range":
+        rng = prop.get("range") or [0, 0, 1]
+        num = float(raw)
+        lo, hi = float(rng[0]), float(rng[1])
+        if num < lo or num > hi:
+            raise ValueError("超出范围")
+        fmt = prop.get("format") or ""
+        if fmt.startswith("uint") or fmt.startswith("int"):
+            return int(round(num))
+        return round(num, 3)
+    if kind == "number":
+        fmt = prop.get("format") or ""
+        if fmt.startswith("uint") or fmt.startswith("int"):
+            return int(raw)
+        return float(raw)
+    raise ValueError("不支持的类型")
+
 
 def cloud_get_state(did, model):
     c = get_cloud()
@@ -2656,6 +2963,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_status()
         elif u.path == "/api/devices":
             self.api_devices()
+        elif u.path == "/api/caps":
+            self.api_caps(u)
         elif u.path == "/api/cameras":
             self.api_cameras(u)
         elif u.path == "/api/camera_state":
@@ -2699,6 +3008,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_verify(body)
         elif u.path == "/api/control":
             self.api_control(body)
+        elif u.path == "/api/set_prop":
+            self.api_set_prop(body)
+        elif u.path == "/api/action":
+            self.api_action(body)
         elif u.path == "/api/layout":
             self.api_layout(body)
         elif u.path == "/api/theme":
@@ -2828,6 +3141,88 @@ class Handler(BaseHTTPRequestHandler):
                 item["temp_min"], item["temp_max"] = prof.get("temp_range", (16, 30))
             devs.append(item)
         self._send(200, {"devices": devs, "ts": DEV_TS, "layout": load_layout()})
+
+    def api_caps(self, u=None):
+        q = urllib.parse.parse_qs(u.query) if u else {}
+        did = str((q.get("did") or [""])[0] or "")
+        d = find_device(did)
+        if not d:
+            self._send(404, {"ok": False, "error": "设备不存在或未刷新"})
+            return
+        caps = _device_caps(d["model"])
+        if not caps or not (caps.get("props") or caps.get("actions")):
+            self._send(200, {"ok": False, "error": "该型号没有可用的通用控制",
+                             "name": d["name"], "model": d["model"]})
+            return
+        c = get_cloud()
+        props = [dict(p) for p in caps.get("props") or []]
+        values = _caps_values(c, did, props) if (c and d.get("online")) else {}
+        for p in props:
+            p["value"] = values.get((p["siid"], p["piid"]))
+        self._send(200, {"ok": True, "did": did, "name": d["name"],
+                         "model": d["model"], "online": d.get("online"),
+                         "props": props, "actions": caps.get("actions") or []})
+
+    def api_set_prop(self, body):
+        did = str(body.get("did") or "")
+        d = find_device(did)
+        if not d:
+            self._send(404, {"ok": False, "msg": "设备不存在或未刷新"})
+            return
+        if d["role"] == "sensor":
+            self._send(400, {"ok": False, "msg": "传感器为只读设备"})
+            return
+        if not d.get("online"):
+            self._send(200, {"ok": False, "msg": "设备离线"})
+            return
+        try:
+            siid = int(body.get("siid"))
+            piid = int(body.get("piid"))
+        except Exception:
+            self._send(400, {"ok": False, "msg": "属性参数无效"})
+            return
+        caps = _device_caps(d["model"]) or {}
+        prop = next((p for p in caps.get("props") or []
+                     if p["siid"] == siid and p["piid"] == piid), None)
+        if not prop:
+            self._send(400, {"ok": False, "msg": "该属性不允许控制"})
+            return
+        try:
+            value = _coerce_cap(prop, body.get("value"))
+        except Exception as e:
+            self._send(400, {"ok": False, "msg": "值无效：%s" % e})
+            return
+        ok, err = cloud_set_cap(did, siid, piid, value)
+        LOG.info("set_prop %s %s-%s=%s -> %s", did, siid, piid, value,
+                 "OK" if ok else (err or "fail"))
+        self._send(200, {"ok": ok, "msg": "" if ok else err,
+                         "value": value if ok else None})
+
+    def api_action(self, body):
+        did = str(body.get("did") or "")
+        d = find_device(did)
+        if not d:
+            self._send(404, {"ok": False, "msg": "设备不存在或未刷新"})
+            return
+        if not d.get("online"):
+            self._send(200, {"ok": False, "msg": "设备离线"})
+            return
+        try:
+            siid = int(body.get("siid"))
+            aiid = int(body.get("aiid"))
+        except Exception:
+            self._send(400, {"ok": False, "msg": "动作参数无效"})
+            return
+        caps = _device_caps(d["model"]) or {}
+        action = next((a for a in caps.get("actions") or []
+                       if a["siid"] == siid and a["aiid"] == aiid), None)
+        if not action:
+            self._send(400, {"ok": False, "msg": "该动作不允许执行"})
+            return
+        ok, err = cloud_call_action(did, siid, aiid)
+        LOG.info("action %s %s-%s -> %s", did, siid, aiid,
+                 "OK" if ok else (err or "fail"))
+        self._send(200, {"ok": ok, "msg": "" if ok else err})
 
     def api_cameras(self, u=None):
         q = urllib.parse.parse_qs(u.query) if u else {}

@@ -6,6 +6,7 @@ cloud_settings.json
 cloud_devices.json
 cloud_states.json
 miot_sensor_specs.json
+miot_device_specs.json
 *.bak
 *.bak-*
 __pycache__/
