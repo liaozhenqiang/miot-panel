@@ -874,6 +874,8 @@ def get_cloud():
 def suggest_role(model, name):
     m = (model or "").lower()
     n = (name or "").lower()
+    if str(model or "") in SENSOR_MODEL_TYPES:
+        return "sensor"
     if any(k in m + n for k in ["light", "lamp", "bulb", "灯", "yeelight", "吸顶"]):
         return "light"
     if any(k in m + n for k in ["curtain", "窗帘", "blind"]):
@@ -919,6 +921,144 @@ MODEL_PROFILES = {
         "modes": [(2, "制冷"), (5, "制热"), (4, "送风"), (3, "除湿")],
     },
 }
+
+# 传感器不按型号写死：sensor_models.json 是 miot-spec 注册表的型号表，
+# 运行时再按 type 拉取属性定义，自动识别温度/湿度/电量等 siid/piid。
+SENSOR_MODEL_FILE = os.path.join(APP_DIR, "sensor_models.json")
+SENSOR_SPEC_FILE = os.path.join(ROOT, "miot_sensor_specs.json")
+SENSOR_SPEC_API = os.environ.get(
+    "MIOT_SPEC_API", "https://miot-spec.org/miot-spec-v2/instance")
+SENSOR_MODEL_TYPES = {}
+SENSOR_SPECS = {}
+SENSOR_SPEC_TRY = {}
+SENSOR_SPEC_LOCK = threading.RLock()
+SENSOR_PROP_KEYS = {
+    "temperature": ("temp", "温度", "°C"),
+    "relative-humidity": ("humidity", "湿度", "%"),
+    "humidity": ("humidity", "湿度", "%"),
+    "battery-level": ("battery", "电量", "%"),
+    "pm2.5": ("pm25", "PM2.5", "µg/m³"),
+    "pm2.5-density": ("pm25", "PM2.5", "µg/m³"),
+    "pm10-density": ("pm10", "PM10", "µg/m³"),
+    "co2-density": ("co2", "CO₂", "ppm"),
+    "tvoc-density": ("tvoc", "TVOC", "mg/m³"),
+    "formaldehyde-density": ("formaldehyde", "甲醛", "mg/m³"),
+    "illumination": ("illumination", "光照", "lx"),
+    "atmospheric-pressure": ("pressure", "气压", "hPa"),
+}
+SENSOR_PROP_ORDER = {
+    "temp": 0, "humidity": 1, "battery": 2, "pm25": 3, "pm10": 4,
+    "co2": 5, "tvoc": 6, "formaldehyde": 7, "illumination": 8, "pressure": 9,
+}
+
+
+def _load_sensor_models():
+    data = {}
+    try:
+        with open(SENSOR_MODEL_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            data = {str(k): str(v) for k, v in raw.items() if v}
+    except Exception as e:
+        LOG.warning("sensor model table unavailable: %s", e)
+    # 即使型号表缺失，也保留两个已验证型号
+    data.setdefault("miaomiaoce.sensor_ht.t2",
+                    "urn:miot-spec-v2:device:temperature-humidity-sensor:0000A00A:miaomiaoce-t2:1")
+    data.setdefault("vchon.sensor_ht.mbs17",
+                    "urn:miot-spec-v2:device:temperature-humidity-sensor:0000A00A:vchon-mbs17:1")
+    SENSOR_MODEL_TYPES.clear()
+    SENSOR_MODEL_TYPES.update(data)
+
+
+def _load_sensor_specs():
+    try:
+        with open(SENSOR_SPEC_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for model, props in raw.items():
+                if isinstance(props, list):
+                    clean = [p for p in props if isinstance(p, dict)
+                             and isinstance(p.get("siid"), int)
+                             and isinstance(p.get("piid"), int)]
+                    SENSOR_SPECS[str(model)] = clean
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        LOG.warning("sensor spec cache load failed: %s", e)
+
+
+def _save_sensor_specs():
+    try:
+        os.makedirs(os.path.dirname(SENSOR_SPEC_FILE), exist_ok=True)
+        tmp = SENSOR_SPEC_FILE + ".tmp"
+        with SENSOR_SPEC_LOCK:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(SENSOR_SPECS, f, ensure_ascii=False, separators=(",", ":"))
+            os.replace(tmp, SENSOR_SPEC_FILE)
+        try:
+            os.chmod(SENSOR_SPEC_FILE, 0o600)
+        except OSError:
+            pass
+    except Exception as e:
+        LOG.warning("sensor spec cache save failed: %s", e)
+
+
+def _sensor_props(model):
+    model = str(model or "")
+    if not model:
+        return []
+    with SENSOR_SPEC_LOCK:
+        cached = SENSOR_SPECS.get(model)
+    if cached is not None:
+        return cached
+    now = time.time()
+    if now < SENSOR_SPEC_TRY.get(model, 0):
+        return []
+    SENSOR_SPEC_TRY[model] = now + 300
+    type_urn = SENSOR_MODEL_TYPES.get(model)
+    if not type_urn:
+        return []
+    try:
+        url = SENSOR_SPEC_API + "?type=" + urllib.parse.quote(type_urn, safe="")
+        req = urllib.request.Request(url, headers={"User-Agent": "miot-panel/0.3"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            spec = json.loads(resp.read() or b"{}")
+    except Exception as e:
+        LOG.warning("sensor spec fetch failed: %s (%s)", model, e)
+        return []
+    props = []
+    seen = set()
+    for svc in spec.get("services") or []:
+        if not isinstance(svc, dict):
+            continue
+        siid = svc.get("iid")
+        for prop in svc.get("properties") or []:
+            if not isinstance(prop, dict):
+                continue
+            ptype = str(prop.get("type") or "")
+            parts = ptype.split(":")
+            token = parts[3] if len(parts) > 3 and parts[2] == "property" else ""
+            meta = SENSOR_PROP_KEYS.get(token)
+            if not meta or meta[0] in seen:
+                continue
+            access = prop.get("access") or []
+            if access and "read" not in access:
+                continue
+            piid = prop.get("iid")
+            if not isinstance(siid, int) or not isinstance(piid, int):
+                continue
+            seen.add(meta[0])
+            props.append({"key": meta[0], "label": meta[1], "unit": meta[2],
+                          "siid": siid, "piid": piid})
+    props.sort(key=lambda p: SENSOR_PROP_ORDER.get(p["key"], 99))
+    with SENSOR_SPEC_LOCK:
+        SENSOR_SPECS[model] = props
+    _save_sensor_specs()
+    return props
+
+
+_load_sensor_models()
+_load_sensor_specs()
 
 # 计量属性：key -> (siid, piid, 倍率, 单位)
 MODEL_METRICS = {
@@ -1122,7 +1262,10 @@ def fetch_devices():
         model = dev.get("model") or ""
         online = bool(dev.get("isOnline"))
         role = suggest_role(model, name)
-        if role not in CONTROL_ROLES or did in hidden:
+        if role not in CONTROL_ROLES:
+            if role != "sensor" or model not in SENSOR_MODEL_TYPES:
+                continue
+        if did in hidden:
             continue
         wan = str(dev.get("internet_ip") or "")
         lan = str(dev.get("localip") or "")
@@ -1414,6 +1557,21 @@ def cloud_get_state(did, model):
     c = get_cloud()
     if not c:
         return {}
+    if model in SENSOR_MODEL_TYPES:
+        props = _sensor_props(model)
+        if not props:
+            return None
+        try:
+            vals = _miotspec_values(
+                c, did, [(p["siid"], p["piid"]) for p in props])
+        except Exception:
+            vals = {}
+        out = {}
+        for p in props:
+            value = vals.get((p["siid"], p["piid"]))
+            if value is not None:
+                out[p["key"]] = value
+        return {"values": out} if out else None
     prof = profile_for(model)
     specs = [{"siid": prof["power"][0], "piid": prof["power"][1]}]
     for k in ("temp", "mode"):
@@ -1443,11 +1601,15 @@ def cloud_get_states(devs):
         return None
     req = []
     for d in devs:
-        prof = profile_for(d["model"])
-        specs = [prof["power"]]
-        for k in ("temp", "mode"):
-            if k in prof:
-                specs.append(prof[k])
+        if d["model"] in SENSOR_MODEL_TYPES:
+            props = _sensor_props(d["model"])
+            specs = [(p["siid"], p["piid"]) for p in props]
+        else:
+            prof = profile_for(d["model"])
+            specs = [prof["power"]]
+            for k in ("temp", "mode"):
+                if k in prof:
+                    specs.append(prof[k])
         for siid, piid in specs:
             req.append({"did": d["did"], "siid": siid, "piid": piid})
     if not req:
@@ -1464,6 +1626,15 @@ def cloud_get_states(devs):
         return None
     states = {}
     for d in devs:
+        if d["model"] in SENSOR_MODEL_TYPES:
+            new = {}
+            for p in _sensor_props(d["model"]):
+                v = vals.get((str(d["did"]), p["siid"], p["piid"]))
+                if v is not None:
+                    new[p["key"]] = v
+            if new:
+                states[str(d["did"])] = {"values": new}
+            continue
         prof = profile_for(d["model"])
         power = vals.get((str(d["did"]), prof["power"][0], prof["power"][1]))
         if power is None:
@@ -2549,8 +2720,11 @@ class Handler(BaseHTTPRequestHandler):
     def api_status(self):
         auth = _load_auth()
         supported = sum(1 for d in DEVICES if STATE.get(d["did"], {}).get("supported"))
+        sensors = sum(1 for d in DEVICES if d["role"] == "sensor"
+                      and STATE.get(d["did"], {}).get("supported"))
         blind = sum(1 for d in DEVICES
-                    if d["online"] and not STATE.get(d["did"], {}).get("supported"))
+                    if d["role"] != "sensor" and d["online"]
+                    and not STATE.get(d["did"], {}).get("supported"))
         with WEATHER_LOCK:
             weather = dict(WEATHER)
         theme = load_settings().get("theme", "dark")
@@ -2563,7 +2737,9 @@ class Handler(BaseHTTPRequestHandler):
                          "weather_label": CONFIG.get("weather_label") or "天气",
                          "page_size": int(CONFIG.get("page_size") or 10),
                          "device_count": supported + blind,
-                         "supported_count": supported, "blind_count": blind,
+                         "supported_count": supported,
+                         "controllable_count": supported - sensors,
+                         "sensor_count": sensors, "blind_count": blind,
                          "weather": weather or None, "theme": theme,
                          "active_page": ({"id": page["active"], "name": page["name"],
                                           "version": page["version"]}
@@ -2590,7 +2766,18 @@ class Handler(BaseHTTPRequestHandler):
                     "icon": ROLE_ICON.get(d["role"], "🔧"),
                     "power": st.get("power") if d["online"] else None,
                     "metrics": st.get("metrics") or {}}
-            if d["role"] == "ac" and "mode" in prof:
+            if d["role"] == "sensor":
+                values = st.get("values") or {}
+                item["values"] = [
+                    {"key": p["key"], "label": p["label"], "unit": p["unit"],
+                     "value": values[p["key"]]}
+                    for p in _sensor_props(d["model"])
+                    if p["key"] in values and values[p["key"]] is not None
+                ]
+                for key in ("temp", "humidity", "battery"):
+                    item[key] = values.get(key) if d["online"] else None
+                item["readonly"] = True
+            elif d["role"] == "ac" and "mode" in prof:
                 item["temp"] = st.get("temp") if d["online"] else None
                 item["mode"] = st.get("mode") if d["online"] else None
                 item["modes"] = prof.get("modes") or []
@@ -2732,6 +2919,9 @@ class Handler(BaseHTTPRequestHandler):
         d = find_device(did)
         if not d:
             self._send(404, {"ok": False, "msg": "设备不存在或已刷新，请重载页面"})
+            return
+        if d.get("role") == "sensor":
+            self._send(400, {"ok": False, "msg": "温湿度传感器为只读设备"})
             return
         if not d.get("online"):
             self._send(200, {"ok": False, "msg": "设备离线"})

@@ -52,6 +52,21 @@ body{background:
 .card.speaker .spkHint{font-size:13px;color:var(--muted);margin-top:5px;}
 .card.speaker .spkBtn{margin-top:0;flex:1;width:100%;display:flex;align-items:center;justify-content:center;height:64px;border-radius:18px;background:#7c3aed;color:#fff;font-weight:700;font-size:21px;letter-spacing:.5px;}
 .card.speaker .spkBtn:after{content:'›';font-size:27px;line-height:1;margin-left:7px;opacity:.85;}
+.card.sensor{background:linear-gradient(160deg,rgba(67,209,125,.14),rgba(255,255,255,.055));border-color:rgba(67,209,125,.30);}
+.card.sensor:before{background:#43d17d;opacity:1;}
+.card.sensor .sensorMain{display:flex;align-items:flex-end;gap:18px;margin-top:8px;padding-left:12px;}
+.card.sensor .sensorTemp{font-size:54px;line-height:.9;font-weight:750;letter-spacing:-2px;}
+.card.sensor .sensorTemp small{font-size:17px;font-weight:650;letter-spacing:0;margin-left:2px;}
+.card.sensor .sensorHum{font-size:14px;line-height:1.25;color:var(--muted);padding-bottom:4px;}
+.card.sensor .sensorHum b{display:block;font-size:24px;color:var(--txt);}
+.card.sensor .sensorBat{font-size:13px;color:var(--muted);margin-left:auto;padding-bottom:5px;}
+.card.sensor .sensorExtras{font-size:13px;color:var(--muted);margin-top:6px;padding-left:12px;display:flex;flex-wrap:wrap;gap:4px 14px;}
+.card.sensor .sensorExtras b{color:var(--txt);font-weight:650;}
+.card.sensor .sensorList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin-top:8px;padding-left:12px;}
+.card.sensor .sensorRow{font-size:13px;color:var(--muted);}
+.card.sensor .sensorRow b{display:block;font-size:22px;line-height:1.15;color:var(--txt);font-weight:700;}
+.card.sensor .sensorHint{font-size:13px;color:var(--muted);margin-top:8px;padding-left:12px;}
+.badge.sensor{background:rgba(67,209,125,.12);color:#43d17d;}
 .assistant{position:fixed;inset:0;z-index:80;background:rgba(8,12,22,.62);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:22px;}
 .assistantSheet{width:min(760px,100%);max-height:min(86vh,780px);background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 80px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden;}
 .assistantHead{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);}
@@ -195,6 +210,8 @@ body.light .card.camera{background:linear-gradient(160deg,#eaf4ff,#fff);border-c
 body.light .card.camera .viewBtn{background:#2f7fe0;color:#fff;}
 body.light .card.speaker{background:linear-gradient(160deg,#f5f0ff,#fff);border-color:rgba(124,58,237,.26);}
 body.light .card.speaker .spkBtn{background:#7c3aed;color:#fff;}
+body.light .card.sensor{background:linear-gradient(160deg,#effaf3,#fff);border-color:rgba(67,209,125,.28);}
+body.light .badge.sensor{background:#e8f8ee;color:#15803d;}
 body.light .assistant{background:rgba(15,23,42,.42);}
 body.light .assistantSheet{background:#fff;}
 body.light .assistantFoot{background:#f8fafc;}
@@ -786,6 +803,7 @@ function toggleTheme(){
 }
 function statusHTML(d){
   if(!d.online)return '<span class="dot off"></span>离线';
+  if(d.role==='sensor')return '<span class="dot on"></span>在线';
   if(d.blind)return '<span class="dot"></span>状态未知';
   if(d.power===null||d.power===undefined)return '<span class="dot"></span>状态未知';
   return '<span class="dot '+(isOn(d.power)?'on':'')+'"></span>'+(isOn(d.power)?'已开启':'已关闭');
@@ -812,7 +830,8 @@ function allCards(){
 }
 function updateCount(){
   var s=statusData;if(!s)return;
-  var txt=(s.supported_count||0)+' 可控';
+  var txt=((s.controllable_count!==undefined&&s.controllable_count!==null)?s.controllable_count:(s.supported_count||0))+' 可控';
+  if(s.sensor_count)txt+=' · '+s.sensor_count+' 传感器';
   if(s.blind_count)txt+=' · '+s.blind_count+' 盲控';
   if(camCards.length)txt+=' · '+camCards.length+' 摄像头';
   if(speakerCards.length)txt+=' · '+speakerCards.length+' 音箱';
@@ -901,6 +920,26 @@ function cardHTML(d,wide){
   if(d.type==='weather')return weatherCard();
   if(d.type==='calendar')return calendarCard();
   if(d.type==='energy')return energyCard();
+  if(d.role==='sensor'){
+    var vals=d.values||[];
+    var byKey={};
+    vals.forEach(function(v){if(v&&v.key)byKey[v.key]=v;});
+    var tv=byKey.temp, hv=byKey.humidity, bv=byKey.battery;
+    var hh='<div class="card sensor'+(wide?' span2':'')+(d.online?'':' offline')+'">';
+    hh+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'感')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div><span class="badge sensor">传感器</span></div>';
+    if(tv||hv){
+      var t=(tv&&tv.value!==null&&tv.value!==undefined)?Number(tv.value).toFixed(1):'--';
+      var hu=(hv&&hv.value!==null&&hv.value!==undefined)?Number(hv.value).toFixed(0):'--';
+      var ba=(bv&&bv.value!==null&&bv.value!==undefined)?Number(bv.value):null;
+      var extras=vals.filter(function(v){return v&&['temp','humidity','battery'].indexOf(v.key)<0;});
+      hh+='<div class="sensorMain"><div class="sensorTemp">'+t+'<small>°C</small></div><div class="sensorHum">湿度<b>'+hu+'%</b></div>'+(ba!==null?'<div class="sensorBat">电量 '+ba+'%</div>':'')+'</div>';
+      if(extras.length)hh+='<div class="sensorExtras">'+extras.map(function(v){return '<span>'+esc(v.label)+' <b>'+esc(v.value)+esc(v.unit||'')+'</b></span>';}).join('')+'</div>';
+    }else{
+      hh+='<div class="sensorList">'+vals.map(function(v){return '<div class="sensorRow">'+esc(v.label)+'<b>'+esc(v.value)+esc(v.unit||'')+'</b></div>';}).join('')+'</div>';
+    }
+    hh+='<div class="sensorHint">云端只读 · 自动刷新</div></div>';
+    return hh;
+  }
   var on=isOn(d.power);
   var h='<div class="card'+(wide?' span2':'')+(d.role==='ac'?' ac':'')+(on?' on':'')+(d.online?'':' offline')+(d.blind?' blind':'')+'">';
   h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div>'+(d.blind?'<span class="badge blind">盲控</span>':'')+'</div>';
@@ -931,14 +970,25 @@ function orderedCards(list){
   list.forEach(function(d){if(!d._key)d._key=(d.type==='camera'?'cam:':'dev:')+d.did;});
   var cameras=list.filter(function(d){return d.type==='camera';});
   var speakers=list.filter(function(d){return d.type==='speaker';});
+  var sensors=list.filter(function(d){return d.role==='sensor';});
   var supported=list.filter(function(d){return d.type!=='camera'&&d.type!=='speaker'&&!d.blind;});
   var blind=list.filter(function(d){return d.type!=='camera'&&d.type!=='speaker'&&d.blind;});
   var widgets=widgetDefs();
   var byKey={};
   supported.concat(widgets).concat(speakers).concat(cameras).concat(blind).forEach(function(d){byKey[d._key]=d;});
-  var defaultOrder=widgets.concat(speakers).concat(cameras).concat(supported).concat(blind).map(function(d){return d._key;});
+  var defaultOrder=widgets.concat(sensors).concat(speakers).concat(cameras).concat(supported).concat(blind).map(function(d){return d._key;});
   var order=(layoutOrder&&layoutOrder.length)?layoutOrder.slice():[];
+  var missingSensors=sensors.filter(function(d){return order.indexOf(d._key)<0;}).map(function(d){return d._key;});
   var missingNew=speakers.concat(cameras).filter(function(d){return order.indexOf(d._key)<0;}).map(function(d){return d._key;});
+  if(order.length&&missingSensors.length){
+    var ins=0,first=-1,last=-1;
+    for(var si=0;si<order.length;si++){
+      if(order[si].indexOf('widget:')===0){if(first<0)first=si;last=si;}
+      else if(first>=0)break;
+    }
+    if(first>=0)ins=last+1;
+    order=order.slice(0,ins).concat(missingSensors,order.slice(ins));
+  }
   if(order.length&&missingNew.length){
     var ins=-1;
     for(var i=0;i<order.length;i++){if(order[i].indexOf('widget:')===0)ins=i;}
@@ -995,7 +1045,7 @@ function editCardHTML(d){
   var nm=isW?d.name:esc(d.name);
   var md=isW?d.md:(d.type==='speaker'?esc((d.model||'小爱音箱')+(d.group?' · '+d.group:'')):esc(d.model));
   var ico=isW?d.icon:(d.icon||'');
-  var badge=d.type==='camera'?'摄像头':(d.type==='speaker'?'音箱':(isW?'组件':(d.blind?'盲控':'设备')));
+  var badge=d.type==='camera'?'摄像头':(d.type==='speaker'?'音箱':(d.role==='sensor'?'传感器':(isW?'组件':(d.blind?'盲控':'设备'))));
   return '<div class="editCard" data-key="'+esc(d._key)+'">'
     +'<div class="editHandle">≡</div>'
     +'<div class="editBody"><div class="nm"><span class="ico">'+ico+'</span>'+nm+'</div><div class="md">'+md+'</div></div>'

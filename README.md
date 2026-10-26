@@ -215,7 +215,7 @@ Linux 默认使用 journald，Windows/Docker 使用文件日志；后台日志�
 - 天气来自 `wttr.in`，后台填英文城市名（如 `Beijing`），服务端缓存 30 分钟
 - 日历由前端生成，无需外部服务
 - 天气为空时面板显示“天气暂不可用”
-- 室内温湿度：BLE 温湿度计通常无法通过小米云端 RPC 读取；需要 WiFi 温湿度传感器或 BLE 网关
+- 室内温湿度：按 MIoT 规格自动识别传感器属性，支持可云端读取的温度、湿度、电量、PM2.5、CO₂ 等；型号表来自 miot-spec 注册表，不写死具体型号。纯 BLE 且没有云网关/绑定的设备仍会隐藏
 
 ## 面板操作
 
@@ -413,13 +413,14 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 
 - **登录要验证码**：小米风控；按提示在手机完成短信/邮箱验证。登录成功后 token 会保存。
 - **设备按钮没反应**：该设备可能离线、云端状态不可读，或型号不支持对应属性；在后台设备表看在线状态。面板优先用官方 v2 miotspec 接口读写，仍有设备显示“盲控”时检查它是否在线/是否被网关正常转发；旧 `/home/rpc` 对部分设备会返回空结果，不要据此判断设备已离线。
-- **温湿度没有**：BLE 传感器云端无法 RPC，换 WiFi 传感器或加网关。
+- **温湿度没有**：面板会按 MIoT 型号表自动识别温度/湿度/电量等属性；如果设备是纯 BLE 且没有蓝牙网关/绑定，云端不会返回值，需要在米家绑定网关或使用 BLE 代理。
 - **天气空白**：`wttr.in` 可能被网络限制，或城市名不对；后台改城市或留空。
 - **端口 80 起不来**：检查是否被占用；改用 `MIOT_PORT=8080`；80 需要 root（服务默认 root）。
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
 
+- **v0.3.1（开发中，待打包）**：温湿度/环境传感器改为 MIoT 规格自动发现，不再限定具体型号；支持温度、湿度、电量、PM2.5、CO₂ 等可读属性，没数据的 BLE 设备自动隐藏。
 - **v0.3.0**（2026-10-26）：新增 Windows x64 一键安装 EXE（内置 Python、桌面/开始菜单、开机自启、kiosk 选项、卸载器）与便携 ZIP；新增 Linux `.run` 自解压安装（自动 Python、systemd 自启）与 Docker `.run` 一键 compose；新增 PWA manifest/service worker/图标、Android 客户端部署说明；配置目录拆分为 APP_DIR/ROOT，支持 Linux/Windows/macOS 数据路径、跨平台日志读取/清理、Windows 默认 8080 端口、跨平台局域网 IP 与扫码 Host 处理；提供 linux/amd64、arm64、armv7 通用多架构镜像 tar。
 - **v0.2.0**（2026-10-25）：`/admin` 音乐与 AI 音箱统一管理；Songloft + MIoT 插件；小爱扫码绑定；多房间；go-music-dl 在线搜歌；语音口令；OpenAI 兼容大模型、自定义人设与小爱原生 TTS；音乐中心后台免登录（IndexedDB SSO 桥，不再二次输入账号密码）；小爱扫码后的 `xiaomiio` 票据自动合并为面板设备登录（一次扫码同时控制设备与音箱，保留面板独立登录回退）；首页音箱卡片与文字/语音助手，后台支持开关、默认设备、按音箱显隐和静音回答；新增 5 套结构级风格主题（苹果/魅族/赛博/莫兰迪/像素，共 7 套）、大号触屏按钮与统一图标、摄像头页主题同步、自定义 HTML 首页管理与日志清理；云端控制改用官方 v2 miotspec 批量读写，修复盲控设备的状态与控制，并避免逐台轮询触发限流。
 - **v0.1.1**（2026-10-23）：7 寸 1080p 字号与空调卡片布局优化；手机 ≤860px 单列滚动、隐藏分页、紧凑工具栏；手机排版编辑与滚动位置保持修复。
@@ -428,6 +429,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 ## 文件
 
 - `miot-cloud.py`：Python 服务（HTTP + 小米云 + 管理 API）
+- `sensor_models.json`：温湿度/环境传感器型号 → MIoT 规格 type 表（离线型号索引）
 - `cloud_panel.html`：墙面板页面（设备 + 摄像头卡片）
 - `admin.html`：后台页面
 - `camera.html`：摄像头页（列表 + go2rtc 单路播放器）
