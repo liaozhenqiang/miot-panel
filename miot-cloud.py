@@ -38,6 +38,7 @@ import time
 import socket
 import threading
 import logging
+from logging.handlers import RotatingFileHandler
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -94,7 +95,9 @@ def _attach_file_log():
         for h in logging.getLogger().handlers:
             if isinstance(h, logging.FileHandler) and os.path.abspath(h.baseFilename) == LOG_FILE:
                 return
-        fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+        fh = RotatingFileHandler(
+            LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3,
+            encoding="utf-8")
         fh.setFormatter(logging.Formatter(LOG_FORMAT))
         logging.getLogger().addHandler(fh)
     except Exception:
@@ -2028,6 +2031,7 @@ def cloud_get_metrics(did, model):
 
 # ----------------------------------------------------------------- 状态缓存 + 轮询
 STATE = {}        # did -> {online, power, temp, mode, supported, metrics}
+STATE_LOCK = threading.RLock()
 DEVICES = []      # 最近一次枚举
 DEV_TS = 0
 POLL_NO = 0
@@ -2059,8 +2063,9 @@ def poll_once():
         if devs is None:
             LOG.warning("poll fetch failed: %s", err)
             return
-        DEVICES = devs
-        DEV_TS = time.time()
+        with STATE_LOCK:
+            DEVICES = devs
+            DEV_TS = time.time()
         try:
             with open(DEV_CACHE, "w", encoding="utf-8") as f:
                 json.dump({"ts": DEV_TS, "devices": devs}, f, ensure_ascii=False)
@@ -2069,13 +2074,14 @@ def poll_once():
             pass
         now = time.time()
         due = []
-        for d in devs:
-            st = dict(STATE.get(d["did"], {}))
-            st["online"] = d["online"]
-            STATE[d["did"]] = st
-            if (d["online"] and
-                    (st.get("supported") or now >= TRY_NEXT.get(d["did"], 0))):
-                due.append(d)
+        with STATE_LOCK:
+            for d in devs:
+                st = dict(STATE.get(d["did"], {}))
+                st["online"] = d["online"]
+                STATE[d["did"]] = st
+                if (d["online"] and
+                        (st.get("supported") or now >= TRY_NEXT.get(d["did"], 0))):
+                    due.append(d)
         states = cloud_get_states(due) if due else {}
         if states is None:
             # 批量接口异常时退回逐台，兼容只支持旧 RPC 的设备/账号。
@@ -2085,35 +2091,43 @@ def poll_once():
                 if new is not None:
                     states[str(d["did"])] = new
                 time.sleep(0.25)
-        for d in due:
-            st = STATE.get(d["did"], {})
-            new = states.get(str(d["did"]))
-            if new is not None:
-                st.update(new)
-                st["supported"] = True
-                TRY_NEXT.pop(d["did"], None)
-            else:
-                TRY_NEXT[d["did"]] = now + 120
-            STATE[d["did"]] = st
+        with STATE_LOCK:
+            for d in due:
+                st = STATE.get(d["did"], {})
+                new = states.get(str(d["did"]))
+                if new is not None:
+                    st.update(new)
+                    st["supported"] = True
+                    TRY_NEXT.pop(d["did"], None)
+                else:
+                    TRY_NEXT[d["did"]] = now + 120
+                STATE[d["did"]] = st
         if POLL_NO == 1 or POLL_NO % 3 == 0:
             for d in devs:
-                st = STATE.get(d["did"], {})
-                if not (d["online"] and st.get("supported")):
-                    continue
-                if d["model"] not in MODEL_METRICS:
-                    continue
+                with STATE_LOCK:
+                    st = STATE.get(d["did"], {})
+                    if not (d["online"] and st.get("supported")):
+                        continue
+                    if d["model"] not in MODEL_METRICS:
+                        continue
                 m = cloud_get_metrics(d["did"], d["model"])
                 if m:
-                    st["metrics"] = m
-                    STATE[d["did"]] = st
+                    with STATE_LOCK:
+                        st = STATE.get(d["did"], {})
+                        st["metrics"] = m
+                        STATE[d["did"]] = st
                 time.sleep(0.15)
         try:
+            with STATE_LOCK:
+                snapshot_states = {k: dict(v) for k, v in STATE.items()}
             with open(STATE_CACHE, "w", encoding="utf-8") as f:
-                json.dump({"ts": time.time(), "states": STATE}, f, ensure_ascii=False)
+                json.dump({"ts": time.time(), "states": snapshot_states}, f, ensure_ascii=False)
             os.chmod(STATE_CACHE, 0o600)
         except Exception:
             pass
-        supported = sum(1 for d in devs if STATE.get(d["did"], {}).get("supported"))
+        with STATE_LOCK:
+            supported = sum(1 for d in devs
+                            if STATE.get(d["did"], {}).get("supported"))
         LOG.info("poll ok: %d controllable / %d cloud-readable", len(devs), supported)
     except Exception as e:
         LOG.warning("poll error: %s", e)
@@ -2243,6 +2257,27 @@ ADMIN_SESSIONS = {}
 ADMIN_LOCK = threading.Lock()
 ADMIN_TTL = 12 * 3600
 ADMIN_COOKIE = "miot_admin"
+RATE_LOCK = threading.RLock()
+RATE_EVENTS = {}
+
+
+def _rate_ok(key, limit, window, min_interval=0.0):
+    """按 IP/动作滑动窗口限流；达到上限返回 False，不阻塞调用线程。"""
+    now = time.time()
+    with RATE_LOCK:
+        arr = [x for x in (RATE_EVENTS.get(key) or []) if now - x < window]
+        if arr and min_interval and now - arr[-1] < min_interval:
+            RATE_EVENTS[key] = arr
+            return False
+        if len(arr) >= limit:
+            RATE_EVENTS[key] = arr
+            return False
+        arr.append(now)
+        RATE_EVENTS[key] = arr
+        if len(RATE_EVENTS) > 5000:
+            for k in [k for k, v in RATE_EVENTS.items() if not v][:200]:
+                RATE_EVENTS.pop(k, None)
+    return True
 
 def admin_pin_set():
     return bool(CONFIG.get("admin_pin_hash"))
@@ -2886,6 +2921,9 @@ def _music_search_test(keyword):
 
 
 class Handler(BaseHTTPRequestHandler):
+    timeout = 30
+    max_body = 1024 * 1024
+
     def log_message(self, fmt, *args):
         try:
             LOG.info("%s %s", self.address_string(), fmt % args)
@@ -2996,7 +3034,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
-        length = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            self._send(400, {"ok": False, "error": "Content-Length 无效"})
+            return
+        if length < 0 or length > self.max_body:
+            self._send(413, {"ok": False, "error": "请求体超过 1MB"})
+            return
         raw = self.rfile.read(length) if length else b""
         try:
             body = json.loads(raw) if raw else {}
@@ -3075,12 +3120,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_status(self):
         auth = _load_auth()
-        supported = sum(1 for d in DEVICES if STATE.get(d["did"], {}).get("supported"))
-        sensors = sum(1 for d in DEVICES if d["role"] == "sensor"
-                      and STATE.get(d["did"], {}).get("supported"))
-        blind = sum(1 for d in DEVICES
+        with STATE_LOCK:
+            devices_snapshot = list(DEVICES)
+            states_snapshot = {k: dict(v) for k, v in STATE.items()}
+        supported = sum(1 for d in devices_snapshot
+                        if states_snapshot.get(d["did"], {}).get("supported"))
+        sensors = sum(1 for d in devices_snapshot if d["role"] == "sensor"
+                      and states_snapshot.get(d["did"], {}).get("supported"))
+        blind = sum(1 for d in devices_snapshot
                     if d["role"] != "sensor" and d["online"]
-                    and not STATE.get(d["did"], {}).get("supported"))
+                    and not states_snapshot.get(d["did"], {}).get("supported"))
         with WEATHER_LOCK:
             weather = dict(WEATHER)
         theme = load_settings().get("theme", "dark")
@@ -3106,8 +3155,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"devices": []})
             return
         devs = []
-        for d in DEVICES:
-            st = STATE.get(d["did"], {})
+        with STATE_LOCK:
+            devices_snapshot = list(DEVICES)
+            states_snapshot = {k: dict(v) for k, v in STATE.items()}
+        for d in devices_snapshot:
+            st = states_snapshot.get(d["did"], {})
             if not st.get("supported"):
                 if d["online"]:
                     devs.append({"did": d["did"], "name": d["name"],
@@ -3164,6 +3216,11 @@ class Handler(BaseHTTPRequestHandler):
                          "props": props, "actions": caps.get("actions") or []})
 
     def api_set_prop(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("control:" + ip, 120, 60, 0.1):
+            self._send(429, {"ok": False, "msg": "控制操作过于频繁，请稍后再试"},
+                       headers={"Retry-After": "60"})
+            return
         did = str(body.get("did") or "")
         d = find_device(did)
         if not d:
@@ -3199,6 +3256,11 @@ class Handler(BaseHTTPRequestHandler):
                          "value": value if ok else None})
 
     def api_action(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("control:" + ip, 120, 60, 0.1):
+            self._send(429, {"ok": False, "msg": "控制操作过于频繁，请稍后再试"},
+                       headers={"Retry-After": "60"})
+            return
         did = str(body.get("did") or "")
         d = find_device(did)
         if not d:
@@ -3331,6 +3393,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, _speaker_listen(sid, since))
 
     def api_login(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("login:" + ip, 5, 600, 1.0):
+            self._send(429, {"state": "error", "msg": "登录尝试过于频繁，请稍后再试"},
+                       headers={"Retry-After": "600"})
+            return
         user = (body.get("username") or "").strip()
         pwd = body.get("password") or ""
         if not user or not pwd:
@@ -3340,12 +3407,22 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, res)
 
     def api_verify(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("verify:" + ip, 10, 600, 0.3):
+            self._send(429, {"state": "error", "msg": "验证码尝试过于频繁，请稍后再试"},
+                       headers={"Retry-After": "600"})
+            return
         bid = body.get("bind_id") or ""
         code = body.get("code") or ""
         res = verify_finish(bid, code)
         self._send(200, res)
 
     def api_control(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("control:" + ip, 120, 60, 0.1):
+            self._send(429, {"ok": False, "msg": "控制操作过于频繁，请稍后再试"},
+                       headers={"Retry-After": "60"})
+            return
         did = str(body.get("did") or "")
         cmd = body.get("cmd") or "power"
         value = body.get("value")
@@ -3371,19 +3448,20 @@ class Handler(BaseHTTPRequestHandler):
         if not ok:
             self._send(200, {"ok": False, "msg": err})
             return
-        blind = not STATE.get(did, {}).get("supported")
-        if not blind:
-            st = STATE.get(did, {})
-            try:
-                if cmd == "power":
-                    st["power"] = bool(value)
-                elif cmd == "temp":
-                    st["temp"] = float(value)
-                else:
-                    st["mode"] = int(value)
-            except Exception:
-                pass
-            STATE[did] = st
+        with STATE_LOCK:
+            blind = not STATE.get(did, {}).get("supported")
+            if not blind:
+                st = STATE.get(did, {})
+                try:
+                    if cmd == "power":
+                        st["power"] = bool(value)
+                    elif cmd == "temp":
+                        st["temp"] = float(value)
+                    else:
+                        st["mode"] = int(value)
+                except Exception:
+                    pass
+                STATE[did] = st
         self._send(200, {"ok": True, "blind": blind})
 
     def api_layout(self, body):
@@ -3464,6 +3542,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True}, headers={"Set-Cookie": _admin_cookie_header(token)})
 
     def api_admin_login(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("admin_login:" + ip, 10, 600, 0.4):
+            self._send(429, {"ok": False, "msg": "PIN 尝试过于频繁，请 10 分钟后再试"},
+                       headers={"Retry-After": "600"})
+            return
         if not admin_pin_set():
             self._send(400, {"ok": False, "setup": True})
             return

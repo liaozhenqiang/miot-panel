@@ -968,7 +968,7 @@ function cardHTML(d,wide){
   }
   var on=isOn(d.power);
   var h='<div class="card'+(wide?' span2':'')+(d.role==='ac'?' ac':'')+(on?' on':'')+(d.online?'':' offline')+(d.blind?' blind':'')+'">';
-  h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div><div class="capsTools">'+(d.blind?'<span class="badge blind">盲控</span>':'')+'<button class="capsBtn" onclick="event.stopPropagation();openCaps(\''+d.did+'\')" title="更多控制">更多</button></div></div>';
+  h+='<div class="ctop"><div><div class="nm"><span class="ico">'+(d.icon||'')+'</span>'+esc(d.name)+'</div><div class="md">'+esc(d.model)+'</div><div class="status">'+statusHTML(d)+'</div></div><div class="capsTools">'+(d.blind?'<span class="badge blind">盲控</span>':'')+'<button class="capsBtn" data-did="'+esc(d.did)+'" onclick="event.stopPropagation();openCaps(this.dataset.did)" title="更多控制">更多</button></div></div>';
   if(d.blind){
     h+='<div class="blindHint">状态不可读 · 可直接发送开/关指令</div><div class="actions"><button class="btn small" onclick="blind(\''+d.did+'\',true,this)">开</button><button class="btn small ghost" onclick="blind(\''+d.did+'\',false,this)">关</button></div>';
     return h+'</div>';
