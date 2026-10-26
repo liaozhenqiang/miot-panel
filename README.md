@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.3.0-docker-installer.run
+sudo bash miot-panel-v0.3.3-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.0 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.3 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.3.0-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.0
+docker load -i miot-panel-v0.3.3-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.3
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.3.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.3.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.3.3-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.3-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.3.0-linux-installer.run
+sudo bash miot-panel-v0.3.3-linux-installer.run
 ```
 
 手动源码安装：
@@ -421,7 +421,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 
 ## 更新日志
 
-- **v0.3.1（开发中，待打包）**：温湿度/环境传感器改为 MIoT 规格自动发现，不再限定具体型号；支持温度、湿度、电量、PM2.5、CO₂ 等可读属性，没数据的 BLE 设备自动隐藏。新增全量 MIoT 型号索引（46,159 个型号）和通用属性/动作控制：卡片“更多”自动生成开关、滑杆、枚举、动作按钮；已对当前 15 台可控设备逐台写入当前值验证。安全加固：登录/验证码/管理 PIN/控制接口按 IP 限流，请求体上限 1MB、连接超时 30 秒，文件日志 5MB×3 轮转，轮询状态使用快照锁，依赖版本锁定。
+- **v0.3.3（2026-10-26）**：温湿度/环境传感器改为 MIoT 规格自动发现，不再限定具体型号；支持温度、湿度、电量、PM2.5、CO₂ 等可读属性，没数据的 BLE 设备自动隐藏。新增全量 MIoT 型号索引（46,159 个型号）和通用属性/动作控制：卡片“更多”自动生成开关、滑杆、枚举、动作按钮；已对当前 15 台可控设备逐台写入当前值验证。安全加固：登录/验证码/管理 PIN/控制接口按 IP 限流，请求体上限 1MB、连接超时 30 秒，文件日志 5MB×3 轮转，轮询状态使用快照锁，依赖版本锁定；天气源增加 Open-Meteo 备用；总闸/门锁类通用操作二次确认；控制操作写入审计日志。
 - **v0.3.0**（2026-10-26）：新增 Windows x64 一键安装 EXE（内置 Python、桌面/开始菜单、开机自启、kiosk 选项、卸载器）与便携 ZIP；新增 Linux `.run` 自解压安装（自动 Python、systemd 自启）与 Docker `.run` 一键 compose；新增 PWA manifest/service worker/图标、Android 客户端部署说明；配置目录拆分为 APP_DIR/ROOT，支持 Linux/Windows/macOS 数据路径、跨平台日志读取/清理、Windows 默认 8080 端口、跨平台局域网 IP 与扫码 Host 处理；提供 linux/amd64、arm64、armv7 通用多架构镜像 tar。
 - **v0.2.0**（2026-10-25）：`/admin` 音乐与 AI 音箱统一管理；Songloft + MIoT 插件；小爱扫码绑定；多房间；go-music-dl 在线搜歌；语音口令；OpenAI 兼容大模型、自定义人设与小爱原生 TTS；音乐中心后台免登录（IndexedDB SSO 桥，不再二次输入账号密码）；小爱扫码后的 `xiaomiio` 票据自动合并为面板设备登录（一次扫码同时控制设备与音箱，保留面板独立登录回退）；首页音箱卡片与文字/语音助手，后台支持开关、默认设备、按音箱显隐和静音回答；新增 5 套结构级风格主题（苹果/魅族/赛博/莫兰迪/像素，共 7 套）、大号触屏按钮与统一图标、摄像头页主题同步、自定义 HTML 首页管理与日志清理；云端控制改用官方 v2 miotspec 批量读写，修复盲控设备的状态与控制，并避免逐台轮询触发限流。
 - **v0.1.1**（2026-10-23）：7 寸 1080p 字号与空调卡片布局优化；手机 ≤860px 单列滚动、隐藏分页、紧凑工具栏；手机排版编辑与滚动位置保持修复。

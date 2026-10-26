@@ -375,10 +375,78 @@ def _wdesc(cur):
     except Exception:
         return ""
 
-def fetch_weather():
-    location = str(CONFIG.get("weather_location") or "").strip()
-    if not location:
+OPEN_METEO_CODES = {
+    0: "晴", 1: "少云", 2: "多云", 3: "阴", 45: "雾", 48: "雾凇",
+    51: "毛毛雨", 53: "毛毛雨", 55: "毛毛雨", 56: "冻雨", 57: "冻雨",
+    61: "小雨", 63: "中雨", 65: "大雨", 66: "冻雨", 67: "冻雨",
+    71: "小雪", 73: "中雪", 75: "大雪", 77: "雪粒", 80: "阵雨",
+    81: "阵雨", 82: "强阵雨", 85: "阵雪", 86: "强阵雪", 95: "雷雨",
+    96: "雷暴冰雹", 99: "雷暴冰雹",
+}
+
+
+def _open_meteo_text(code):
+    try:
+        return OPEN_METEO_CODES.get(int(code), "天气未知")
+    except Exception:
+        return "天气未知"
+
+
+def _fetch_open_meteo(location):
+    geo_url = ("https://geocoding-api.open-meteo.com/v1/search?"
+               + urllib.parse.urlencode(
+                   {"name": location, "count": 1, "language": "zh", "format": "json"}))
+    req = urllib.request.Request(geo_url, headers={"User-Agent": "miot-panel/0.3"})
+    with urllib.request.urlopen(req, timeout=12) as r:
+        geo = json.loads(r.read().decode("utf-8", "replace"))
+    places = geo.get("results") or []
+    if not places:
         return None
+    place = places[0]
+    lat, lon = place.get("latitude"), place.get("longitude")
+    if lat is None or lon is None:
+        return None
+    forecast_url = ("https://api.open-meteo.com/v1/forecast?"
+                    + urllib.parse.urlencode({
+                        "latitude": lat, "longitude": lon,
+                        "current": "temperature_2m,relative_humidity_2m,"
+                                   "apparent_temperature,weather_code,wind_speed_10m",
+                        "daily": "weather_code,temperature_2m_max,temperature_2m_min",
+                        "timezone": "auto", "forecast_days": 3,
+                    }))
+    req = urllib.request.Request(forecast_url, headers={"User-Agent": "miot-panel/0.3"})
+    with urllib.request.urlopen(req, timeout=12) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    cur = data.get("current") or {}
+    daily_data = data.get("daily") or {}
+    dates = daily_data.get("time") or []
+    codes = daily_data.get("weather_code") or []
+    highs = daily_data.get("temperature_2m_max") or []
+    lows = daily_data.get("temperature_2m_min") or []
+    daily = []
+    for i, date in enumerate(dates[:3]):
+        daily.append({
+            "date": date,
+            "max": int(round(float(highs[i] or 0))) if i < len(highs) else 0,
+            "min": int(round(float(lows[i] or 0))) if i < len(lows) else 0,
+            "text": _open_meteo_text(codes[i] if i < len(codes) else None),
+        })
+    if not cur:
+        return None
+    return {
+        "temp": int(round(float(cur.get("temperature_2m") or 0))),
+        "feels": int(round(float(cur.get("apparent_temperature") or 0))),
+        "humidity": int(round(float(cur.get("relative_humidity_2m") or 0))),
+        "wind": int(round(float(cur.get("wind_speed_10m") or 0))),
+        "text": _open_meteo_text(cur.get("weather_code")),
+        "high": daily[0]["max"] if daily else 0,
+        "low": daily[0]["min"] if daily else 0,
+        "daily": daily,
+        "ts": int(time.time()),
+    }
+
+
+def _fetch_weather_wttr(location):
     url = "https://wttr.in/%s?format=j1" % urllib.parse.quote(location)
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -407,6 +475,24 @@ def fetch_weather():
         "daily": daily,
         "ts": int(time.time()),
     }
+
+
+def fetch_weather():
+    location = str(CONFIG.get("weather_location") or "").strip()
+    if not location:
+        return None
+    try:
+        weather = _fetch_weather_wttr(location)
+        if weather:
+            return weather
+    except Exception as e:
+        LOG.warning("wttr.in weather failed: %s", str(e)[:120])
+    try:
+        return _fetch_open_meteo(location)
+    except Exception as e:
+        LOG.warning("open-meteo weather failed: %s", str(e)[:120])
+        return None
+
 
 def weather_loop():
     while True:
@@ -3250,7 +3336,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "msg": "值无效：%s" % e})
             return
         ok, err = cloud_set_cap(did, siid, piid, value)
-        LOG.info("set_prop %s %s-%s=%s -> %s", did, siid, piid, value,
+        LOG.info("audit set_prop ip=%s did=%s %s-%s=%s -> %s", ip, did, siid, piid, value,
                  "OK" if ok else (err or "fail"))
         self._send(200, {"ok": ok, "msg": "" if ok else err,
                          "value": value if ok else None})
@@ -3282,7 +3368,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "msg": "该动作不允许执行"})
             return
         ok, err = cloud_call_action(did, siid, aiid)
-        LOG.info("action %s %s-%s -> %s", did, siid, aiid,
+        LOG.info("audit action ip=%s did=%s %s-%s -> %s", ip, did, siid, aiid,
                  "OK" if ok else (err or "fail"))
         self._send(200, {"ok": ok, "msg": "" if ok else err})
 
@@ -3404,6 +3490,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"state": "error", "msg": "账号和密码不能为空"})
             return
         res = login_start(user, pwd)
+        LOG.info("audit login ip=%s result=%s", ip, res.get("state"))
         self._send(200, res)
 
     def api_verify(self, body):
@@ -3415,6 +3502,7 @@ class Handler(BaseHTTPRequestHandler):
         bid = body.get("bind_id") or ""
         code = body.get("code") or ""
         res = verify_finish(bid, code)
+        LOG.info("audit verify ip=%s result=%s", ip, res.get("state"))
         self._send(200, res)
 
     def api_control(self, body):
@@ -3443,7 +3531,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": False, "msg": "设备离线"})
             return
         ok, err = cloud_set_prop(did, d["model"], cmd, value)
-        LOG.info("control %s %s=%s -> %s", did, cmd, value,
+        LOG.info("audit control ip=%s did=%s cmd=%s=%s -> %s", ip, did, cmd, value,
                  "OK" if ok else (err or "fail"))
         if not ok:
             self._send(200, {"ok": False, "msg": err})
@@ -3555,8 +3643,10 @@ class Handler(BaseHTTPRequestHandler):
         expected = CONFIG.get("admin_pin_hash") or ""
         if not pin or not secrets.compare_digest(_pin_hash(pin, salt), expected):
             time.sleep(0.4)
+            LOG.warning("audit admin_login ip=%s result=fail", ip)
             self._send(401, {"ok": False, "msg": "PIN 不正确"})
             return
+        LOG.info("audit admin_login ip=%s result=ok", ip)
         token = _new_admin_session()
         self._send(200, {"ok": True}, headers={"Set-Cookie": _admin_cookie_header(token)})
 

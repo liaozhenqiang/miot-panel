@@ -1351,6 +1351,8 @@ function renderCaps(){
 }
 function capSet(siid,piid,value,el){
   if(!capsDid)return;
+  var prop=(capsData&&capsData.props?capsData.props:[]).filter(function(p){return p.siid===siid&&p.piid===piid;})[0];
+  if(prop&&prop.token==='on'&&/总闸|门闸|门锁|电闸/.test((capsData&&capsData.name)||'')&&!confirm('这是总闸/门锁类设备，确定切换电源吗？'))return;
   if(el)el.disabled=true;
   fetch(API+'/api/set_prop',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({did:capsDid,siid:siid,piid:piid,value:value})}).then(function(r){return r.json();}).then(function(d){
@@ -1361,6 +1363,7 @@ function capSet(siid,piid,value,el){
 }
 function capAction(siid,aiid,el){
   if(!capsDid)return;
+  if(/总闸|门闸|门锁|电闸/.test((capsData&&capsData.name)||'')&&!confirm('这是总闸/门锁类设备，确定执行该动作吗？'))return;
   if(el)el.disabled=true;
   fetch(API+'/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({did:capsDid,siid:siid,aiid:aiid})}).then(function(r){return r.json();}).then(function(d){
