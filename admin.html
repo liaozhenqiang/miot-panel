@@ -206,6 +206,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
           <div class="sub" id="accountLine">正在读取绑定状态…</div>
           <div class="row">
             <button class="primary" id="qrStartBtn" onclick="startMusicQR()">扫码绑定小米账号</button>
+            <button id="importAuthBtn" onclick="importPanelAuth()">从面板登录同步</button>
             <button class="danger hidden" id="unbindBtn" onclick="deleteMusicAccount()">解绑账号</button>
             <button onclick="loadMusicState(true)">刷新状态</button>
           </div>
@@ -430,9 +431,13 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <div class="row"><input id="newPin" type="password" placeholder="新 PIN（4-20 位）" style="max-width:260px"><button onclick="changePin()">修改 PIN</button></div>
       </section>
       <section class="card" id="secSystem">
-        <h2>维护</h2>
-        <div class="sub">重置只影响面板排版/主题，不会删除设备或登录态。</div>
+        <h2>维护与恢复默认</h2>
+        <div class="sub">调试配置出错时可按需要恢复：只重置外观不会影响设备；重置设置会保留后台 PIN 和小米登录；完全重置会重新进入首次向导。</div>
         <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="loadLogs()">查看日志</button></div>
+        <div class="sep"></div>
+        <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
+        <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
+        <div class="hint"><a href="/setup" style="color:var(--accent)">打开首次设置向导</a>，可重新检查 PIN、音乐中心和小米登录状态。</div>
       </section>
     </div>
 
@@ -1487,6 +1492,13 @@ async function adminLogout(){
   await api('/api/admin/logout',{});state=null;$('adminLogout').classList.add('hidden');
   show('loginView');
 }
+async function importPanelAuth(){
+  var r=await api('/api/admin/music/import_auth',{});
+  if(r.data.ok){
+    toast(r.data.already?'面板登录已在音乐中心':'已从面板登录同步到音乐中心');
+    await loadMusicState(true);
+  } else toast(r.data.error||(r.data.pending?'登录已暂存，连接音乐中心后自动同步':'同步失败'),true);
+}
 async function changePin(){
   var p=$('newPin').value;if(p.length<4||p.length>20){toast('PIN 长度需为 4-20 位',true);return;}
   var r=await api('/api/admin/pin',{pin:p});
@@ -1498,9 +1510,23 @@ async function xiaomiLogout(){
   if(r.data.ok){toast('已退出小米账号');load();}else toast(r.data.msg||'操作失败',true);
 }
 async function resetPanel(what){
-  if(!confirm('确定恢复默认？'))return;
+  var msg = what==='settings'
+    ? '将清空家庭过滤、改名、隐藏设备、天气、排版、自定义页面和音乐/AI 设置；后台 PIN 和小米登录会保留。确定继续？'
+    : what==='factory'
+      ? '完全重置会删除后台 PIN、小米登录、设备缓存和所有自定义设置，并重新进入首次设置向导。确定继续？'
+      : '确定恢复默认？';
+  if(!confirm(msg))return;
+  if(what==='settings'||what==='factory'){
+    var word=prompt('请输入 RESET 确认操作');
+    if(word!=='RESET'){toast('已取消');return;}
+  }
   var r=await api('/api/admin/reset',{what:what});
-  if(r.data.ok){toast('已恢复');load();}else toast('操作失败',true);
+  if(r.data.ok){
+    if(r.data.restarting){
+      toast('已重置，面板正在重启…');
+      setTimeout(function(){ location.href = what==='factory' ? '/setup' : '/admin'; }, 5000);
+    } else { toast('已恢复');load(); }
+  } else toast(r.data.msg||'操作失败',true);
 }
 async function loadLogs(){
   var r=await api('/api/admin/logs');

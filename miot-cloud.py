@@ -186,6 +186,7 @@ PLUGIN_ACCOUNT_FILE = os.environ.get(
     "MIOT_PLUGIN_ACCOUNT_FILE",
     "/var/lib/songloft/jsplugins_data/miot/data/accounts")
 PLUGIN_AUTH_BACKUP = os.path.join(ROOT, "micloud_auth.panel-backup.json")
+PLUGIN_PENDING_FILE = os.path.join(ROOT, "plugin_pending_auth.json")
 PLUGIN_AUTH_SOURCE = "plugin"
 DEV_CACHE = os.path.join(ROOT, "cloud_devices.json")
 STATE_CACHE = os.path.join(ROOT, "cloud_states.json")
@@ -194,7 +195,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.5.0"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -689,6 +690,8 @@ _IDENTITY_QS = {"sid": "xiaomiio", "mask": "0", "_locale": "en_US"}
 
 _lock = threading.Lock()
 PENDING = {}   # bind_id -> 验证中的 session 上下文
+QR_SESSIONS = {}   # session_id -> 原生扫码登录上下文
+QR_LOCK = threading.RLock()
 AUTH = None    # 当前登录态（内存缓存）
 AUTH_LOCK = threading.RLock()
 
@@ -1041,6 +1044,269 @@ def _sync_plugin_auth(force=False):
             LOG.info("panel Xiaomi login linked from MIoT plugin")
             return auth
         return current
+
+
+_IMPORT_LOCK = threading.Lock()
+_IMPORT_CACHE = {"ts": 0.0, "result": {}}
+
+
+def _read_pending_plugin_auth():
+    try:
+        with open(PLUGIN_PENDING_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("user_id") and data.get("pass_token"):
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _write_pending_plugin_auth(user_id, pass_token, username=""):
+    data = {"user_id": str(user_id), "pass_token": str(pass_token),
+            "username": str(username or user_id), "created": int(time.time())}
+    tmp = PLUGIN_PENDING_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, PLUGIN_PENDING_FILE)
+    return data
+
+
+def _clear_pending_plugin_auth():
+    try:
+        if os.path.exists(PLUGIN_PENDING_FILE):
+            os.remove(PLUGIN_PENDING_FILE)
+    except OSError:
+        pass
+
+
+def _plugin_connected():
+    try:
+        _, ver = _songloft_req("GET", "/api/v1/version", timeout=2)
+        return bool(isinstance(ver, dict) and str(ver.get("version") or ""))
+    except Exception:
+        return False
+
+
+def _plugin_accounts():
+    try:
+        _, acc = _songloft_req("GET", MIOT_PLUGIN_API + "/accounts", timeout=5)
+        data = acc.get("data") if isinstance(acc, dict) else []
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _import_panel_auth_to_plugin(force=False, auth=None):
+    """把面板的小米登录传给 Songloft MIoT 插件，免去第二次扫码。"""
+    pending = _read_pending_plugin_auth()
+    auth = auth or _load_auth() or pending
+    if pending and (not auth or str(auth.get("user_id") or "") != str(pending.get("user_id") or "")):
+        auth = pending
+    if not auth or not auth.get("user_id") or not auth.get("pass_token"):
+        return {"ok": False, "error": "没有可同步的小米登录"}
+    user_id = str(auth.get("user_id"))
+    pass_token = str(auth.get("pass_token"))
+    if not _plugin_connected():
+        if not pending:
+            _write_pending_plugin_auth(user_id, pass_token, auth.get("username") or "")
+        return {"ok": False, "pending": True,
+                "error": "音乐中心未连接，登录已暂存，连接后会自动同步"}
+    accounts = _plugin_accounts()
+    existing = None
+    for acc in accounts:
+        if not isinstance(acc, dict):
+            continue
+        if str(acc.get("user_id") or "") == user_id or str(acc.get("id") or "") == user_id:
+            existing = acc
+            break
+    if existing and not force and (existing.get("services") or {}):
+        _clear_pending_plugin_auth()
+        return {"ok": True, "already": True, "account_id": existing.get("id") or user_id}
+    account_id = str((existing or {}).get("id") or user_id)
+    try:
+        code, resp = _songloft_req("POST", MIOT_PLUGIN_API + "/auth/token", {
+            "account_id": account_id, "user_id": user_id, "pass_token": pass_token,
+        }, timeout=45)
+    except Exception as exc:
+        _write_pending_plugin_auth(user_id, pass_token, auth.get("username") or "")
+        return {"ok": False, "pending": True,
+                "error": "同步到音乐中心失败：%s" % str(exc)[:180]}
+    if code not in (200, 201, 202) or (isinstance(resp, dict) and resp.get("success") is False):
+        detail = ""
+        if isinstance(resp, dict):
+            detail = resp.get("error") or resp.get("detail") or ""
+        _write_pending_plugin_auth(user_id, pass_token, auth.get("username") or "")
+        return {"ok": False, "pending": True,
+                "error": (detail or "音乐中心拒绝了登录同步")[:220]}
+    _clear_pending_plugin_auth()
+    LOG.info("panel Xiaomi login imported to MIoT plugin")
+    return {"ok": True, "imported": True, "account_id": account_id}
+
+
+def _maybe_import_panel_auth(force=False):
+    now = time.time()
+    with _IMPORT_LOCK:
+        if not force and now - float(_IMPORT_CACHE.get("ts") or 0) < 30:
+            return dict(_IMPORT_CACHE.get("result") or {})
+    pending = _read_pending_plugin_auth()
+    auth = _load_auth()
+    if auth and auth.get("source") == PLUGIN_AUTH_SOURCE and not pending:
+        result = {"ok": True, "already": True, "source": "plugin"}
+    else:
+        result = _import_panel_auth_to_plugin(force=force, auth=auth or pending)
+    with _IMPORT_LOCK:
+        _IMPORT_CACHE["ts"] = time.time()
+        _IMPORT_CACHE["result"] = dict(result)
+    return result
+
+
+def _qr_cleanup_locked():
+    now = time.time()
+    for sid, s in list(QR_SESSIONS.items()):
+        if now - float(s.get("created") or 0) > 600:
+            QR_SESSIONS.pop(sid, None)
+    if len(QR_SESSIONS) > 20:
+        for sid in list(QR_SESSIONS)[:-20]:
+            QR_SESSIONS.pop(sid, None)
+
+
+def _qr_start():
+    """原生小米扫码登录：不依赖 Songloft，登录后再把凭据交给插件。"""
+    if segno is None:
+        raise RuntimeError("服务端缺少 segno 二维码组件")
+    sess = _new_session()
+    device_id = _rand(16).upper()
+    sess.headers["User-Agent"] = UA % device_id
+    sess.cookies.update({"sdkVersion": "3.8.6", "deviceId": device_id})
+    r = sess.get("https://account.xiaomi.com/pass/serviceLogin",
+                 params={"sid": "mijia", "_json": "true"}, timeout=15)
+    j = _to_json(r.text)
+    sign = str(j.get("_sign") or "")
+    qs = str(j.get("qs") or "")
+    callback = str(j.get("callback") or "")
+    if not sign or not qs or not callback:
+        raise RuntimeError("小米登录参数获取失败，请稍后重试")
+    params = {
+        "_qrsize": "240", "qs": qs, "sid": "mijia", "_sign": sign,
+        "callback": callback, "_json": "true",
+        "_dc": str(int(time.time() * 1000)),
+    }
+    r2 = sess.get("https://account.xiaomi.com/longPolling/loginUrl",
+                  params=params, timeout=15)
+    q = _to_json(r2.text)
+    code = int(q.get("code") or 0)
+    if code != 0:
+        raise RuntimeError("获取二维码失败（code=%s %s）" % (code, q.get("desc") or ""))
+    login_url = str(q.get("loginUrl") or "").strip()
+    poll_url = str(q.get("lp") or "").strip()
+    if not login_url.startswith("http") or not poll_url:
+        raise RuntimeError("小米未返回可用的登录二维码")
+    svg = build_qr(login_url)
+    if svg.lstrip().startswith("<svg") and "xmlns=" not in svg.split(">", 1)[0]:
+        svg = svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
+    data_url = "data:image/svg+xml;base64," + base64.b64encode(
+        svg.encode("utf-8")).decode("ascii")
+    sid = _rand(24)
+    with QR_LOCK:
+        _qr_cleanup_locked()
+        QR_SESSIONS[sid] = {
+            "sess": sess, "poll_url": poll_url, "created": time.time(),
+            "poll_count": 0, "in_flight": False, "non_zero": 0,
+            "device_id": device_id,
+        }
+    return {"ok": True, "session_id": sid, "qrcode_url": data_url,
+            "login_url": login_url, "expires_in": 120, "native": True}
+
+
+def _qr_poll(sid):
+    with QR_LOCK:
+        s = QR_SESSIONS.get(sid)
+        if not s:
+            return {"ok": False, "state": "expired",
+                    "message": "二维码已失效，请刷新"}
+        if s.get("in_flight"):
+            return {"ok": True, "state": "waiting", "message": "等待扫码…"}
+        s["in_flight"] = True
+    try:
+        with QR_LOCK:
+            s["poll_count"] = int(s.get("poll_count") or 0) + 1
+            count = s["poll_count"]
+        if count > 40:
+            with QR_LOCK:
+                QR_SESSIONS.pop(sid, None)
+            return {"ok": True, "state": "expired", "message": "二维码已过期，请刷新"}
+        try:
+            r = s["sess"].get(s["poll_url"], timeout=20,
+                              headers={"X-Fetch-Timeout-Ms": "19000"})
+        except Exception:
+            return {"ok": True, "state": "waiting", "message": "等待扫码…"}
+        if getattr(r, "status_code", 0) == 403:
+            with QR_LOCK:
+                QR_SESSIONS.pop(sid, None)
+            return {"ok": True, "state": "expired", "message": "二维码已过期，请刷新"}
+        try:
+            q = _to_json(r.text)
+        except Exception:
+            return {"ok": True, "state": "waiting", "message": "等待扫码…"}
+        code = int(q.get("code") or 0)
+        if code != 0:
+            with QR_LOCK:
+                s["non_zero"] = int(s.get("non_zero") or 0) + 1
+                streak = s["non_zero"]
+            if streak >= 2:
+                with QR_LOCK:
+                    QR_SESSIONS.pop(sid, None)
+                return {"ok": True, "state": "expired",
+                        "message": "二维码已过期，请刷新"}
+            return {"ok": True, "state": "waiting", "message": "等待扫码…"}
+        with QR_LOCK:
+            s["non_zero"] = 0
+        pass_token = str(q.get("passToken") or "")
+        user_id = str(q.get("userId") or "")
+        if not pass_token or not user_id:
+            if user_id:
+                return {"ok": True, "state": "scanned",
+                        "message": "已扫码，请在手机上确认"}
+            return {"ok": True, "state": "waiting", "message": "等待扫码…"}
+        auth = _refresh_xiaomiio_by_pass_token(pass_token, user_id, user_id)
+        if not auth:
+            with QR_LOCK:
+                QR_SESSIONS.pop(sid, None)
+            return {"ok": True, "state": "failed",
+                    "message": "扫码成功，但换取面板登录失败，请刷新二维码重试"}
+        auth["source"] = "qrcode"
+        auth["username"] = user_id
+        auth["pass_token"] = pass_token
+        auth["user_id"] = user_id
+        auth["c_user_id"] = q.get("cUserId") or auth.get("cuser_id")
+        auth["country"] = CONFIG.get("country") or "cn"
+        auth["expires_at"] = int(time.time()) + 10 * 3600
+        _save_auth(auth)
+        imported = _import_panel_auth_to_plugin(force=True, auth=auth)
+        with QR_LOCK:
+            QR_SESSIONS.pop(sid, None)
+        msg = "扫码登录成功"
+        if imported.get("ok") and imported.get("imported"):
+            msg += "，已同步到音乐中心"
+        elif imported.get("pending"):
+            msg += "，音乐中心未安装，登录已暂存"
+        return {"ok": True, "state": "success", "user_id": user_id,
+                "imported": bool(imported.get("ok") and imported.get("imported")),
+                "pending": bool(imported.get("pending")),
+                "plugin": imported, "message": msg}
+    finally:
+        with QR_LOCK:
+            if sid in QR_SESSIONS:
+                QR_SESSIONS[sid]["in_flight"] = False
+
+
+def _startup_import():
+    time.sleep(8)
+    try:
+        _maybe_import_panel_auth()
+    except Exception as exc:
+        LOG.debug("startup auth import failed: %s", exc)
 
 
 def _ensure_auth_fresh():
@@ -1881,6 +2147,7 @@ def _camera_p2p_url(c, did, model, ip):
     return "xiaomi://%s?%s" % (ip, urllib.parse.urlencode(q))
 
 def ensure_cameras(force=False):
+    ffmpeg_bin = _camera_ffmpeg_bin()
     with CAM_LOCK:
         if (force and CAM_CACHE["items"]
                 and time.time() - CAM_CACHE["ts"] < 30):
@@ -1888,7 +2155,7 @@ def ensure_cameras(force=False):
         if (not force and CAM_CACHE["items"]
                 and time.time() - CAM_CACHE["ts"] < CAM_TTL):
             return {"ok": True, "cameras": CAM_CACHE["items"],
-                    "transcode": bool(FFMPEG_BIN), "cached": True}
+                    "transcode": bool(ffmpeg_bin), "cached": True}
         c = get_cloud()
         if not c:
             raise RuntimeError("未登录小米账号")
@@ -1920,7 +2187,7 @@ def ensure_cameras(force=False):
                     ok, err = _go2rtc_put("cam_" + did, src)
                     if not ok:
                         raise RuntimeError(err)
-                    if FFMPEG_BIN:
+                    if ffmpeg_bin:
                         tsrc = ("ffmpeg:cam_%s#video=h264#width=640#height=360"
                                 "#bitrate=600k" % did)
                         ok, err = _go2rtc_put("cam_%s_h264" % did, tsrc)
@@ -1937,7 +2204,7 @@ def ensure_cameras(force=False):
         CAM_CACHE.update(ts=time.time(), items=items)
         LOG.info("cameras refreshed: %d", len(items))
         return {"ok": True, "cameras": items,
-                "transcode": bool(FFMPEG_BIN), "cached": False}
+                "transcode": bool(ffmpeg_bin), "cached": False}
 
 def ensure_camera_meta(force=False):
     with CAM_LOCK:
@@ -2549,7 +2816,7 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
 @media(max-width:640px){body{padding:12px}h1{font-size:21px}.card{padding:16px}.grid{grid-template-columns:1fr}.step{min-width:0;flex:1;font-size:11px}}
 </style></head><body>
 <div class="wrap">
-  <header><div><h1>MIOT Panel 首次设置</h1><div class="sub">按顺序完成：后台 PIN → 音乐中心 → 小米账号。先装音乐中心再登录，才能获取全部设备和小爱音箱。</div></div><a class="link" href="/admin">后台</a></header>
+  <header><div><h1>MIOT Panel 首次设置</h1><div class="sub">按顺序完成：后台 PIN → 音乐中心（可跳过）→ 小米账号。没有音乐中心也可扫码登录；连接后会自动同步，无需二次扫码。</div></div><a class="link" href="/admin">后台</a></header>
   <div class="steps"><span class="step" id="step1">1 后台 PIN</span><span class="step" id="step2">2 音乐中心</span><span class="step" id="step3">3 小米账号</span><span class="step" id="step4">4 完成</span></div>
 
   <section class="card" id="pinCard">
@@ -2584,7 +2851,7 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
       <div class="grid"><input id="mUrl" placeholder="http://192.168.1.10:58091"><input id="mUser" placeholder="管理员账号"><input id="mPass" type="password" placeholder="管理员密码"></div>
       <div class="row"><button onclick="connectMusic()">连接音乐中心</button></div>
     </details>
-    <div class="row"><button onclick="skipMusic()">暂时跳过音乐中心（仅面板设备控制）</button></div>
+    <div class="row"><button onclick="skipMusic()">暂时跳过音乐中心，先扫码登录</button></div>
     <div class="hint" id="musicHint"></div>
     <div class="msg" id="musicMsg"></div>
   </section>
@@ -2592,14 +2859,14 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
   <section class="card hidden" id="accountCard">
     <h2>3. 登录小米账号</h2>
     <div id="qrBox" class="hidden">
-      <p>用米家 App 扫描二维码。绑定成功后会自动同步设备控制和小爱音箱；默认不自动组网。</p>
+      <p>用米家 App 扫描二维码。面板会直接建立小米登录；已安装/连接音乐中心时会自动同步，不需要再扫一次。默认不自动组网。</p>
       <div class="qr"><img id="qrImg" alt="小米登录二维码"><div class="hint" id="qrState">正在获取二维码…</div></div>
       <div class="row"><button onclick="startQR()">刷新二维码</button></div>
       <div class="hint" id="qrFallback"></div>
-      <div class="hint">也可以 <a style="color:#ffb36b" href="/login?force=1">使用面板小米账号登录</a>（不安装音乐中心时设备/音箱可能不完整）。</div>
+      <div class="hint">没有音乐中心也可以先扫码登录；之后安装音乐中心会自动带入登录。</div>
     </div>
     <div id="panelLoginBox" class="hidden">
-      <p>未安装音乐中心时，只能使用面板的小米账号登录，设备和音箱可能不完整。建议返回上一步安装音乐中心。</p>
+      <p>扫码失败时仍可使用面板的小米账号登录；登录后可控制设备，音乐中心稍后会自动同步。</p>
       <div class="row"><a class="button primary" href="/login?force=1">使用面板小米账号登录</a></div>
     </div>
     <div class="msg" id="accountMsg"></div>
@@ -2651,12 +2918,11 @@ function renderMusic(){
   }
 }
 function renderAccount(){
-  var connected=!!S.music_connected;
-  $('qrBox').classList.toggle('hidden',!connected);
-  $('panelLoginBox').classList.toggle('hidden',connected);
+  var done=!!(S.logged_in||S.account_count>0);
+  $('qrBox').classList.toggle('hidden',done);
+  $('panelLoginBox').classList.toggle('hidden',done);
   $('accountMsg').textContent='';
-  if(connected&&S.admin_authed&&!qr&&!qrStarting&&!qrFailed)startQR();
-  if(!connected&&!S.logged_in)$('panelLoginBox').classList.remove('hidden');
+  if(!done&&S.admin_authed&&!qr&&!qrStarting&&!qrFailed)startQR();
 }
 async function setupPin(){
   var a=$('pin1').value,b=$('pin2').value,m=$('pinMsg');
@@ -2709,9 +2975,14 @@ async function startQR(){
   if(qrStarting)return;qrStarting=true;qrFailed=false;
   if(qrTimer){clearInterval(qrTimer);qrTimer=null;}
   $('qrState').textContent='正在获取二维码…';$('qrFallback').textContent='';
-  var r=await api('/api/admin/music/qr_start',{});qrStarting=false;
-  if(!r.data.ok){qrFailed=true;$('qrState').textContent=r.data.error||'二维码获取失败';return;}
-  qr={account_id:r.data.account_id};
+  var r=await api('/api/auth/qr_start',{});
+  if(!r.data.ok&&S.music_connected){
+    r=await api('/api/admin/music/qr_start',{});
+    if(r.data.ok)r.data.plugin=true;
+  }
+  qrStarting=false;
+  if(!r.data.ok){qrFailed=true;$('qrState').textContent=r.data.error||'二维码获取失败';$('panelLoginBox').classList.remove('hidden');return;}
+  qr=r.data.plugin?{account_id:r.data.account_id,plugin:true}:{session_id:r.data.session_id,native:true};
   var img=$('qrImg');img.style.display='';img.src=r.data.qrcode_url||'';
   img.onerror=function(){
     img.style.display='none';var fb=$('qrFallback');fb.textContent='二维码图片加载失败，请刷新，或';
@@ -2722,15 +2993,25 @@ async function startQR(){
 }
 async function pollQR(){
   if(!qr)return;
-  var r=await api('/api/admin/music/qr_poll',{account_id:qr.account_id});
+  var r=qr.native
+    ? await api('/api/auth/qr_poll',{session_id:qr.session_id})
+    : await api('/api/admin/music/qr_poll',{account_id:qr.account_id});
   if(!r.data||!r.data.ok){$('qrState').textContent=(r.data&&r.data.error)||'等待扫码…';return;}
   var st=r.data.state;
-  if(st==='success'){if(qrTimer){clearInterval(qrTimer);qrTimer=null;}qr=null;$('qrState').textContent='绑定成功，正在同步…';await refresh();}
+  if(st==='success'){
+    if(qrTimer){clearInterval(qrTimer);qrTimer=null;}
+    var wasNative=!!qr.native;qr=null;
+    $('qrState').textContent=r.data.message||'登录成功，正在同步…';
+    await refresh();
+    if(S.logged_in&&S.music_connected&&!S.account_count&&wasNative){
+      $('accountMsg').textContent='已登录面板；音乐中心正在同步账号，若未出现请稍候刷新。';
+    }
+  }
   else if(st==='scanned'){$('qrState').textContent='已扫码，请在手机上确认…';}
-  else if(st==='expired'||st==='failed'||st==='error'){if(qrTimer){clearInterval(qrTimer);qrTimer=null;}qr=null;qrFailed=true;$('qrState').textContent='二维码已失效，请刷新';}
-  else {$('qrState').textContent='等待扫码…';}
+  else if(st==='expired'||st==='failed'||st==='error'){if(qrTimer){clearInterval(qrTimer);qrTimer=null;}qr=null;qrFailed=true;$('qrState').textContent=(r.data.message||'二维码已失效，请刷新');$('panelLoginBox').classList.remove('hidden');}
+  else {$('qrState').textContent=(r.data.message||'等待扫码…');}
 }
-refresh();setInterval(function(){if(!busy)refresh();},3000);setInterval(function(){if(S.admin_authed&&S.music_connected&&!qr&&!qrStarting&&!qrFailed&&!S.logged_in&&!S.account_count)startQR();},2500);
+refresh();setInterval(function(){if(!busy)refresh();},3000);setInterval(function(){if(S.admin_authed&&!qr&&!qrStarting&&!qrFailed&&!S.logged_in&&!S.account_count)startQR();},2500);
 </script></body></html>
 """
 
@@ -3051,6 +3332,21 @@ def _signal_restart(parent_pid, app_dir, port):
     else:
         try:
             os.kill(parent_pid, signal.SIGUSR1)
+        except OSError:
+            pass
+
+
+def _restart_self():
+    """重启当前面板；Windows 需要独立 helper，避免 taskkill 杀掉执行线程。"""
+    if os.name == "nt":
+        args = [sys.executable, os.path.join(APP_DIR, "miot-cloud.py"),
+                "--restart-helper", str(os.getpid()), APP_DIR, str(PORT)]
+        flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        subprocess.Popen(args, cwd=APP_DIR, close_fds=True, creationflags=flags)
+    else:
+        try:
+            os.kill(os.getpid(), signal.SIGUSR1)
         except OSError:
             pass
 
@@ -3853,6 +4149,10 @@ def _stack_install_job():
 
     try:
         _stack_install(progress=report)
+        try:
+            _import_panel_auth_to_plugin(force=True)
+        except Exception as exc:
+            LOG.debug("import panel auth after stack install failed: %s", exc)
         _stack_job_set("done", "安装完成", 100)
     except Exception as exc:
         LOG.exception("music stack install failed")
@@ -3887,6 +4187,11 @@ def _stack_start():
             "go_music_dl_url": "http://127.0.0.1:%d" % gport,
         })
         _clear_songloft_token()
+        try:
+            threading.Thread(target=_import_panel_auth_to_plugin,
+                             kwargs={"force": True}, daemon=True).start()
+        except Exception:
+            pass
         return state
 
 
@@ -3901,6 +4206,430 @@ def _stack_autostart():
             LOG.info("Windows music stack started")
     except Exception as exc:
         LOG.warning("Windows music stack autostart failed: %s", str(exc)[:160])
+
+
+
+# ----------------------------------------------------------------- 摄像头组件（go2rtc / ffmpeg）
+CAMERA_STACK_LOCK = threading.RLock()
+CAMERA_STACK_JOB_LOCK = threading.Lock()
+CAMERA_STACK_JOB = {"running": False, "state": "idle", "message": "",
+                    "percent": 0, "ts": 0.0}
+CAMERA_STACK_VERSION = {"go2rtc": "v1.9.15", "ffmpeg": "b6.1.1"}
+CAMERA_COMPONENTS = {
+    ("windows", "x64"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_win64.zip",
+                   "sha256": "5b448fc90f15c925406d8da0984301985e385050222c1c2bbdf0a76fe4b1e9cb",
+                   "size": 8123970, "kind": "zip", "target": "go2rtc.exe"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64.gz",
+                   "sha256": "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
+                   "size": 29581307, "kind": "gz", "target": "ffmpeg.exe"},
+    },
+    ("linux", "x64"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_linux_amd64",
+                   "sha256": "20b46c6910734cb05ecefb234066f36868ff19b42ba1418a7a32e13a3e035712",
+                   "size": 6307828, "kind": "binary", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz",
+                   "sha256": "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa",
+                   "size": 29354986, "kind": "gz", "target": "ffmpeg"},
+    },
+    ("linux", "arm"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_linux_arm",
+                   "sha256": "cbffe4075a004e2015fd9d7e324800ab7968b52f49e9ce803361879d5e246028",
+                   "size": 5092480, "kind": "binary", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-arm.gz",
+                   "sha256": "64b115a12f0ab77c277e3c418aae8b40ef881e75e746a0e2d066a206b9bc5172",
+                   "size": 19167563, "kind": "gz", "target": "ffmpeg"},
+    },
+    ("linux", "arm64"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_linux_arm64",
+                   "sha256": "af416f22b21a24ab83b8d78642190b4932ae695b4e386853f11d1b0319781763",
+                   "size": 5116108, "kind": "binary", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-arm64.gz",
+                   "sha256": "754a678672298bc68156adff58aa7385a592c2b30b1d0ae8750c45c915c4bac0",
+                   "size": 25568691, "kind": "gz", "target": "ffmpeg"},
+    },
+    ("darwin", "x64"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_mac_amd64.zip",
+                   "sha256": "7ca6075421b824eebe0383d20bd42a6f6a7ec7591a60931d42290f1d375169b9",
+                   "size": 8116920, "kind": "zip", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz",
+                   "sha256": "929b375c1182d956c51f7ac25e0b2b0411fb01f6f407aa15c9758efeb4242106",
+                   "size": 25296431, "kind": "gz", "target": "ffmpeg"},
+    },
+    ("darwin", "arm64"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_mac_arm64.zip",
+                   "sha256": "d0cf858a71803dce2377423bc830639137ee96c335f88e9912e7f7898374266d",
+                   "size": 7427699, "kind": "zip", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz",
+                   "sha256": "8923876afa8db5585022d7860ec7e589af192f441c56793971276d450ed3bbfa",
+                   "size": 19246198, "kind": "gz", "target": "ffmpeg"},
+    },
+}
+
+
+def _camera_os_name():
+    if os.name == "nt":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def _camera_arch():
+    import platform
+    machine = (platform.machine() or "").lower()
+    if machine in ("x86_64", "amd64", "x64"):
+        return "x64"
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    if machine.startswith("arm"):
+        return "arm"
+    return machine
+
+
+def _camera_catalog():
+    return CAMERA_COMPONENTS.get((_camera_os_name(), _camera_arch()), {})
+
+
+def _camera_paths():
+    root = os.path.join(ROOT, "camera-stack")
+    exe = ".exe" if os.name == "nt" else ""
+    return {
+        "root": root,
+        "go2rtc": os.path.join(root, "go2rtc" + exe),
+        "ffmpeg": os.path.join(root, "ffmpeg" + exe),
+        "config": os.path.join(root, "go2rtc.yaml"),
+        "log": os.path.join(root, "go2rtc.log"),
+        "state": os.path.join(root, "state.json"),
+        "downloads": os.path.join(root, "downloads"),
+    }
+
+
+def _camera_state_read():
+    try:
+        with open(_camera_paths()["state"], encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _camera_state_write(data):
+    paths = _camera_paths()
+    os.makedirs(paths["root"], exist_ok=True)
+    tmp = paths["state"] + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, paths["state"])
+
+
+def _camera_go2rtc_ok():
+    data = _port_json(GO2RTC_API.rstrip("/") + "/api", timeout=2)
+    return bool(isinstance(data, dict) and (data.get("revision") or data.get("config_path")))
+
+
+def _camera_go2rtc_bin():
+    paths = _camera_paths()
+    if os.path.isfile(paths["go2rtc"]):
+        return paths["go2rtc"]
+    found = shutil.which("go2rtc")
+    if found:
+        return found
+    return ""
+
+
+def _camera_ffmpeg_bin():
+    global FFMPEG_BIN
+    paths = _camera_paths()
+    if os.path.isfile(paths["ffmpeg"]):
+        FFMPEG_BIN = paths["ffmpeg"]
+        return FFMPEG_BIN
+    found = shutil.which("ffmpeg")
+    if found:
+        FFMPEG_BIN = found
+        return found
+    return ""
+
+
+def _camera_external_go2rtc():
+    return bool(os.environ.get("MIOT_GO2RTC") or os.environ.get("MIOT_GO2RTC_API"))
+
+
+def _camera_is_docker():
+    return os.path.exists("/.dockerenv") or os.environ.get("MIOT_DOCKER") == "1"
+
+
+def _camera_job_set(state, message="", percent=None):
+    with CAMERA_STACK_JOB_LOCK:
+        CAMERA_STACK_JOB["state"] = state
+        CAMERA_STACK_JOB["message"] = str(message or "")[:300]
+        if percent is not None:
+            try:
+                CAMERA_STACK_JOB["percent"] = max(0, min(100, int(percent)))
+            except (TypeError, ValueError):
+                pass
+        CAMERA_STACK_JOB["ts"] = time.time()
+
+
+def _camera_job_get():
+    with CAMERA_STACK_JOB_LOCK:
+        return dict(CAMERA_STACK_JOB)
+
+
+def _camera_guide():
+    paths = _camera_paths()
+    cat = _camera_catalog()
+    items = []
+    if cat:
+        go = cat["go2rtc"]
+        ff = cat["ffmpeg"]
+        items = [
+            {"name": "go2rtc", "version": CAMERA_STACK_VERSION["go2rtc"],
+             "url": go["url"], "mirror": "https://gh-proxy.com/" + go["url"],
+             "target": paths["go2rtc"], "sha256": go["sha256"],
+             "kind": go["kind"]},
+            {"name": "ffmpeg", "version": CAMERA_STACK_VERSION["ffmpeg"],
+             "url": ff["url"], "mirror": "https://gh-proxy.com/" + ff["url"],
+             "target": paths["ffmpeg"], "sha256": ff["sha256"],
+             "kind": ff["kind"]},
+        ]
+    return items
+
+
+def _camera_setup_payload():
+    paths = _camera_paths()
+    go_ok = _camera_go2rtc_ok()
+    go_bin = _camera_go2rtc_bin()
+    ff_bin = _camera_ffmpeg_bin()
+    cat = _camera_catalog()
+    external = _camera_external_go2rtc()
+    docker = _camera_is_docker()
+    missing = []
+    if not go_ok and not go_bin:
+        missing.append("go2rtc")
+    if not ff_bin:
+        missing.append("ffmpeg")
+    can_install = bool(cat) and not docker and not external
+    if docker:
+        reason = "Docker 容器内请在宿主机安装 go2rtc/ffmpeg，并通过 MIOT_GO2RTC 指向宿主机"
+    elif external:
+        reason = "已配置外部 go2rtc，请确认 MIOT_GO2RTC 地址和 ffmpeg 可用"
+    elif not cat:
+        reason = "当前平台暂不支持一键安装，请按下方步骤手动安装"
+    else:
+        reason = ""
+    if not go_ok and go_bin and not missing:
+        reason = "go2rtc 未运行，点击按钮即可启动"
+    if ff_bin and go_ok and not missing:
+        reason = ""
+    components = []
+    for name in ("go2rtc", "ffmpeg"):
+        info = cat.get(name) or {}
+        components.append({
+            "name": name,
+            "ok": bool(go_ok if name == "go2rtc" else ff_bin),
+            "version": CAMERA_STACK_VERSION.get(name, ""),
+            "url": info.get("url", ""),
+            "sha256": info.get("sha256", ""),
+            "target": paths[name],
+        })
+    return {
+        "ok": True,
+        "platform": _camera_os_name(),
+        "arch": _camera_arch(),
+        "external": external,
+        "docker": docker,
+        "go2rtc_ok": go_ok,
+        "go2rtc_path": go_bin,
+        "ffmpeg_ok": bool(ff_bin),
+        "ffmpeg_path": ff_bin,
+        "installed": bool(go_bin and ff_bin),
+        "ready": bool(go_ok and ff_bin),
+        "missing": missing,
+        "can_install": can_install,
+        "reason": reason,
+        "components": components,
+        "guide": _camera_guide(),
+        "paths": paths,
+        "job": _camera_job_get(),
+    }
+
+
+def _camera_start():
+    if _camera_go2rtc_ok():
+        _camera_ffmpeg_bin()
+        return True
+    paths = _camera_paths()
+    go_bin = _camera_go2rtc_bin()
+    if not go_bin:
+        raise RuntimeError("未安装 go2rtc")
+    if not _port_free(1984):
+        raise RuntimeError("端口 1984 已被占用，请先关闭占用程序")
+    ff_bin = _camera_ffmpeg_bin()
+    os.makedirs(paths["root"], exist_ok=True)
+    if ff_bin:
+        config = 'api:\n  listen: "127.0.0.1:1984"\nffmpeg:\n  bin: %s\n' % json.dumps(ff_bin)
+        with open(paths["config"], "w", encoding="utf-8") as f:
+            f.write(config)
+        args = [go_bin, "-config", paths["config"]]
+    else:
+        args = [go_bin]
+    pid = _stack_popen(args, paths["root"], paths["log"])
+    state = _camera_state_read()
+    state.update({"go2rtc_pid": pid, "installed": True, "updated_at": int(time.time())})
+    _camera_state_write(state)
+    if _wait_http(GO2RTC_API.rstrip("/") + "/api", 25) is None:
+        raise RuntimeError("go2rtc 启动超时，请查看 camera-stack/go2rtc.log")
+    _camera_ffmpeg_bin()
+    return True
+
+
+def _camera_stop():
+    state = _camera_state_read()
+    pid = state.get("go2rtc_pid")
+    if pid:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10, check=False)
+            else:
+                os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
+    state.pop("go2rtc_pid", None)
+    _camera_state_write(state)
+
+
+def _camera_extract(component, archive, target):
+    name = component["target"].lower()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    tmp = target + ".new"
+    if component["kind"] == "zip":
+        with zipfile.ZipFile(archive) as z:
+            member = None
+            for item in z.namelist():
+                if os.path.basename(item).lower() == name:
+                    member = item
+                    break
+            if not member:
+                raise RuntimeError("下载包中没有 %s" % component["target"])
+            with z.open(member) as src, open(tmp, "wb") as out:
+                shutil.copyfileobj(src, out)
+    elif component["kind"] == "gz":
+        with gzip.open(archive, "rb") as src, open(tmp, "wb") as out:
+            shutil.copyfileobj(src, out)
+    else:
+        shutil.copy2(archive, tmp)
+    os.replace(tmp, target)
+    if os.name != "nt":
+        os.chmod(target, 0o755)
+
+
+def _camera_install(progress=None):
+    progress = progress or (lambda *a: None)
+    if _camera_is_docker():
+        raise RuntimeError("Docker 容器内不支持自动安装摄像头组件")
+    if _camera_external_go2rtc():
+        raise RuntimeError("已配置外部 go2rtc，请在其所在设备安装 go2rtc/ffmpeg")
+    cat = _camera_catalog()
+    if not cat:
+        raise RuntimeError("当前平台暂不支持一键安装，请按页面指引手动安装")
+    paths = _camera_paths()
+    os.makedirs(paths["downloads"], exist_ok=True)
+    missing = []
+    if not _camera_go2rtc_ok() and not _camera_go2rtc_bin():
+        missing.append("go2rtc")
+    if not _camera_ffmpeg_bin():
+        missing.append("ffmpeg")
+    if not missing:
+        _camera_start()
+        return _camera_setup_payload()
+    total = len(missing)
+    for idx, name in enumerate(missing):
+        comp = dict(cat[name])
+        base = int(idx * 70 / total)
+        span = int(70 / total)
+        progress("正在下载 %s（%d/%d）" % (name, idx + 1, total), base + 2)
+        archive = os.path.join(paths["downloads"], os.path.basename(comp["url"]))
+        last = {"pct": base + 2}
+
+        def on_bytes(done, size, _base=base, _span=span, _last=last):
+            pct = _base + 2
+            if size:
+                pct = _base + int(min(1.0, done / float(size)) * (_span - 4))
+            if pct > _last["pct"]:
+                _last["pct"] = pct
+                progress("", pct)
+
+        _download_verified(comp["url"], archive, comp["sha256"], timeout=600,
+                           progress=on_bytes)
+        progress("正在校验并解压 %s" % name, base + span - 2)
+        _camera_extract(comp, archive, paths[name])
+        try:
+            os.remove(archive)
+        except OSError:
+            pass
+    progress("正在启动 go2rtc", 82)
+    if _camera_go2rtc_ok() and _camera_state_read().get("go2rtc_pid") and "ffmpeg" in missing:
+        _camera_stop()
+    _camera_start()
+    progress("正在检测摄像头组件", 94)
+    if not _camera_go2rtc_ok():
+        raise RuntimeError("go2rtc 未响应，请检查 camera-stack/go2rtc.log")
+    if not _camera_ffmpeg_bin():
+        raise RuntimeError("ffmpeg 安装后仍未找到可执行文件")
+    state = _camera_state_read()
+    state.update({"installed": True, "disabled": False,
+                  "go2rtc_version": CAMERA_STACK_VERSION["go2rtc"],
+                  "ffmpeg_version": CAMERA_STACK_VERSION["ffmpeg"],
+                  "updated_at": int(time.time())})
+    _camera_state_write(state)
+    progress("安装完成", 100)
+    return _camera_setup_payload()
+
+
+def _camera_install_job():
+    def report(message, percent=None):
+        message = str(message or "").strip()
+        if not message:
+            previous = _camera_job_get()
+            message = previous.get("message") or "正在下载摄像头组件"
+        if "完成" in message:
+            state = "done"
+        elif "下载" in message or "校验" in message or "解压" in message:
+            state = "downloading"
+        else:
+            state = "installing"
+        _camera_job_set(state, message, percent)
+
+    try:
+        _camera_install(progress=report)
+        _camera_job_set("done", "摄像头组件安装完成", 100)
+    except Exception as exc:
+        LOG.exception("camera stack install failed")
+        try:
+            _camera_stop()
+        except Exception:
+            pass
+        _camera_job_set("failed", str(exc)[:400], 100)
+    finally:
+        with CAMERA_STACK_JOB_LOCK:
+            CAMERA_STACK_JOB["running"] = False
+
+
+def _camera_autostart():
+    if os.name != "nt":
+        return
+    time.sleep(6)
+    try:
+        state = _camera_state_read()
+        if state.get("installed") and not state.get("disabled"):
+            _camera_start()
+            LOG.info("camera stack started")
+    except Exception as exc:
+        LOG.warning("camera stack autostart failed: %s", str(exc)[:160])
+
 
 
 def _service_active(name):
@@ -4590,6 +5319,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_cameras(u)
         elif u.path == "/api/camera_state":
             self.api_camera_state(u)
+        elif u.path == "/api/camera/setup_state":
+            self.api_camera_setup_state()
         elif u.path == "/api/admin/status":
             self.api_admin_status()
         elif u.path == "/api/page_state":
@@ -4672,6 +5403,12 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_logs_clear()
         elif u.path == "/api/admin/refresh":
             self.api_admin_refresh()
+        elif u.path == "/api/auth/qr_start":
+            self.api_auth_qr_start(body)
+        elif u.path == "/api/auth/qr_poll":
+            self.api_auth_qr_poll(body)
+        elif u.path == "/api/admin/music/import_auth":
+            self.api_admin_music_import_auth()
         elif u.path == "/api/admin/music/qr_start":
             self.api_admin_music_qr_start(body)
         elif u.path == "/api/admin/music/qr_poll":
@@ -4712,6 +5449,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_stack_start()
         elif u.path == "/api/admin/music/stack/stop":
             self.api_admin_music_stack_stop()
+        elif u.path == "/api/camera/setup/install":
+            self.api_camera_setup_install()
+        elif u.path == "/api/camera/setup/start":
+            self.api_camera_setup_start()
         elif u.path == "/api/admin/update/check":
             self.api_admin_update_check(body)
         elif u.path == "/api/admin/update/apply":
@@ -4923,6 +5664,43 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._send(200, {"ok": False, "active": False, "consumers": 0})
 
+    def api_camera_setup_state(self):
+        payload = _camera_setup_payload()
+        payload["admin_authed"] = _admin_authed(self)
+        self._send(200, payload)
+
+    def api_camera_setup_install(self):
+        if not self._admin_require():
+            return
+        if not _camera_catalog():
+            self._send(400, {"ok": False, "error": "当前平台不支持一键安装，请按页面步骤手动安装"})
+            return
+        if _camera_is_docker() or _camera_external_go2rtc():
+            self._send(409, {"ok": False, "error": "当前环境不支持自动安装摄像头组件"})
+            return
+        with CAMERA_STACK_JOB_LOCK:
+            if CAMERA_STACK_JOB.get("running"):
+                self._send(409, {"ok": False, "error": "摄像头组件正在安装",
+                                 "job": _camera_job_get()})
+                return
+            CAMERA_STACK_JOB.update({"running": True, "state": "starting",
+                                     "message": "正在准备安装", "percent": 1,
+                                     "ts": time.time()})
+        threading.Thread(target=_camera_install_job, daemon=True).start()
+        self._send(202, {"ok": True, "job": _camera_job_get()})
+
+    def api_camera_setup_start(self):
+        if not self._admin_require():
+            return
+        try:
+            _camera_start()
+            payload = _camera_setup_payload()
+            payload["admin_authed"] = True
+            self._send(200, payload)
+        except Exception as exc:
+            self._send(500, {"ok": False, "error": str(exc)[:240],
+                             "job": _camera_job_get()})
+
     def api_speaker_assist(self):
         try:
             self._send(200, _speaker_payload())
@@ -5122,6 +5900,13 @@ class Handler(BaseHTTPRequestHandler):
                 music_url = _songloft_public_url()
         except Exception:
             pass
+        auth = _load_auth()
+        pending_plugin = _read_pending_plugin_auth()
+        if music_connected and (pending_plugin or (auth and auth.get("source") != PLUGIN_AUTH_SOURCE)):
+            try:
+                threading.Thread(target=_maybe_import_panel_auth, daemon=True).start()
+            except Exception:
+                pass
         if music_connected:
             try:
                 _, acc = _songloft_req("GET", MIOT_PLUGIN_API + "/accounts", timeout=4)
@@ -5130,7 +5915,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
         stack = _stack_state_read()
-        logged_in = bool(_load_auth())
+        logged_in = bool(auth)
         pin_set = admin_pin_set()
         self._send(200, {
             "ok": True, "pin_set": pin_set,
@@ -5139,6 +5924,7 @@ class Handler(BaseHTTPRequestHandler):
             "music_connected": music_connected,
             "music_url": music_url,
             "account_count": account_count,
+            "plugin_sync_pending": bool(pending_plugin),
             "stack_installed": bool(stack.get("installed")),
             "platform": "windows" if os.name == "nt" else "linux",
             "job": _stack_job_get(),
@@ -5349,6 +6135,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True})
 
     def api_admin_reset(self, body):
+        global AUTH
         if not self._admin_require():
             return
         what = str(body.get("what") or "all")
@@ -5362,6 +6149,38 @@ class Handler(BaseHTTPRequestHandler):
             settings = load_settings()
             settings["theme"] = "dark"
             save_settings(settings)
+        if what in ("settings", "factory"):
+            if what == "settings":
+                keep = ("admin_pin_salt", "admin_pin_hash", "update_url", "lan_ip",
+                        "songloft_url", "songloft_user", "songloft_pass",
+                        "go_music_dl_url", "plugin_account_file", "country")
+                base = dict(DEFAULT_CONFIG)
+                base.update({k: CONFIG.get(k) for k in keep if CONFIG.get(k)})
+                save_config(base)
+            for path in (LAYOUT_FILE, SETTINGS_FILE, PAGES_FILE, DEV_CACHE,
+                         STATE_CACHE, PLUGIN_AUTH_BACKUP,
+                         os.path.join(ROOT, "plugin_pending_auth.json")):
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except OSError:
+                    pass
+            try:
+                shutil.rmtree(PAGES_DIR)
+            except OSError:
+                pass
+            if what == "factory":
+                AUTH = None
+                for path in (AUTH_FILE, CONFIG_FILE):
+                    try:
+                        if os.path.exists(path):
+                            os.remove(path)
+                    except OSError:
+                        pass
+            LOG.info("admin reset: %s", what)
+            self._send(200, {"ok": True, "restarting": True, "scope": what})
+            threading.Timer(0.8, _restart_self).start()
+            return
         self._send(200, {"ok": True})
 
     def api_admin_xiaomi_logout(self):
@@ -5622,6 +6441,11 @@ class Handler(BaseHTTPRequestHandler):
             stack["disabled"] = host not in ("127.0.0.1", "localhost", LAN_IP.lower())
             _stack_state_write(stack)
         _clear_songloft_token()
+        try:
+            threading.Thread(target=_import_panel_auth_to_plugin,
+                             kwargs={"force": True}, daemon=True).start()
+        except Exception:
+            pass
         names = []
         for item in plugins if isinstance(plugins, list) else []:
             if isinstance(item, dict):
@@ -5764,6 +6588,39 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             LOG.warning("music SSO failed: %s", e)
             self._send(200, {"ok": False, "error": str(e)[:200]})
+
+    def api_auth_qr_start(self, body):
+        if not self._admin_require():
+            return
+        try:
+            data = _qr_start()
+        except Exception as exc:
+            LOG.warning("native QR start failed: %s", str(exc)[:200])
+            self._send(200, {"ok": False, "error": str(exc)[:220]})
+            return
+        self._send(200, data)
+
+    def api_auth_qr_poll(self, body):
+        if not self._admin_require():
+            return
+        sid = str(body.get("session_id") or "").strip()
+        if not sid:
+            self._send(400, {"ok": False, "error": "缺少扫码会话"})
+            return
+        try:
+            self._send(200, _qr_poll(sid))
+        except Exception as exc:
+            LOG.warning("native QR poll failed: %s", str(exc)[:200])
+            self._send(200, {"ok": False, "state": "failed",
+                             "message": str(exc)[:180]})
+
+    def api_admin_music_import_auth(self):
+        if not self._admin_require():
+            return
+        try:
+            self._send(200, _import_panel_auth_to_plugin(force=True))
+        except Exception as exc:
+            self._send(200, {"ok": False, "error": str(exc)[:200]})
 
     def api_admin_music_qr_start(self, body):
         if not self._admin_require():
@@ -6284,6 +7141,24 @@ def _reexec_for_update(_signum=None, _frame=None):
 
 
 def main():
+    if "--restart-helper" in sys.argv:
+        try:
+            idx = sys.argv.index("--restart-helper")
+            parent_pid = int(sys.argv[idx + 1])
+            app_dir = sys.argv[idx + 2]
+            port = int(sys.argv[idx + 3])
+        except Exception:
+            return
+        time.sleep(1.2)
+        try:
+            subprocess.run(["taskkill", "/PID", str(parent_pid), "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, check=False)
+        except Exception:
+            pass
+        time.sleep(1.2)
+        _spawn_app(app_dir, port)
+        return
     if "--update-worker" in sys.argv:
         idx = sys.argv.index("--update-worker")
         _run_update_worker(sys.argv[idx + 1:])
@@ -6293,8 +7168,10 @@ def main():
         signal.signal(signal.SIGUSR1, _reexec_for_update)
     threading.Thread(target=poll_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
+    threading.Thread(target=_startup_import, daemon=True).start()
     if os.name == "nt":
         threading.Thread(target=_stack_autostart, daemon=True).start()
+        threading.Thread(target=_camera_autostart, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)
     srv.serve_forever()

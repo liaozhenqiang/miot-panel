@@ -189,6 +189,23 @@ body.theme-pixel button.btn.primary{background:var(--accent);border-color:var(--
 body.theme-pixel .homeFloat{background:var(--accent);border:2px solid var(--accent);color:#031003;border-radius:0;box-shadow:5px 5px 0 #0f3d0f;}
 body.theme-pixel .loading,body.theme-pixel .errBox{background:rgba(0,8,0,.92);}
 body.theme-pixel .hintBar{border:1px solid #1f7a1f;border-radius:0;background:rgba(5,8,5,.82);color:#7fce7f;font-family:monospace;}
+
+.compBar{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 18px;background:rgba(255,106,0,.12);border-bottom:1px solid rgba(255,106,0,.28);font-size:14px;line-height:1.5;}
+.compBar.hidden{display:none;}
+.compBar .grow{flex:1;min-width:260px;}
+.compBar .grow b{font-size:15px;}
+.compBar .compText{color:var(--muted);margin-top:2px;}
+.compBar .compActions{display:flex;gap:8px;flex-wrap:wrap;}
+.compBar .compActions .btn{font-size:14px;padding:8px 12px;min-height:38px;}
+.compBar .compGuide{width:100%;border-top:1px solid var(--line);padding-top:8px;color:var(--muted);font-size:13px;}
+.compBar .compGuide.hidden{display:none;}
+.compBar .compGuide code{color:var(--text);word-break:break-all;}
+.compBar .compStep{margin:5px 0;}
+.compBar .compProgressWrap{height:5px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;margin-top:7px;max-width:520px;}
+.compBar .compProgressWrap.hidden{display:none;}
+.compBar .compProgress{height:100%;width:2%;background:var(--accent);transition:width .25s;}
+body.light .compBar{background:#fff3e6;border-bottom-color:#f0d6bd;}
+body.light .compBar .compProgressWrap{background:#f1e3d5;}
 </style></head><body>
 <div class="bar">
   <div class="left">
@@ -200,6 +217,19 @@ body.theme-pixel .hintBar{border:1px solid #1f7a1f;border-radius:0;background:rg
     <button class="btn" id="themeBtn" onclick="toggleTheme()" title="切换面板风格主题">主题</button>
     <button class="btn" id="refreshBtn" onclick="refreshCams()">刷新</button>
   </div>
+</div>
+<div class="compBar hidden" id="compBar">
+  <div class="grow">
+    <b id="compTitle">摄像头组件未就绪</b>
+    <div class="compText" id="compText"></div>
+    <div class="compProgressWrap hidden" id="compProgressWrap"><div class="compProgress" id="compProgress"></div></div>
+  </div>
+  <div class="compActions">
+    <button class="btn primary" id="compInstall" onclick="installComponents()">安装缺失组件</button>
+    <button class="btn" onclick="checkComponents(true)">重新检测</button>
+    <button class="btn" onclick="toggleGuide()">手动安装步骤</button>
+  </div>
+  <div class="compGuide hidden" id="compGuide"></div>
 </div>
 <div class="main">
   <aside class="side">
@@ -241,6 +271,125 @@ var listEl = document.getElementById('camList');
 var countEl = document.getElementById('camCount');
 var barHint = document.getElementById('barHint');
 var refreshBtn = document.getElementById('refreshBtn');
+var compBar = document.getElementById('compBar');
+var compTitle = document.getElementById('compTitle');
+var compText = document.getElementById('compText');
+var compInstall = document.getElementById('compInstall');
+var compGuide = document.getElementById('compGuide');
+var compProgressWrap = document.getElementById('compProgressWrap');
+var compProgress = document.getElementById('compProgress');
+var compState = null, compTimer = null;
+function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function missingText(st){
+  var names = {go2rtc:'go2rtc',ffmpeg:'ffmpeg'};
+  return (st.missing||[]).map(function(x){return names[x]||x;}).join('、');
+}
+function renderComponents(){
+  if(!compState) return;
+  var st = compState;
+  var j = st.job || {};
+  if(st.ready && !j.running && j.state!=='failed'){
+    compBar.classList.add('hidden');
+    return;
+  }
+  compBar.classList.remove('hidden');
+  var miss = missingText(st);
+  compTitle.textContent = st.ready ? '摄像头组件' : '摄像头组件未就绪';
+  var detail = miss ? ('缺少 ' + miss) : '';
+  if(st.reason) detail += (detail ? ' · ' : '') + st.reason;
+  if(j.running || j.state==='failed' || j.state==='done'){
+    detail = (j.message || detail);
+    if(j.state==='failed') detail += '。可重试，或按下方步骤手动安装。';
+    compProgressWrap.classList.remove('hidden');
+    compProgress.style.width = Math.max(2, Math.min(100, Number(j.percent||2))) + '%';
+  } else {
+    compProgressWrap.classList.add('hidden');
+  }
+  compText.textContent = detail;
+  compInstall.style.display = (st.can_install ? '' : 'none');
+  compInstall.disabled = !!j.running;
+  compInstall.textContent = st.admin_authed ? ((st.missing && st.missing.length) ? '安装缺失组件' : '启动摄像头组件') : '登录后台后安装';
+  if(j.state==='failed') compGuide.classList.remove('hidden');
+  if(!compGuide.classList.contains('hidden')) renderGuide();
+}
+function renderGuide(){
+  var st = compState || {};
+  var items = st.guide || [];
+  var html = '<div><b>手动安装步骤</b>（自动安装失败时使用）</div>';
+  if(!items.length){
+    html += '<div class="compStep">当前平台没有内置下载源，请安装 go2rtc 和 ffmpeg，并确保它们在 PATH 中，或在启动面板时设置 MIOT_GO2RTC。</div>';
+  } else {
+    items.forEach(function(it, i){
+      var how = it.kind==='zip' ? '解压压缩包，取出可执行文件' : it.kind==='gz' ? '用 7-Zip 等工具解压 gz 文件' : '下载后重命名';
+      var link = '<a style="color:var(--accent)" href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.name) + ' ' + esc(it.version) + '</a>';
+      if(it.mirror) link += '（<a style="color:var(--accent)" href="' + esc(it.mirror) + '" target="_blank" rel="noopener">国内镜像</a>）';
+      html += '<div class="compStep">' + (i+1) + '. 下载 ' + link + '，' + how + '，放到 <code>' + esc(it.target) + '</code>。</div>';
+    });
+    html += '<div class="compStep">' + (items.length+1) + '. 完成后点“重新检测”；仍失败请查看 <code>' + esc((st.paths||{}).log || 'camera-stack/go2rtc.log') + '</code>。</div>';
+  }
+  if(st.docker){
+    html += '<div class="compStep">Docker：请在宿主机安装 go2rtc/ffmpeg，并把容器环境变量 <code>MIOT_GO2RTC</code> 指向宿主机地址。</div>';
+  }
+  compGuide.innerHTML = html;
+}
+function toggleGuide(){
+  compGuide.classList.toggle('hidden');
+  if(!compGuide.classList.contains('hidden')) renderGuide();
+}
+function checkComponents(force){
+  fetch('/api/camera/setup_state', {cache:'no-store'})
+    .then(function(r){return r.json();})
+    .then(function(st){
+      compState = st || {};
+      renderComponents();
+      if(compState.ready){
+        compBar.classList.add('hidden');
+        if(force || !cams.length) loadCams(force, current && current.did);
+      } else {
+        setLoading('');
+        barHint.textContent = '摄像头组件未就绪';
+        showError('摄像头组件未就绪', '请先安装缺失的 go2rtc/ffmpeg 组件。');
+      }
+    })
+    .catch(function(){});
+}
+function startCompPoll(){
+  if(compTimer) return;
+  compTimer = setInterval(pollComponents, 1500);
+  pollComponents();
+}
+function pollComponents(){
+  fetch('/api/camera/setup_state', {cache:'no-store'})
+    .then(function(r){return r.json();})
+    .then(function(st){
+      compState = st || {};
+      renderComponents();
+      var j = compState.job || {};
+      if(j.running) return;
+      if(compTimer){clearInterval(compTimer);compTimer=null;}
+      if(j.state==='done' || compState.ready){
+        compState.job = {running:false,state:'done',percent:100};
+        setTimeout(function(){checkComponents(true);}, 300);
+      } else if(j.state==='failed'){
+        renderComponents();
+        toggleGuide();
+      }
+    })
+    .catch(function(){});
+}
+function installComponents(){
+  if(!compState) return;
+  if(!compState.admin_authed){ location.href='/admin'; return; }
+  compInstall.disabled = true;
+  fetch('/api/camera/setup/install', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json();})
+    .then(function(r){
+      if(!r.ok){ compText.textContent = r.error || '安装启动失败'; toggleGuide(); compInstall.disabled=false; return; }
+      compProgressWrap.classList.remove('hidden');
+      startCompPoll();
+    })
+    .catch(function(){ compInstall.disabled=false; });
+}
 
 var THEME_IDS = ['dark','light','apple','flyme','cyber','morandi','pixel'];
 var THEME_LABELS = {dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
@@ -366,10 +515,12 @@ function selectCam(did) {
   playCamera(cam);
 }
 function retry() {
+  if(compState && !compState.ready){ checkComponents(true); return; }
   var did = current && current.did;
   loadCams(true, did);
 }
 function refreshCams() {
+  if(compState && !compState.ready){ checkComponents(true); return; }
   loadCams(true);
 }
 function loadCams(force, preferDid) {
@@ -411,6 +562,6 @@ function loadCams(force, preferDid) {
       showError('无法读取摄像头列表', String(e).slice(0, 160));
     });
 }
-loadCams(false, initialDid);
+checkComponents(false);
 </script>
 </body></html>

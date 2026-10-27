@@ -27,7 +27,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 - 排版：面板右上“排版”进入拖拽排序，按每页 N 张分页
 - 7 套主题：经典黑夜/白天 + 苹果/魅族/赛博/莫兰迪/像素 5 套风格主题，手动切换并持久化，摄像头页同步
 - 后台 `/admin`：设备显示/隐藏、改名、家庭过滤、天气城市、每页数量、管理员 PIN、日志、重置
-- 登录态持久化：扫码登录一次，后续不重复登录
+- 登录态持久化：面板原生小米扫码一次，后续不重复登录；已连接 Songloft 时自动同步，未安装时先登录、后自动带入
 - 面板与后台均自适应，同一账号可在多个设备/浏览器打开
 - 7 寸 1080p 大字号布局；手机单列滚动、紧凑控件，手机排版也可用
 - 音乐与 AI 音箱（可选）：`/admin` 统一管理 Songloft 音乐中心、小爱扫码绑定、任意数量音箱与多分组、在线搜歌、语音口令、大模型人设与小爱原生 TTS
@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.4.1-docker-installer.run
+sudo bash miot-panel-v0.5.0-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.4.1 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.5.0 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.4.1-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.4.1
+docker load -i miot-panel-v0.5.0-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.0
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.4.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.4.1-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.4.1-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.5.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.5.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.4.1-linux-installer.run
+sudo bash miot-panel-v0.5.0-linux-installer.run
 ```
 
 手动源码安装：
@@ -233,7 +233,7 @@ Windows 安装包已内置 Songloft v2.13.5、go-music-dl v1.1.3 和三个 Songl
 
 1. **设置后台 PIN**（保护后台，不是小米密码）。
 2. **安装/连接音乐中心**：Windows 可点“检测并安装 Windows 音乐中心”，缺少组件时自动从官方源/国内镜像下载并校验；约 50MB，页面显示下载、校验、启动进度。Linux 按提示运行 `music/install-music-stack.sh`，或填写已有音乐中心地址。
-3. **扫码登录小米账号**：用米家 App 扫描插件二维码；成功后会同步完整设备控制和小爱音箱。没有音乐中心时可跳过，改用面板小米账号登录（设备和音箱可能不完整）。
+3. **扫码登录小米账号**：用米家 App 扫描面板原生二维码；不需要先安装 Songloft，扫码后即可控制设备。已连接音乐中心会自动同步给 MIoT 插件；未连接时登录会暂存，安装/连接后自动带入，无需二次扫码。扫码失败仍可使用面板小米账号登录。
 4. **完成**：进入面板。默认各音箱独立，不会自动创建“全屋音箱”组；需要时在后台手动组网。
 
 已在后台设置 PIN 的用户仍可从后台顶部“首次设置向导”重新进入；已登录的玩客云用户不受影响。
@@ -302,9 +302,26 @@ Windows 安装包已内置 Songloft v2.13.5、go-music-dl v1.1.3 和三个 Songl
 - 自定义前端页面等同于“管理员可在面板同源执行 HTML/JS”的能力；只粘贴自己信任的代码，不要导入第三方页面模板
 - 清理日志不可恢复，且会清除系统其他服务的 journal 历史；需要保留的故障证据先导出
 
+## 恢复默认（v0.5.0+）
+
+后台 `/admin` → “安全与维护”提供三档恢复，避免调试失败后只能重装：
+
+- **恢复默认排版 / 恢复黑夜主题**：只影响外观。
+- **重置设置（保留 PIN/登录）**：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录、音乐中心连接。需要输入 `RESET` 确认，面板会自动重启。
+- **完全重置（回到首次向导）**：删除 PIN、小米登录、设备缓存和所有自定义设置，重启后进入 `/setup` 首次向导。音乐中心里已解绑/已绑定的账号不会被删除，需要时在音乐区另行解绑。
+
 ## 摄像头（可选，go2rtc + ffmpeg）
 
 面板右上角“摄像头”或 `/camera` 是独立的摄像头页：左侧是摄像头列表，右侧只嵌入 **go2rtc 的单路播放页**（WebRTC），不再进入 go2rtc 管理界面。顶部和右下角的“返回面板”始终在 iframe 之外，所以不会被全屏页面困住。
+
+### 摄像头组件自动安装（v0.5.0+）
+
+摄像头页会自动检测 go2rtc 和 ffmpeg。缺少组件时页面顶部会出现“摄像头组件未就绪”提示条：
+
+- Windows/Linux 点“安装缺失组件”，会从官方源下载 go2rtc v1.9.15 和 ffmpeg-static b6.1.1（GitHub 失败自动尝试 `gh-proxy.com`/`ghproxy.net`），按固定 SHA256 校验后解压到数据目录 `camera-stack/`，写入 go2rtc 配置并启动；后台任务显示下载/校验/启动进度，完成后自动刷新摄像头。
+- 自动安装需要先登录 `/admin`（PIN 会话）；失败时会自动展开“手动安装步骤”，给出下载链接、目标路径和重试/日志位置，可一步一步手动放置后重新检测。
+- Docker 容器不支持自动安装，请在宿主机安装 go2rtc/ffmpeg，并设置 `MIOT_GO2RTC`；已配置外部 go2rtc 时会显示对应提示，不会重复安装。
+- 安装后的 go2rtc 默认只监听 `127.0.0.1:1984`，RTSP 8554/WebRTC 8555 仅限家庭局域网，不要映射到公网。
 
 主页也会把当前家庭的每台摄像头做成独立卡片，默认排在 日历/天气/用电 之后，点卡片直接打开对应摄像头（`/camera?did=...`）。每页固定 10 张卡片；摄像头较多时（例如 5 路）会自然分页，原有设备卡片顺延；可以用“排版”拖动调整摄像头和设备的位置。主页的摄像头状态来自轻量接口，不会在主页启动转码，只有点开卡片后才开始拉流。
 
@@ -471,6 +488,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.5.0（2026-10-28）**：新增**面板原生小米扫码登录**：不需要先安装 Songloft，扫码后直接建立设备登录；已连接音乐中心时自动通过 MIoT 插件 `/auth/token` 同步，未安装时暂存登录，安装/连接后自动带入，避免二次扫码。摄像头页新增组件自检：缺少 go2rtc/ffmpeg 时顶部显示安装条，Windows/Linux 可一键下载（go2rtc v1.9.15、ffmpeg-static b6.1.1，SHA256 校验，官方源失败自动尝试国内镜像）并启动；自动安装失败会自动展开分步下载/放置/重试引导，Docker/远程 go2rtc 给出对应说明。后台“维护与恢复默认”新增**重置设置（保留 PIN/登录）**和**完全重置（回到首次向导）**，均需输入 RESET 确认并自动重启；Windows 卸载器会顺带停止本机 go2rtc。 
 - **v0.4.1（2026-10-28）**：修复 Windows 后台热更新在“正在重启”卡住的问题（v0.3.6–v0.4.0 的更新器用 `taskkill /T` 会连带结束更新 worker；现已只结束旧面板进程，worker 继续拉起新版本并通过健康检查）。v0.4.0 的首次向导、默认不组网、国内镜像和分阶段进度不变。注意：Windows v0.3.6–v0.3.9 仍受旧更新器影响，请用 v0.4.1 安装包覆盖安装（保留数据）；Windows v0.3.5 及更早、Linux 可直接后台更新。
 - **v0.4.0（2026-10-28）**：新增首次安装向导，按 **后台 PIN → 音乐中心 → 小爱扫码** 的顺序引导：未设置 PIN/未登录时根路径和登录页自动进入 `/setup`；Windows 可直接检测并在线安装音乐组件（官方源失败自动尝试国内镜像，后台任务显示分阶段进度），也可连接已有音乐中心或暂时跳过；安装后再扫码绑定小米账号，自动同步完整设备与小爱音箱。默认**不再自动创建“全屋音箱”组**，各音箱保持独立，需要时在后台手动组网。音乐组件安装改为后台任务，后台和向导均显示下载/校验/启动进度；下载失败可用 Windows 安装器离线组件。修复局域网音乐中心地址。
 - **v0.3.9（2026-10-28）**：Windows 后台音乐中心新增“检测并安装”：组件缺失时自动从官方源下载 Songloft/go-music-dl/插件并校验 SHA256，然后启动、配置面板；不需要重新下载整包。后台“打开音乐中心”未连接时改为明确提示“音乐中心未连接，请先安装或连接”。其余功能同 v0.3.8。

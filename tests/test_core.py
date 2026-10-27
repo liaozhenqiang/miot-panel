@@ -94,3 +94,43 @@ def test_update_extract_rejects_traversal(tmp_path):
     assert not (tmp_path / "evil.txt").exists()
     assert not (stage / "evil.txt").exists()
     assert miot._file_version(os.path.join(found, "miot-cloud.py")) == "9.9.9"
+
+
+def test_camera_component_catalog_is_pinned():
+    assert miot.CAMERA_COMPONENTS
+    for key, parts in miot.CAMERA_COMPONENTS.items():
+        assert set(parts) == {"go2rtc", "ffmpeg"}, key
+        for part in parts.values():
+            assert part["url"].startswith("https://github.com/")
+            assert len(part["sha256"]) == 64
+            assert part["size"] > 0
+            assert part["target"]
+
+
+def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
+    class Resp:
+        status_code = 200
+        text = '&&&START&&&{"code":0,"passToken":"pt","userId":"42","cUserId":"c"}'
+
+    class Sess:
+        def get(self, *args, **kwargs):
+            return Resp()
+
+    miot.QR_SESSIONS.clear()
+    miot.QR_SESSIONS["sid"] = {
+        "sess": Sess(), "poll_url": "http://example.invalid/",
+        "created": miot.time.time(), "poll_count": 0,
+        "in_flight": False, "non_zero": 0,
+    }
+    monkeypatch.setattr(miot, "_refresh_xiaomiio_by_pass_token",
+                        lambda pt, uid, name: {
+                            "user_id": uid, "service_token": "io", "ssecurity": "ss",
+                            "pass_token": pt, "expires_at": int(miot.time.time()) + 3600})
+    monkeypatch.setattr(miot, "_import_panel_auth_to_plugin",
+                        lambda force=False, auth=None: {"ok": True, "imported": True})
+    result = miot._qr_poll("sid")
+    assert result["state"] == "success"
+    assert result["user_id"] == "42"
+    assert result["imported"] is True
+    assert miot._read_auth_file()["source"] == "qrcode"
+    assert "sid" not in miot.QR_SESSIONS

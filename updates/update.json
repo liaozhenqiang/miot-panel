@@ -1,8 +1,8 @@
 {
-  "version": "0.4.1",
+  "version": "0.5.0",
   "released": "2026-10-28",
-  "notes": "修复 Windows 后台热更新卡在“正在重启”的问题（更新器不再连带结束 worker）；首次安装向导、默认不自动创建全屋音箱组、国内镜像下载进度与局域网音乐中心修复同 v0.4.0。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.4.1-linux-universal.tar.gz",
-  "sha256": "480c0ec6b4b0cb375fb9c910a113377340827fbd6c27ba603e1d26cd12401dc3",
-  "size": 2327261
+  "notes": "新增面板原生小米扫码登录（无需先装 Songloft，登录后自动同步/暂存带入）；摄像头组件自动检测、下载安装与失败分步引导；后台分级恢复默认设置。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.5.0-linux-universal.tar.gz",
+  "sha256": "726e3930790d87d9b5ec94f05e88229366b2190ba1686ff60805a7f5f9ef9cf0",
+  "size": 2340325
 }
