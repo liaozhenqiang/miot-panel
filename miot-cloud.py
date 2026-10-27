@@ -52,6 +52,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import ssl
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -79,6 +80,41 @@ def _default_root():
 APP_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("MIOT_APP_DIR") or os.path.dirname(os.path.abspath(__file__))))
 ROOT = _default_root()
+
+
+def _find_ca_bundle():
+    paths = [os.path.join(APP_DIR, "cacert.pem")]
+    try:
+        import certifi
+        paths.append(certifi.where())
+    except Exception:
+        pass
+    for base in (sys.prefix, getattr(sys, "base_prefix", "")):
+        if base:
+            paths.append(os.path.join(base, "Lib", "site-packages",
+                                      "certifi", "cacert.pem"))
+    for path in paths:
+        try:
+            if path and os.path.isfile(path):
+                return path
+        except OSError:
+            pass
+    return ""
+
+
+CA_BUNDLE = _find_ca_bundle()
+if CA_BUNDLE:
+    os.environ.setdefault("SSL_CERT_FILE", CA_BUNDLE)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", CA_BUNDLE)
+    try:
+        _DEFAULT_SSL_CONTEXT = ssl.create_default_context(cafile=CA_BUNDLE)
+        ssl._create_default_https_context = lambda: _DEFAULT_SSL_CONTEXT
+        LOG_CA = CA_BUNDLE
+    except Exception:
+        LOG_CA = ""
+else:
+    LOG_CA = ""
+
 LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
 LOG_FILE = os.path.abspath(os.path.expanduser(os.environ.get("MIOT_LOG_FILE") or (
     os.path.join(ROOT, "miot-cloud.log") if os.name == "nt" else ""))) if (
@@ -156,7 +192,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.3.6"
+APP_VERSION = "0.3.7"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -176,7 +212,7 @@ UPDATE_RUNNING = {"active": False, "target": ""}
 UPDATE_APP_FILES = (
     "miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html",
     "manifest.webmanifest", "sw.js", "sensor_models.json", "miot_models.json.gz",
-    "config.example.json", "README.md", "LICENSE",
+    "config.example.json", "README.md", "LICENSE", "cacert.pem",
 )
 UPDATE_STATES = ("downloading", "verifying", "installing", "restarting",
                  "rolling_back")
@@ -2824,7 +2860,17 @@ def _update_prepare(manifest):
         req = urllib.request.Request(
             manifest["url"],
             headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
-        with urllib.request.urlopen(req, timeout=30) as resp, open(part_path, "wb") as out:
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+        except urllib.error.URLError as exc:
+            reason = str(getattr(exc, "reason", exc))
+            if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason:
+                LOG.warning("update TLS chain untrusted; retrying with SHA256-anchored download")
+                resp = urllib.request.urlopen(
+                    req, timeout=30, context=ssl._create_unverified_context())
+            else:
+                raise
+        with resp, open(part_path, "wb") as out:
             total = int(resp.headers.get("Content-Length") or 0)
             got = 0
             last = 0
