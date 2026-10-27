@@ -51,6 +51,7 @@ import secrets
 import shutil
 import subprocess
 import tarfile
+import tempfile
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -155,7 +156,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.3.5"
+APP_VERSION = "0.3.6"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -237,6 +238,12 @@ DEFAULT_CONFIG = {
     "speaker_max_chars": 200,
     "speaker_hidden": [],
     "speaker_default": "",
+    "songloft_url": "",
+    "songloft_user": "",
+    "songloft_pass": "",
+    "go_music_dl_url": "",
+    "plugin_account_file": "",
+    "lan_ip": "",
     "update_url": "",
     "admin_pin_salt": "",
     "admin_pin_hash": "",
@@ -280,6 +287,13 @@ def _normalize_config(data):
         out["speaker_max_chars"] = 200
     out["speaker_hidden"] = _str_list(src.get("speaker_hidden"), 500)
     out["speaker_default"] = str(src.get("speaker_default") or "")[:120]
+    for key in ("songloft_url", "go_music_dl_url"):
+        value = str(src.get(key) or "").strip().rstrip("/")[:500]
+        out[key] = value if value.startswith(("http://", "https://")) else ""
+    out["songloft_user"] = str(src.get("songloft_user") or "").strip()[:120]
+    out["songloft_pass"] = str(src.get("songloft_pass") or "")[:200]
+    out["plugin_account_file"] = str(src.get("plugin_account_file") or "")[:500]
+    out["lan_ip"] = str(src.get("lan_ip") or "").strip()[:64]
     update_url = str(src.get("update_url") or "").strip()[:500]
     out["update_url"] = update_url if update_url.startswith(("http://", "https://")) else ""
     out["admin_pin_salt"] = str(src.get("admin_pin_salt") or "")
@@ -359,6 +373,77 @@ def get_lan_ip():
     return "127.0.0.1"
 
 LAN_IP = get_lan_ip()
+if CONFIG.get("lan_ip"):
+    LAN_IP = str(CONFIG["lan_ip"])
+
+
+def _lan_candidates():
+    found = []
+
+    def add(ip, name=""):
+        ip = str(ip or "").strip()
+        if not ip or ip.startswith("127.") or ip.startswith("169.254."):
+            return
+        try:
+            if not ipaddress.ip_address(ip).is_private:
+                return
+        except ValueError:
+            return
+        if any(item["ip"] == ip for item in found):
+            return
+        found.append({"ip": ip, "name": str(name or "")[:60]})
+
+    seen = get_lan_ip()
+    if seen:
+        add(seen, "当前")
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            add(ip, "本机")
+    except Exception:
+        pass
+    if os.name == "nt":
+        try:
+            out = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command",
+                 "Get-NetIPAddress -AddressFamily IPv4 | "
+                 "Select-Object IPAddress,InterfaceAlias | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, timeout=6).stdout
+            data = json.loads(out or "[]")
+            if isinstance(data, dict):
+                data = [data]
+            for item in data if isinstance(data, list) else []:
+                if isinstance(item, dict):
+                    add(item.get("IPAddress"), item.get("InterfaceAlias") or "")
+        except Exception:
+            pass
+    return found
+
+
+def _add_firewall_rules(ports):
+    if os.name != "nt":
+        return False, "仅 Windows 支持一键放行防火墙"
+    ports = [str(p) for p in ports if str(p).isdigit()]
+    script = (
+        "$ErrorActionPreference='SilentlyContinue'\n"
+        "foreach($p in @(%s)){\n"
+        "  Remove-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" | Out-Null\n"
+        "  New-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" -Direction Inbound "
+        "-Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null\n"
+        "}\n" % ",".join(ports)
+    )
+    try:
+        path = os.path.join(tempfile.gettempdir(), "miot-panel-firewall.ps1")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(script)
+        quoted = path.replace("'", "''")
+        cmd = ("Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden "
+               "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%s'"
+               % quoted)
+        subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", cmd],
+                         creationflags=0x08000000, close_fds=True)
+        return True, "已请求管理员权限，请在 UAC 弹窗中确认"
+    except Exception as exc:
+        return False, str(exc)[:160]
 
 # ----------------------------------------------------------------- 天气（wttr.in，缓存 30 分钟）
 WEATHER = {}
@@ -798,7 +883,7 @@ def _read_auth_file():
 def _plugin_account():
     """读取 Songloft MIoT 插件的账号存储，返回可用于面板的账号信息。"""
     try:
-        with open(PLUGIN_ACCOUNT_FILE, encoding="utf-8") as f:
+        with open(_plugin_account_file(), encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, str):
             data = json.loads(data)
@@ -2313,29 +2398,36 @@ background:#ff6900;color:#fff;font-size:16px;font-weight:600;}
 .qr svg{display:block;width:min(72vw,46vh,340px);height:auto;aspect-ratio:1/1;}
 .hint{font-size:12px;color:#8a93a2;line-height:1.7;margin-top:6px;}
 .center{text-align:center;}
+.linkbtn{margin-top:10px;background:none;border:0;color:#ffb36b;font-size:13px;text-decoration:underline;cursor:pointer;}
+.adminlink{margin-top:16px;display:block;text-align:center;color:#8a93a2;font-size:12px;text-decoration:none;}
 </style></head><body><div class="card">
 <h1>🔐 登录米家账号</h1>
 
 <div id="qrbox" class="center">
-  <div class="sub">本屏仅支持触摸、无法输入。<br>请用<b>手机相机/微信扫一扫</b>下方二维码，在手机上完成登录：</div>
+  <div class="sub">请用<b>手机相机/微信扫一扫</b>下方二维码，在手机上完成登录；也可以直接使用账号密码登录。</div>
   <div class="qr">@@QR@@</div>
   <div class="hint">扫码后手机会打开登录页 → 输入账号密码（如需验证码在手机上填）→ 本屏将<b>自动跳转</b>到设备面板。</div>
+  <button class="linkbtn" onclick="showPhone()">使用账号密码登录（需键盘）</button>
 </div>
 
 <div id="form" style="display:none">
+  <button class="linkbtn" onclick="showQR()">← 返回扫码登录</button>
   <label>小米账号（手机号/邮箱）</label>
   <input id="user" placeholder="如 13800000000" autocomplete="username" inputmode="text">
   <label>密码</label>
   <input id="pwd" type="password" placeholder="米家 App 登录密码" autocomplete="current-password">
   <button class="btn" onclick="doLogin()">登录</button>
   <div class="msg" id="msg"></div>
-  <div class="note">与米家 App 同源的小米云登录。账号密码仅在本机（玩客云）一次性用于拉取设备与控制，不经过任何第三方。若触发短信/邮箱验证码，登录后会在本页提示输入。</div>
+  <div class="note">与米家 App 同源的小米云登录。账号密码仅在本机一次性用于拉取设备与控制，不经过任何第三方。若触发短信/邮箱验证码，登录后会在本页提示输入。没有键盘时，可用手机打开同一地址。</div>
 </div>
+<a class="adminlink" href="/admin">后台管理</a>
 </div>
 <script>
 var API='';
+function showPhone(){document.getElementById('qrbox').style.display='none';document.getElementById('form').style.display='block';}
+function showQR(){document.getElementById('qrbox').style.display='block';document.getElementById('form').style.display='none';}
 var phone=/[?&]m=phone/.test(location.search);
-if(phone){document.getElementById('qrbox').style.display='none';document.getElementById('form').style.display='block';}
+if(phone){showPhone();}
 fetch(API+'/api/status').then(function(r){return r.json();}).then(function(s){if(s.logged_in)location.href=API+'/';}).catch(function(){});
 function doLogin(){
   var u=document.getElementById('user').value.trim();
@@ -2446,8 +2538,11 @@ def _public_config():
             "weather_label", "country", "page_size", "hidden_devices", "renames",
             "speaker_panel_enabled", "speaker_text_enabled", "speaker_voice_enabled",
             "speaker_answer_mode", "speaker_max_chars", "speaker_hidden",
-            "speaker_default", "update_url")
-    return {k: CONFIG.get(k) for k in keys}
+            "speaker_default", "songloft_url", "songloft_user", "go_music_dl_url",
+            "plugin_account_file", "lan_ip", "update_url")
+    data = {k: CONFIG.get(k) for k in keys}
+    data["songloft_pass_set"] = bool(CONFIG.get("songloft_pass"))
+    return data
 
 
 # ----------------------------------------------------------------- 后台热更新
@@ -2674,7 +2769,7 @@ def _spawn_app(app_dir, port):
 def _signal_restart(parent_pid, app_dir, port):
     if os.name == "nt":
         try:
-            subprocess.run(["taskkill", "/PID", str(parent_pid), "/F"],
+            subprocess.run(["taskkill", "/PID", str(parent_pid), "/T", "/F"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=10, check=False)
         except Exception:
@@ -2845,6 +2940,482 @@ def _read_kv_file(path):
     return out
 
 
+def _songloft_base():
+    configured = str(CONFIG.get("songloft_url") or "").strip().rstrip("/")
+    return configured or SONGLOFT_API.rstrip("/")
+
+
+def _songloft_port():
+    try:
+        parsed = urllib.parse.urlsplit(_songloft_base())
+        return parsed.port or (443 if parsed.scheme == "https" else 58091)
+    except ValueError:
+        return 58091
+
+
+def _songloft_server_url():
+    configured = str(CONFIG.get("songloft_url") or "").strip().rstrip("/")
+    if configured:
+        return configured
+    return "http://%s:%d" % (LAN_IP, SONGLOFT_PORT)
+
+
+def _songloft_creds():
+    user = str(CONFIG.get("songloft_user") or "").strip()
+    pwd = str(CONFIG.get("songloft_pass") or "")
+    if user and pwd:
+        return user, pwd
+    creds = _read_kv_file(SONGLOFT_ENV_FILE)
+    return creds.get("ADMIN_USERNAME") or "", creds.get("ADMIN_PASSWORD") or ""
+
+
+def _gmd_base():
+    configured = str(CONFIG.get("go_music_dl_url") or "").strip().rstrip("/")
+    return configured or GO_MUSIC_DL_API.rstrip("/")
+
+
+def _gmd_port():
+    try:
+        parsed = urllib.parse.urlsplit(_gmd_base())
+        return parsed.port or (443 if parsed.scheme == "https" else 8080)
+    except ValueError:
+        return 8080
+
+
+def _plugin_account_file():
+    return str(CONFIG.get("plugin_account_file") or PLUGIN_ACCOUNT_FILE)
+
+
+def _clear_songloft_token():
+    with _SL_LOCK:
+        _SL_TOKEN["token"] = ""
+        _SL_TOKEN["exp"] = 0.0
+
+
+# ----------------------------------------------------------------- Windows 音乐组件
+MUSIC_STACK_DIR = os.path.join(ROOT, "music-stack")
+MUSIC_STACK_SRC = os.path.join(APP_DIR, "music-stack")
+MUSIC_STACK_LOCK = threading.Lock()
+
+
+def _stack_paths():
+    bin_dir = os.path.join(MUSIC_STACK_DIR, "bin")
+    sl_dir = os.path.join(MUSIC_STACK_DIR, "songloft")
+    gmd_dir = os.path.join(MUSIC_STACK_DIR, "go-music-dl")
+    return {
+        "root": MUSIC_STACK_DIR,
+        "bin": bin_dir,
+        "songloft": sl_dir,
+        "songloft_data": os.path.join(sl_dir, "data"),
+        "plugins": os.path.join(sl_dir, "data", "jsplugins"),
+        "gmd": gmd_dir,
+        "gmd_data": os.path.join(gmd_dir, "data"),
+        "sl_env": os.path.join(MUSIC_STACK_DIR, "songloft.env"),
+        "gmd_admin": os.path.join(MUSIC_STACK_DIR, "gmd-admin.txt"),
+        "state": os.path.join(MUSIC_STACK_DIR, "stack.json"),
+        "sl_log": os.path.join(MUSIC_STACK_DIR, "songloft.log"),
+        "gmd_log": os.path.join(MUSIC_STACK_DIR, "music-dl.log"),
+    }
+
+
+def _stack_state_read():
+    try:
+        with open(_stack_paths()["state"], encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _stack_state_write(data):
+    paths = _stack_paths()
+    os.makedirs(paths["root"], exist_ok=True)
+    tmp = paths["state"] + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, paths["state"])
+
+
+def _stack_creds():
+    paths = _stack_paths()
+    sl = _read_kv_file(paths["sl_env"])
+    gmd = _read_kv_file(paths["gmd_admin"])
+    return {
+        "songloft_user": sl.get("ADMIN_USERNAME") or "admin",
+        "songloft_pass": sl.get("ADMIN_PASSWORD") or "",
+        "gmd_user": gmd.get("username") or "admin",
+        "gmd_pass": gmd.get("password") or "",
+    }
+
+
+def _port_free(port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.5)
+    try:
+        sock.bind(("0.0.0.0", int(port)))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def _port_json(url, timeout=3):
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read() or b"{}")
+    except Exception:
+        return None
+
+
+def _pid_alive(pid):
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            out = subprocess.run(
+                ["tasklist", "/FI", "PID eq %d" % pid, "/NH"],
+                capture_output=True, text=True, timeout=5).stdout
+            return str(pid) in out
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _port_available(port, probe_path):
+    if not _port_free(port):
+        return False
+    if _wait_http("http://127.0.0.1:%d%s" % (int(port), probe_path), 1):
+        return False
+    return True
+
+
+def _wait_http(url, timeout=25, want_json=False):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+                raw = resp.read()
+                if resp.status < 400:
+                    if want_json:
+                        return json.loads(raw or b"{}")
+                    return True
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return None
+
+
+def _stack_popen(args, cwd, log_path):
+    os.makedirs(cwd, exist_ok=True)
+    log = open(log_path, "ab")
+    flags = 0
+    if os.name == "nt":
+        flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    try:
+        proc = subprocess.Popen(
+            args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+            creationflags=flags, close_fds=True,
+            **({} if os.name == "nt" else {"start_new_session": True}))
+        return proc.pid
+    finally:
+        log.close()
+
+
+def _stack_stop(disable=False):
+    state = _stack_state_read()
+    for key in ("songloft_pid", "gmd_pid"):
+        pid = state.get(key)
+        if not pid:
+            continue
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10, check=False)
+            else:
+                os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
+    state["songloft_pid"] = 0
+    state["gmd_pid"] = 0
+    if disable:
+        state["disabled"] = True
+    _stack_state_write(state)
+    return state
+
+
+def _stack_login(base, user, pwd, timeout=8):
+    req = urllib.request.Request(
+        base + "/api/v1/auth/login",
+        data=json.dumps({"username": user, "password": pwd}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read() or b"{}")
+    token = str(data.get("access_token") or "")
+    if not token:
+        raise RuntimeError("音乐中心登录失败")
+    return token
+
+
+def _stack_plugins(base, token, timeout=25):
+    deadline = time.time() + timeout
+    last = []
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(
+                base + "/api/v1/jsplugins",
+                headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                last = json.loads(resp.read() or b"{}").get("plugins") or []
+            names = {str(p.get("entry_path") or p.get("name") or "") for p in last
+                     if isinstance(p, dict)}
+            if {"miot", "go-music-dl", "panel-sso"} <= names:
+                return last
+        except Exception:
+            pass
+        time.sleep(1)
+    return last
+
+
+def _stack_setup_gmd(gmd_dir, gmd_url, user, pwd):
+    """首次运行 go-music-dl 时用日志里的 setup token 建管理员。"""
+    token = ""
+    try:
+        with open(os.path.join(MUSIC_STACK_DIR, "music-dl.log"),
+                  encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if "Web setup token:" in line:
+                    token = line.split("Web setup token:", 1)[1].strip()
+    except OSError:
+        pass
+    if token:
+        form = urllib.parse.urlencode({
+            "setup_token": token, "username": user,
+            "password": pwd, "password_confirm": pwd,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            gmd_url + "/music/setup", data=form, method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError("go-music-dl 初始化失败")
+        except urllib.error.HTTPError as exc:
+            if exc.code >= 400:
+                raise RuntimeError("go-music-dl 初始化失败: HTTP %s" % exc.code)
+    form = urllib.parse.urlencode({"username": user, "password": pwd}).encode("utf-8")
+    req = urllib.request.Request(
+        gmd_url + "/music/login", data=form, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status < 400 or resp.status in (301, 302, 303)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (301, 302, 303):
+            return True
+        raise RuntimeError("go-music-dl 登录失败: HTTP %s" % exc.code)
+
+
+def _stack_start_services(sport, gport, user, pwd):
+    paths = _stack_paths()
+    os.makedirs(paths["songloft_data"], exist_ok=True)
+    os.makedirs(paths["gmd_data"], exist_ok=True)
+    os.makedirs(paths["plugins"], exist_ok=True)
+    state = _stack_state_read()
+    sl_exe = os.path.join(paths["bin"], "songloft.exe")
+    gmd_exe = os.path.join(paths["bin"], "music-dl.exe")
+    if not os.path.isfile(sl_exe) or not os.path.isfile(gmd_exe):
+        raise RuntimeError("Windows 音乐组件未安装，请重新安装 MIOT Panel")
+    sl_running = bool((_port_json("http://127.0.0.1:%d/api/v1/version" % sport) or {}).get("version"))
+    if sl_running and not _pid_alive(state.get("songloft_pid")):
+        raise RuntimeError("端口 %d 已被其他 Songloft 占用，请先关闭它" % sport)
+    if not sl_running:
+        state["songloft_pid"] = _stack_popen(
+            [sl_exe, "-username", user, "-password", pwd,
+             "-port", str(sport), "-db", os.path.join("data", "songloft.db")],
+            paths["songloft"], paths["sl_log"])
+        _stack_state_write(state)
+        if _wait_http("http://127.0.0.1:%d/api/v1/version" % sport,
+                      30, want_json=True) is None:
+            raise RuntimeError("Songloft 启动超时，请查看 music-stack/songloft.log")
+    gmd_creds = _stack_creds()
+    gmd_running = bool(_wait_http("http://127.0.0.1:%d/music/" % gport, 2))
+    if gmd_running and not _pid_alive(state.get("gmd_pid")):
+        raise RuntimeError("端口 %d 已被其他 go-music-dl 占用，请先关闭它" % gport)
+    if not gmd_running:
+        state["gmd_pid"] = _stack_popen(
+            [gmd_exe, "web", "--no-browser", "--port", str(gport)],
+            paths["gmd"], paths["gmd_log"])
+        _stack_state_write(state)
+        if _wait_http("http://127.0.0.1:%d/music/" % gport, 30) is None:
+            raise RuntimeError("go-music-dl 启动超时，请查看 music-stack/music-dl.log")
+        _stack_setup_gmd(paths["gmd"], "http://127.0.0.1:%d" % gport,
+                         gmd_creds["gmd_user"], gmd_creds["gmd_pass"])
+    state.update({"installed": True, "songloft_port": sport, "gmd_port": gport,
+                  "updated": time.strftime("%Y-%m-%d %H:%M:%S")})
+    _stack_state_write(state)
+    return state
+
+
+def _stack_install():
+    if os.name != "nt":
+        raise RuntimeError("一键安装音乐中心仅支持 Windows；Linux 请运行 music/install-music-stack.sh")
+    src = MUSIC_STACK_SRC
+    required = ("songloft.exe", "music-dl.exe",
+                os.path.join("plugins", "miot.jsplugin.zip"),
+                os.path.join("plugins", "go-music-dl.jsplugin.zip"),
+                os.path.join("plugins", "panel-sso.jsplugin.zip"))
+    missing = [name for name in required if not os.path.isfile(os.path.join(src, name))]
+    if missing:
+        raise RuntimeError("安装包未包含 Windows 音乐组件（%s）" % ", ".join(missing))
+    with MUSIC_STACK_LOCK:
+        paths = _stack_paths()
+        os.makedirs(paths["root"], exist_ok=True)
+        _stack_stop()
+        os.makedirs(paths["bin"], exist_ok=True)
+        os.makedirs(paths["plugins"], exist_ok=True)
+        os.makedirs(paths["songloft_data"], exist_ok=True)
+        os.makedirs(paths["gmd_data"], exist_ok=True)
+        for name in ("songloft.exe", "music-dl.exe"):
+            shutil.copy2(os.path.join(src, name), os.path.join(paths["bin"], name))
+        for name in os.listdir(os.path.join(src, "plugins")):
+            if name.endswith(".jsplugin.zip"):
+                shutil.copy2(os.path.join(src, "plugins", name),
+                             os.path.join(paths["plugins"], name))
+        for name in ("LICENSE-songloft.txt", "LICENSE-go-music-dl.txt", "README.txt"):
+            source = os.path.join(src, name)
+            if os.path.isfile(source):
+                shutil.copy2(source, os.path.join(paths["root"], name))
+        creds = _stack_creds()
+        if not creds["songloft_pass"]:
+            creds["songloft_pass"] = secrets.token_urlsafe(18)
+        if not creds["gmd_pass"]:
+            creds["gmd_pass"] = secrets.token_urlsafe(18)
+        with open(paths["sl_env"], "w", encoding="utf-8") as f:
+            f.write("ADMIN_USERNAME=%s\nADMIN_PASSWORD=%s\n"
+                    % (creds["songloft_user"], creds["songloft_pass"]))
+        with open(paths["gmd_admin"], "w", encoding="utf-8") as f:
+            f.write("username=%s\npassword=%s\n"
+                    % (creds["gmd_user"], creds["gmd_pass"]))
+        try:
+            os.chmod(paths["sl_env"], 0o600)
+            os.chmod(paths["gmd_admin"], 0o600)
+        except OSError:
+            pass
+        sport = 58091
+        while sport < 58099 and not _port_available(sport, "/api/v1/version"):
+            sport += 1
+        gport = 8081
+        while gport < 8089 and not _port_available(gport, "/music/"):
+            gport += 1
+        if sport >= 58099 or gport >= 8089:
+            raise RuntimeError("找不到空闲的音乐服务端口")
+        state = _stack_start_services(sport, gport,
+                                      creds["songloft_user"], creds["songloft_pass"])
+        state["disabled"] = False
+        _stack_state_write(state)
+        sl_base = "http://127.0.0.1:%d" % sport
+        gmd_base = "http://127.0.0.1:%d" % gport
+        token = _stack_login(sl_base, creds["songloft_user"], creds["songloft_pass"])
+        plugins = _stack_plugins(sl_base, token)
+        server_host = "http://%s:%d" % (LAN_IP, sport)
+        headers = {"Content-Type": "application/json",
+                   "Authorization": "Bearer " + token}
+        attempts = time.time() + 20
+        while time.time() < attempts:
+            try:
+                req = urllib.request.Request(
+                    sl_base + GMD_PLUGIN_API + "/config",
+                    data=json.dumps({
+                        "baseUrl": gmd_base, "basePath": "/music",
+                        "serverHost": server_host,
+                        "gmdAuthUser": creds["gmd_user"],
+                        "gmdAuthPass": creds["gmd_pass"],
+                    }).encode("utf-8"), headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status < 400:
+                        break
+            except Exception:
+                pass
+            time.sleep(1)
+        try:
+            req = urllib.request.Request(
+                sl_base + MIOT_PLUGIN_API + "/config",
+                data=json.dumps({
+                    "server_host": server_host,
+                    "external_search_enabled": True,
+                    "external_search_no_import": True,
+                    "external_search_sources": [{
+                        "id": "go-music-dl", "name": "GoMusicDL",
+                        "url": GMD_SEARCH_PATH, "token": "", "enabled": True,
+                    }],
+                    "external_search_timeout": 6,
+                    "search_priority": "parallel",
+                }).encode("utf-8"), headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=15).close()
+        except Exception:
+            pass
+        save_config({
+            "songloft_url": sl_base,
+            "songloft_user": creds["songloft_user"],
+            "songloft_pass": creds["songloft_pass"],
+            "go_music_dl_url": gmd_base,
+            "plugin_account_file": os.path.join(
+                paths["songloft_data"], "jsplugins_data", "miot", "data", "accounts"),
+        })
+        _clear_songloft_token()
+        _add_firewall_rules([PORT, sport, gport])
+        return {"ok": True, "songloft_url": sl_base, "go_music_dl_url": gmd_base,
+                "songloft_port": sport, "gmd_port": gport,
+                "plugins": [{"name": p.get("name"), "status": p.get("status")}
+                            for p in plugins if isinstance(p, dict)],
+                "server_host": server_host}
+
+
+def _stack_start():
+    if os.name != "nt":
+        raise RuntimeError("Windows 音乐中心管理仅支持 Windows")
+    with MUSIC_STACK_LOCK:
+        state = _stack_state_read()
+        if not state.get("installed"):
+            raise RuntimeError("尚未安装 Windows 音乐中心")
+        creds = _stack_creds()
+        sport = int(state.get("songloft_port") or 58091)
+        gport = int(state.get("gmd_port") or 8081)
+        state = _stack_start_services(sport, gport,
+                                      creds["songloft_user"], creds["songloft_pass"])
+        state["disabled"] = False
+        _stack_state_write(state)
+        save_config({
+            "songloft_url": "http://127.0.0.1:%d" % sport,
+            "songloft_user": creds["songloft_user"],
+            "songloft_pass": creds["songloft_pass"],
+            "go_music_dl_url": "http://127.0.0.1:%d" % gport,
+        })
+        _clear_songloft_token()
+        return state
+
+
+def _stack_autostart():
+    if os.name != "nt":
+        return
+    time.sleep(4)
+    try:
+        state = _stack_state_read()
+        if state.get("installed") and not state.get("disabled"):
+            _stack_start()
+            LOG.info("Windows music stack started")
+    except Exception as exc:
+        LOG.warning("Windows music stack autostart failed: %s", str(exc)[:160])
+
+
 def _service_active(name):
     try:
         return subprocess.run(["systemctl", "is-active", name],
@@ -2859,13 +3430,11 @@ def _songloft_login(force=False):
     with _SL_LOCK:
         if not force and _SL_TOKEN["token"] and _SL_TOKEN["exp"] > now + 30:
             return _SL_TOKEN["token"]
-        creds = _read_kv_file(SONGLOFT_ENV_FILE)
-        user = creds.get("ADMIN_USERNAME") or ""
-        pwd = creds.get("ADMIN_PASSWORD") or ""
+        user, pwd = _songloft_creds()
         if not user or not pwd:
             raise RuntimeError("未找到音乐中心管理员凭据")
         req = urllib.request.Request(
-            SONGLOFT_API + "/api/v1/auth/login",
+            _songloft_base() + "/api/v1/auth/login",
             data=json.dumps({"username": user, "password": pwd}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=8) as r:
@@ -2883,23 +3452,20 @@ def _songloft_login(force=False):
 
 
 def _songloft_sso_url():
-    if not os.path.exists(SONGLOFT_SSO_ZIP):
-        raise RuntimeError("音乐中心免登录插件未安装")
+    base = _songloft_base()
     try:
         with urllib.request.urlopen(
-                SONGLOFT_API + "/api/v1/jsplugin/" + SONGLOFT_SSO_ENTRY + "/",
+                base + "/api/v1/jsplugin/" + SONGLOFT_SSO_ENTRY + "/",
                 timeout=4) as r:
             if r.status != 200:
                 raise RuntimeError("音乐中心免登录入口不可用")
     except Exception:
-        raise RuntimeError("音乐中心免登录入口不可用，请重启 songloft")
-    creds = _read_kv_file(SONGLOFT_ENV_FILE)
-    user = creds.get("ADMIN_USERNAME") or ""
-    pwd = creds.get("ADMIN_PASSWORD") or ""
+        raise RuntimeError("音乐中心免登录入口不可用，请确认 panel-sso 插件已安装")
+    user, pwd = _songloft_creds()
     if not user or not pwd:
         raise RuntimeError("未找到音乐中心管理员凭据")
     req = urllib.request.Request(
-        SONGLOFT_API + "/api/v1/auth/login",
+        base + "/api/v1/auth/login",
         data=json.dumps({"username": user, "password": pwd}).encode("utf-8"),
         headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -2917,15 +3483,14 @@ def _songloft_sso_url():
     frag = base64.urlsafe_b64encode(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).decode("ascii").rstrip("=")
-    return "http://%s:%d/api/v1/jsplugin/%s/#%s" % (
-        LAN_IP, SONGLOFT_PORT, SONGLOFT_SSO_ENTRY, frag)
+    return "%s/api/v1/jsplugin/%s/#%s" % (base, SONGLOFT_SSO_ENTRY, frag)
 
 
 def _songloft_req(method, path, payload=None, timeout=15, retry=True):
     token = _songloft_login()
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(
-        SONGLOFT_API + path, data=body, method=method,
+        _songloft_base() + path, data=body, method=method,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + token})
     try:
@@ -2971,21 +3536,23 @@ def _plugin_pairs(plugins):
 def _music_state():
     state = {
         "ok": True, "error": "",
-        "songloft": {"active": _service_active("songloft"), "port": SONGLOFT_PORT,
-                     "version": ""},
-        "gmd": {"active": _service_active(GO_MUSIC_DL_SERVICE), "port": GO_MUSIC_DL_PORT},
+        "songloft": {"active": False, "port": _songloft_port(),
+                     "version": "", "url": _songloft_base()},
+        "gmd": {"active": False, "port": _gmd_port(), "url": _gmd_base()},
         "plugins": {}, "accounts": [], "groups": [], "providers": [],
         "miot": {}, "ai": {}, "chat": {}, "gmd_config": {},
-        "conversation": {}, "lan": LAN_IP,
+        "conversation": {}, "lan": str(CONFIG.get("lan_ip") or LAN_IP),
     }
-    if not state["songloft"]["active"]:
-        state["error"] = "Songloft 未运行"
-        return state
     try:
-        _, ver = _songloft_req("GET", "/api/v1/version", timeout=4)
-        state["songloft"]["version"] = str(ver.get("version") or "")
+        code, ver = _songloft_req("GET", "/api/v1/version", timeout=4)
+        version = str(ver.get("version") or "") if isinstance(ver, dict) else ""
+        if code != 200 or not version:
+            raise RuntimeError("Songloft 未响应")
+        state["songloft"]["version"] = version
+        state["songloft"]["active"] = True
     except Exception:
-        pass
+        state["error"] = "Songloft 未连接"
+        return state
     try:
         _, pl = _songloft_req("GET", "/api/v1/jsplugins", timeout=6)
         pairs = _plugin_pairs(pl.get("plugins") if isinstance(pl, dict) else [])
@@ -2997,7 +3564,13 @@ def _music_state():
                     "active": p.get("status") == "active",
                     "status": p.get("status"),
                 }
-        state["sso_ready"] = os.path.exists(SONGLOFT_SSO_ZIP)
+        try:
+            with urllib.request.urlopen(
+                    _songloft_base() + "/api/v1/jsplugin/" + SONGLOFT_SSO_ENTRY + "/",
+                    timeout=4) as resp:
+                state["sso_ready"] = resp.status == 200
+        except Exception:
+            state["sso_ready"] = False
     except Exception as e:
         state["error"] = str(e)[:160]
 
@@ -3086,6 +3659,19 @@ def _music_state():
             "sources": gmd.get("sources") or [],
             "defaultQuality": gmd.get("defaultQuality") or "exhigh",
         }
+        gmd_url = str(state["gmd_config"]["baseUrl"] or _gmd_base()).rstrip("/")
+        state["gmd"]["url"] = gmd_url
+        try:
+            state["gmd"]["port"] = urllib.parse.urlsplit(gmd_url).port or state["gmd"]["port"]
+        except ValueError:
+            pass
+        try:
+            with urllib.request.urlopen(gmd_url + "/music/", timeout=4) as resp:
+                state["gmd"]["active"] = resp.status < 500
+        except urllib.error.HTTPError:
+            state["gmd"]["active"] = True
+        except Exception:
+            state["gmd"]["active"] = False
 
     if state["miot"].get("conversation_monitor_enabled"):
         _, conv = _songloft_req("GET", MIOT_PLUGIN_API + "/conversation/status", timeout=6)
@@ -3332,7 +3918,7 @@ def _music_autoconfig():
     host_name = (urllib.parse.urlsplit(current_host).hostname or "").lower() \
         if current_host else ""
     if not current_host or host_name in ("127.0.0.1", "localhost", "::1"):
-        current_host = "http://%s:%d" % (LAN_IP, SONGLOFT_PORT)
+        current_host = _songloft_server_url()
     patch = {
         "server_host": current_host,
         "external_search_enabled": True,
@@ -3348,9 +3934,9 @@ def _music_autoconfig():
     }
     _songloft_req("POST", MIOT_PLUGIN_API + "/config", patch, timeout=30)
     _songloft_req("POST", GMD_PLUGIN_API + "/config", {
-        "baseUrl": "http://%s:%d" % (LAN_IP, GO_MUSIC_DL_PORT),
+        "baseUrl": _gmd_base(),
         "basePath": "/music",
-        "serverHost": "http://%s:%d" % (LAN_IP, SONGLOFT_PORT),
+        "serverHost": _songloft_server_url(),
         "sources": _music_default_sources(),
         "defaultQuality": "exhigh",
     }, timeout=10)
@@ -3519,6 +4105,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_pages(u)
         elif u.path == "/api/admin/music_info":
             self.api_admin_music_info(u)
+        elif u.path == "/api/admin/laninfo":
+            self.api_admin_laninfo()
+        elif u.path == "/api/admin/music/stack/status":
+            self.api_admin_music_stack_status()
         elif u.path == "/api/admin/music_state":
             self.api_admin_music_state()
         elif u.path == "/api/admin/music_devices":
@@ -3617,6 +4207,16 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_ai_test(body)
         elif u.path == "/api/admin/music/ai_check":
             self.api_admin_music_ai_check()
+        elif u.path == "/api/admin/music/connect":
+            self.api_admin_music_connect(body)
+        elif u.path == "/api/admin/firewall":
+            self.api_admin_firewall()
+        elif u.path == "/api/admin/music/stack/install":
+            self.api_admin_music_stack_install()
+        elif u.path == "/api/admin/music/stack/start":
+            self.api_admin_music_stack_start()
+        elif u.path == "/api/admin/music/stack/stop":
+            self.api_admin_music_stack_stop()
         elif u.path == "/api/admin/update/check":
             self.api_admin_update_check(body)
         elif u.path == "/api/admin/update/apply":
@@ -4189,6 +4789,17 @@ class Handler(BaseHTTPRequestHandler):
             with UPDATE_CACHE_LOCK:
                 UPDATE_CACHE["ts"] = 0
                 UPDATE_CACHE["data"] = None
+        if "lan_ip" in body:
+            global LAN_IP
+            value = str(body.get("lan_ip") or "").strip()[:64]
+            if value:
+                try:
+                    ipaddress.ip_address(value)
+                except ValueError:
+                    self._send(400, {"ok": False, "msg": "局域网地址格式不正确"})
+                    return
+            updates["lan_ip"] = value
+            LAN_IP = value or get_lan_ip()
         save_config(updates)
         threading.Thread(target=poll_once, daemon=True).start()
         WEATHER_WAKE.set()
@@ -4391,26 +5002,190 @@ class Handler(BaseHTTPRequestHandler):
     def api_admin_music_info(self, u=None):
         if not self._admin_require():
             return
-        info = {"ok": True, "port": SONGLOFT_PORT, "active": False,
-                "version": "", "plugin": False}
+        info = {"ok": True, "port": _songloft_port(), "active": False,
+                "version": "", "plugin": False, "url": _songloft_base()}
         try:
-            info["active"] = subprocess.run(
-                ["systemctl", "is-active", "songloft"],
-                capture_output=True, timeout=4).stdout.decode().strip() == "active"
-        except Exception:
-            pass
-        try:
-            with urllib.request.urlopen(SONGLOFT_API + "/api/v1/version", timeout=3) as r:
+            with urllib.request.urlopen(_songloft_base() + "/api/v1/version", timeout=3) as r:
                 data = json.loads(r.read() or b"{}")
             info["version"] = str(data.get("version") or "")
+            info["active"] = bool(info["version"])
         except Exception:
             pass
         try:
-            info["plugin"] = os.path.exists(
-                "/var/lib/songloft/jsplugins/miot.jsplugin.zip")
-        except OSError:
+            with urllib.request.urlopen(
+                    _songloft_base() + "/api/v1/jsplugin/miot/", timeout=3) as r:
+                info["plugin"] = r.status == 200
+        except Exception:
             pass
         self._send(200, info)
+
+    def api_admin_music_connect(self, body):
+        if not self._admin_require():
+            return
+        if body.get("clear"):
+            save_config({"songloft_url": "", "songloft_user": "",
+                         "songloft_pass": "", "go_music_dl_url": ""})
+            _clear_songloft_token()
+            self._send(200, {"ok": True, "cleared": True})
+            return
+        url = str(body.get("url") or "").strip().rstrip("/")[:500]
+        user = str(body.get("user") or "").strip()[:120]
+        pwd = str(body.get("password") or "")[:200]
+        gmd_url = str(body.get("gmd_url") or "").strip().rstrip("/")[:500]
+        if not url.startswith(("http://", "https://")):
+            self._send(400, {"ok": False, "error": "请输入 http(s) 音乐中心地址"})
+            return
+        if not user:
+            user = str(CONFIG.get("songloft_user") or "")
+        if not pwd:
+            pwd = str(CONFIG.get("songloft_pass") or "")
+        if not user or not pwd:
+            self._send(400, {"ok": False, "error": "请输入音乐中心管理员账号和密码"})
+            return
+        try:
+            with urllib.request.urlopen(url + "/api/v1/version", timeout=6) as resp:
+                version = json.loads(resp.read() or b"{}").get("version") or ""
+            req = urllib.request.Request(
+                url + "/api/v1/auth/login",
+                data=json.dumps({"username": user, "password": pwd}).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                login = json.loads(resp.read() or b"{}")
+            token = str(login.get("access_token") or "")
+            if not token:
+                raise RuntimeError("管理员账号或密码不正确")
+            headers = {"Authorization": "Bearer " + token}
+            plugins = []
+            try:
+                req = urllib.request.Request(url + "/api/v1/jsplugins", headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    plugins = json.loads(resp.read() or b"{}").get("plugins") or []
+            except Exception:
+                pass
+            gmd_base = ""
+            try:
+                req = urllib.request.Request(
+                    url + "/api/v1/jsplugin/go-music-dl/config", headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    gmd_base = str(json.loads(resp.read() or b"{}").get("baseUrl") or "")
+            except Exception:
+                pass
+            sso_ready = False
+            try:
+                with urllib.request.urlopen(
+                        url + "/api/v1/jsplugin/panel-sso/", timeout=4) as resp:
+                    sso_ready = resp.status == 200
+            except Exception:
+                pass
+        except Exception as exc:
+            self._send(200, {"ok": False,
+                             "error": "连接音乐中心失败：" + str(exc)[:180]})
+            return
+        if not gmd_url:
+            gmd_url = gmd_base
+        save_config({"songloft_url": url, "songloft_user": user,
+                     "songloft_pass": pwd, "go_music_dl_url": gmd_url})
+        stack = _stack_state_read()
+        if stack.get("installed"):
+            host = (urllib.parse.urlsplit(url).hostname or "").lower()
+            stack["disabled"] = host not in ("127.0.0.1", "localhost", LAN_IP.lower())
+            _stack_state_write(stack)
+        _clear_songloft_token()
+        names = []
+        for item in plugins if isinstance(plugins, list) else []:
+            if isinstance(item, dict):
+                names.append({"name": item.get("name") or "",
+                              "status": item.get("status") or ""})
+        self._send(200, {"ok": True, "url": url, "version": version,
+                         "plugins": names, "sso_ready": sso_ready,
+                         "go_music_dl_url": gmd_url})
+
+    def api_admin_music_stack_status(self):
+        if not self._admin_require():
+            return
+        state = _stack_state_read()
+        sport = int(state.get("songloft_port") or 58091)
+        gport = int(state.get("gmd_port") or 8081)
+        sl = _port_json("http://127.0.0.1:%d/api/v1/version" % sport) if os.name == "nt" else None
+        gmd = bool(_wait_http("http://127.0.0.1:%d/music/" % gport, 2))             if os.name == "nt" else False
+        logs = ""
+        try:
+            with open(_stack_paths()["sl_log"], "rb") as f:
+                logs = f.read()[-4000:].decode("utf-8", "replace")
+        except OSError:
+            pass
+        self._send(200, {
+            "ok": True, "platform": "windows" if os.name == "nt" else "linux",
+            "supported": os.path.isdir(MUSIC_STACK_SRC),
+            "installed": bool(state.get("installed")),
+            "running": bool(sl) and gmd,
+            "songloft_running": bool(sl), "gmd_running": gmd,
+            "songloft_port": sport, "gmd_port": gport,
+            "songloft_url": state.get("songloft_url") or
+            ("http://127.0.0.1:%d" % sport if state.get("installed") else ""),
+            "disabled": bool(state.get("disabled")),
+            "log_tail": logs[-2000:],
+        })
+
+    def api_admin_music_stack_install(self):
+        if not self._admin_require():
+            return
+        if os.name != "nt":
+            self._send(400, {"ok": False,
+                             "error": "Linux 请运行 music/install-music-stack.sh；Docker 请连接外部音乐中心"})
+            return
+        try:
+            result = _stack_install()
+            self._send(200, result)
+        except Exception as exc:
+            try:
+                _stack_stop()
+            except Exception:
+                pass
+            self._send(200, {"ok": False, "error": str(exc)[:300]})
+
+    def api_admin_music_stack_start(self):
+        if not self._admin_require():
+            return
+        try:
+            state = _stack_start()
+            self._send(200, {"ok": True, "state": state})
+        except Exception as exc:
+            self._send(200, {"ok": False, "error": str(exc)[:300]})
+
+    def api_admin_music_stack_stop(self):
+        if not self._admin_require():
+            return
+        try:
+            _stack_stop(disable=True)
+            self._send(200, {"ok": True})
+        except Exception as exc:
+            self._send(200, {"ok": False, "error": str(exc)[:300]})
+
+    def api_admin_laninfo(self):
+        if not self._admin_require():
+            return
+        ip = str(CONFIG.get("lan_ip") or LAN_IP)
+        suffix = "" if PORT == 80 else ":%d" % PORT
+        base = "http://%s%s" % (ip, suffix)
+        phone_url = base + "/login?m=phone"
+        self._send(200, {
+            "ok": True, "lan_ip": ip, "port": PORT,
+            "login_url": base + "/login", "phone_url": phone_url,
+            "admin_url": base + "/admin", "panel_url": base + "/",
+            "qr": build_qr(phone_url), "candidates": _lan_candidates(),
+            "platform": "windows" if os.name == "nt" else "linux",
+        })
+
+    def api_admin_firewall(self):
+        if not self._admin_require():
+            return
+        ports = []
+        for value in (PORT, _songloft_port(), _gmd_port()):
+            if value not in ports:
+                ports.append(value)
+        ok, message = _add_firewall_rules(ports)
+        self._send(200, {"ok": ok, "message": message, "ports": ports})
 
     def api_admin_music_state(self):
         if not self._admin_require():
@@ -4780,7 +5555,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         host = str(body.get("server_host") or "").strip().rstrip("/")
         if not host:
-            host = "http://%s:%d" % (LAN_IP, SONGLOFT_PORT)
+            host = _songloft_server_url()
         if not host.startswith(("http://", "https://")):
             host = "http://" + host
         hostname = (urllib.parse.urlsplit(host).hostname or "").lower()
@@ -4816,7 +5591,7 @@ class Handler(BaseHTTPRequestHandler):
                              "error": (resp or {}).get("error") or "保存音源配置失败"})
             return
         gcode, gresp = _songloft_req("POST", GMD_PLUGIN_API + "/config", {
-            "baseUrl": "http://%s:%d" % (LAN_IP, GO_MUSIC_DL_PORT),
+            "baseUrl": _gmd_base(),
             "basePath": "/music",
             "serverHost": host,
             "sources": sources,
@@ -4967,6 +5742,8 @@ def main():
         signal.signal(signal.SIGUSR1, _reexec_for_update)
     threading.Thread(target=poll_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
+    if os.name == "nt":
+        threading.Thread(target=_stack_autostart, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)
     srv.serve_forever()

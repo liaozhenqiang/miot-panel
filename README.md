@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.3.5-docker-installer.run
+sudo bash miot-panel-v0.3.6-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.5 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.6 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.3.5-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.5
+docker load -i miot-panel-v0.3.6-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.6
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.3.5-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.3.5-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.3.6-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.6-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.3.5-linux-installer.run
+sudo bash miot-panel-v0.3.6-linux-installer.run
 ```
 
 手动源码安装：
@@ -208,6 +208,24 @@ Linux 默认使用 journald，Windows/Docker 使用文件日志；后台日志�
 - 更新包只从清单里的 URL 下载，SHA256 不匹配会拒绝安装；解压只接受白名单文件。
 
 维护者发布新版本后，把 `update.json` 的 `version/url/sha256/size/notes` 更新为该版本 Release 的 `linux-universal.tar.gz`，提交到 main 即可。
+
+## Windows 音乐中心（v0.3.6 本机版）
+
+Windows 安装包已内置 Songloft v2.13.5、go-music-dl v1.1.3 和三个 Songloft 插件（MIoT、GoMusicDL、面板免登录）。在 `/admin` → “音乐与 AI 音箱” → “音乐中心连接”里：
+
+- 点“安装 Windows 音乐中心”：自动复制组件到 `%LOCALAPPDATA%\miot-panel-data\music-stack`，生成随机管理员密码，启动 Songloft（58091）和 go-music-dl（8081，若被占用自动换端口），安装插件并连接面板。首次启动约 20–60 秒。
+- 安装后可“启动服务 / 停止服务”；面板重启时会自动拉起已安装且未停用的本机音乐中心。
+- 在同一个卡片扫码绑定小米账号，即可使用点歌、多房间、AI 对话、TTS；插件账号会合并到面板设备登录（与玩客云一致）。
+- 手机/音箱需要访问 Windows 本机的 58091/8081；安装器和“允许局域网访问”按钮会尝试放行 Windows 防火墙。
+
+如果已有音乐中心（例如玩客云上的 Songloft），不要安装本机版，直接在“音乐中心连接”填地址 + 管理员账号密码即可。Linux 新机可运行 `music/install-music-stack.sh` 一键安装；Docker 容器请连接宿主机或另一台设备上的音乐中心。
+
+## 登录、局域网与后台入口
+
+- 登录页默认二维码；下方新增“使用账号密码登录”，也可用手机打开 `http://设备IP/login?m=phone` 直接输入小米账号。扫码打开的也是这个账号密码页面。
+- 面板右上角新增“后台”按钮，直接进入 `/admin`；登录页底部也有“后台管理”入口。后台仍是 PIN 保护。
+- 后台顶部新增“概览”和分组导航（音乐/外观/家庭设备/安全/更新/日志），并显示局域网地址、手机登录二维码、Windows 防火墙按钮。Windows 首次使用请点“允许局域网访问”，否则手机扫码后可能只看到空白页。
+- 多网卡/虚拟网卡导致二维码地址不对时，在概览里手动选择正确的局域网地址。
 
 ## 第一次使用
 
@@ -442,6 +460,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.3.6（2026-10-28）**：Windows 版内置并支持一键安装 Songloft + go-music-dl + 三个插件，和玩客云功能对齐；音乐中心支持本机/远程连接、启动/停止、自动拉起与手机扫码。Windows 安装器默认放行 8080/58091/8081，后台新增“允许局域网访问”和局域网地址/手机登录二维码卡片，修复手机扫码后空白页。登录页新增账号密码切换和后台入口；面板右上角新增“后台”按钮；后台新增概览、分组导航和更清晰的音乐连接区。Linux 新增 `music/install-music-stack.sh` 一键音乐栈。登录二维码仍为带 viewBox 的自适应尺寸。
 
 - **v0.3.5（2026-10-27）**：修复登录页二维码被裁切导致无法扫描的问题（segno SVG 没有 `viewBox`，CSS 固定 260px，右侧和底部各丢失约 12.5%）；改为带 `viewBox` 的自适应尺寸，1280×720 / 1080p 实测可解码。新增后台“系统更新”：读取 `update.json`，校验 SHA256/版本后热替换程序文件并自动重启，失败自动回滚；Linux 与 Windows 均已实测成功更新和失败回滚，Docker 提示拉取新镜像。首次从 v0.3.4 升级到 v0.3.5 仍需手动安装一次。
 

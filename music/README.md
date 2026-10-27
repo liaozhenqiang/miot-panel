@@ -14,6 +14,26 @@
 
 前提：systemd、python3、curl、ffmpeg。所有服务只放局域网，不要映射公网。
 
+## 0. 一键安装（Linux）
+
+先在 `music/` 目录执行：
+
+```bash
+sudo bash install-music-stack.sh
+```
+
+脚本会按架构下载 Songloft/go-music-dl、安装三个插件、生成随机管理员密码、创建用户和 systemd 服务、初始化 go-music-dl，并把 MIoT 插件的音箱拉流地址设为本机局域网 IP。完成后重启面板即可在后台扫码绑定小米账号。测试/临时目录用：
+
+```bash
+sudo bash install-music-stack.sh --prefix /tmp/music-stack --no-systemd --port 58095 --gmd-port 8083
+```
+
+## Windows 原生与远程连接
+
+- **Windows**：v0.3.6+ 安装包内置 Songloft/go-music-dl/插件，无需手工下载。后台 → 音乐与 AI 音箱 → 音乐中心连接 → “安装 Windows 音乐中心”，自动启动 58091/8081 并写入面板配置；手机和音箱需要能访问 Windows，安装器或后台“允许局域网访问”会放行防火墙。
+- **连接已有音乐中心**：在“音乐中心连接”填 `http://设备IP:58091` 和管理员账号密码，点连接即可。适用于 Windows 使用玩客云/NAS 上的 Songloft，或 Docker 容器连接宿主机。
+- Docker 容器内不要安装本机音乐组件，容器重建会丢失；请连接外部音乐中心。
+
 ## 1. Songloft
 
 ```bash

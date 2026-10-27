@@ -98,7 +98,26 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 .pageEditor textarea.html{min-height:320px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.55;white-space:pre;}
 #systemPrompt{min-height:150px;}
 #triggerWords{min-height:104px;}
-@media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;} .musicFrame{height:70vh;min-height:500px;} .deviceCtl input[type=range]{width:100%;} .qrBox img{width:180px;height:180px;}}
+.adminNav{position:sticky;top:0;z-index:30;display:flex;gap:6px;overflow:auto;padding:8px;margin:0 0 14px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 14px rgba(21,35,58,.05);}
+.adminNav a{flex:0 0 auto;padding:8px 13px;border-radius:9px;color:var(--muted);font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;}
+.adminNav a:hover,.adminNav a.active{background:rgba(255,106,0,.1);color:var(--accent);}
+#adminView > section.card,#secAccount,#secSystem{scroll-margin-top:64px;}
+.overviewChips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px;}
+.ovChip{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;background:#f4f6fa;border:1px solid var(--line);font-size:12.5px;color:var(--muted);}
+.ovChip b{color:var(--text);font-weight:700;}
+.ovChip.ok{background:rgba(24,160,88,.09);border-color:rgba(24,160,88,.2);color:#16804a;}
+.ovChip.off{background:rgba(230,80,70,.07);border-color:rgba(230,80,70,.16);color:#c34840;}
+.lanGrid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(190px,.75fr);gap:18px;align-items:start;margin-top:10px;padding-top:14px;border-top:1px solid var(--line);}
+.lanQrWrap{text-align:center;}
+.lanQr{background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;display:inline-block;}
+.lanQr svg{display:block;width:178px;height:178px;}
+.lanUrls{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-size:12.5px;color:var(--muted);word-break:break-all;}
+.lanUrls a{color:var(--accent);text-decoration:none;font-family:ui-monospace,Consolas,monospace;}
+.musicConnect{border:1px solid var(--line);background:#fbfcfe;border-radius:12px;padding:13px;margin:10px 0 12px;}
+.connHead{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;}
+.connHead .pill{margin-left:auto;}
+.musicConnect .grid{margin-top:4px;}
+@media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;} .musicFrame{height:70vh;min-height:500px;} .deviceCtl input[type=range]{width:100%;} .qrBox img{width:180px;height:180px;} .lanGrid{grid-template-columns:1fr;} .adminNav{top:0;}}
 </style></head><body>
 <div class="wrap">
   <header><h1>米家面板 · 后台</h1><div class="links"><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
@@ -122,11 +141,56 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
   </section>
 
   <div id="adminView" class="hidden">
-    <div class="stats" id="stats"></div>
+    <nav class="adminNav" id="adminNav">
+      <a href="#secOverview" class="active">概览</a>
+      <a href="#secMusic">音乐与音箱</a>
+      <a href="#secAppearance">外观</a>
+      <a href="#secFamily">家庭与设备</a>
+      <a href="#secSystem">安全与维护</a>
+      <a href="#secUpdate">更新</a>
+      <a href="#secLogs">日志</a>
+    </nav>
 
-    <section class="card">
+    <section class="card" id="secOverview">
+      <h2>概览</h2>
+      <div class="sub" id="overviewLine">正在读取…</div>
+      <div class="overviewChips" id="overviewChips"></div>
+      <div class="row"><button class="primary" onclick="location.href='/'">打开面板</button><button onclick="toggleMusic()">打开音乐中心</button><button onclick="checkUpdate(true)">检查更新</button><button onclick="loadLogs()">查看日志</button></div>
+      <div class="lanGrid">
+        <div>
+          <div class="connHead"><b>局域网访问</b><span class="pill" id="lanStatePill"></span></div>
+          <div class="sub">手机与电脑需在同一 Wi-Fi。Windows 首次使用请点“允许局域网访问”，否则手机扫码后页面会打不开。</div>
+          <div class="grid"><div><label>本机局域网地址</label><select id="lanIpSelect" onchange="saveLanIp()"></select></div></div>
+          <div class="lanUrls">
+            <div>手机账号密码登录：<a id="lanPhoneUrl" href="#" target="_blank">读取中…</a></div>
+            <div>面板地址：<a id="lanPanelUrl" href="#" target="_blank">读取中…</a></div>
+            <div>后台地址：<a id="lanAdminUrl" href="#" target="_blank">读取中…</a></div>
+          </div>
+          <div class="row"><button id="firewallBtn" class="hidden" onclick="openFirewall()">允许局域网访问（Windows）</button><button onclick="loadLanInfo()">刷新地址</button></div>
+          <div class="hint" id="lanHint"></div>
+        </div>
+        <div class="lanQrWrap">
+          <div class="lanQr" id="lanQr"></div>
+          <div class="hint">手机扫码 → 输入小米账号密码</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="secMusic">
       <h2>音乐与 AI 音箱</h2>
       <div class="sub" id="musicInfo">Songloft 音乐中心 + 小爱 MIoT 插件。扫码绑定小米账号后，可在后台统一管理：无限听歌、多房间、语音口令、大模型人设与小爱原生 TTS。</div>
+      <div class="musicConnect" id="musicConnect">
+        <div class="connHead"><b>音乐中心连接</b><span class="pill" id="musicConnState">未连接</span></div>
+        <div class="grid">
+          <div><label>音乐中心地址</label><input id="musicUrl" placeholder="http://127.0.0.1:58091"></div>
+          <div><label>管理员账号</label><input id="musicUser" placeholder="admin"></div>
+          <div><label>管理员密码</label><input id="musicPass" type="password" autocomplete="new-password" placeholder="已保存，留空保持不变"></div>
+          <div><label>go-music-dl 地址（可选）</label><input id="musicGmdUrl" placeholder="http://127.0.0.1:8081"></div>
+        </div>
+        <div class="row"><button class="primary" onclick="connectMusic()">连接/保存</button><button onclick="clearMusic()">断开</button><button id="musicStackInstall" class="hidden" onclick="installMusicStack()">安装 Windows 音乐中心</button><button id="musicStackStart" class="hidden" onclick="startMusicStack()">启动服务</button><button id="musicStackStop" class="hidden" onclick="stopMusicStack()">停止服务</button></div>
+        <div class="msg" id="musicConnMsg"></div>
+        <div class="hint" id="musicStackHint"></div>
+      </div>
       <div class="musicStatus" id="musicStatus"></div>
       <div class="row">
         <button class="primary" id="musicOpenBtn" onclick="toggleMusic()">在后台打开音乐中心</button>
@@ -287,7 +351,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="hint">音乐中心已启用后台免登录：点“在后台打开音乐中心”会直接用当前管理员会话进入，不再显示 Songloft 登录页。服务器地址建议保持 <b id="musicHost">http://设备IP:58091</b>；修改后请点“保存音源设置”。</div>
     </section>
 
-    <section class="card">
+    <section class="card" id="secSpeaker">
       <h2>前场音箱助手</h2>
       <div class="sub">在面板首页显示已绑定的小爱音箱卡片。点开后可文字提问；语音提问使用音箱自己的麦克风（面板本身没有麦克风），按提示对音箱说“小爱同学，请问……”。</div>
       <label class="inlineCheck"><input type="checkbox" id="spkPanelEnabled"> 在面板首页显示音箱卡片</label>
@@ -308,7 +372,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="hint">语音提问不依赖面板麦克风，因此手机、7 寸屏、不同小米账号都能用；换音箱/换账号后重新绑定会自动出现在列表里。</div>
     </section>
 
-    <section class="card">
+    <section class="card" id="secAppearance">
       <h2>外观与自定义页面</h2>
       <div class="sub">内置 7 个主题：经典黑夜/白天 + 5 套风格主题。苹果风（毛玻璃/大圆角）、魅族风（居中时钟/扁平卡片）、赛博霓虹（网格/霓虹/方形）、莫兰迪（暖砂纸/宋体/异形圆角）、像素终端（CRT/等宽/硬阴影）。面板右上角可依次切换，后台可指定当前主题。</div>
       <div class="row"><select id="adminTheme" style="max-width:280px">
@@ -329,7 +393,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="secFamily">
       <h2>家庭与页面</h2>
       <div class="sub">过滤设备所在家庭，设置天气城市和每页卡片数。过滤前缀留空表示显示所有家庭。</div>
       <div class="grid">
@@ -346,7 +410,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设置</button><button onclick="refreshData()">刷新云端设备/天气</button></div>
     </section>
 
-    <section class="card">
+    <section class="card" id="secDevices">
       <h2>设备显示与改名</h2>
       <div class="sub">勾选“显示”并保存后，云端可读写的设备才会出现在面板。蓝牙/传感器等不可控设备即使勾选也不会显示。</div>
       <div class="row" style="margin-bottom:10px"><input id="devSearch" placeholder="搜索名称/型号/IP" oninput="filterRows()" style="max-width:320px"><span class="pill" id="devCount"></span></div>
@@ -355,7 +419,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
     </section>
 
     <div class="twoCols">
-      <section class="card">
+      <section class="card" id="secAccount">
         <h2>账号与安全</h2>
         <div class="sub" id="accountInfo"></div>
         <div class="row"><button class="danger" id="xiaomiLogoutBtn" onclick="xiaomiLogout()">退出小米账号</button></div>
@@ -363,14 +427,14 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <label>修改后台 PIN</label>
         <div class="row"><input id="newPin" type="password" placeholder="新 PIN（4-20 位）" style="max-width:260px"><button onclick="changePin()">修改 PIN</button></div>
       </section>
-      <section class="card">
+      <section class="card" id="secSystem">
         <h2>维护</h2>
         <div class="sub">重置只影响面板排版/主题，不会删除设备或登录态。</div>
         <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="loadLogs()">查看日志</button></div>
       </section>
     </div>
 
-    <section class="card">
+    <section class="card" id="secUpdate">
       <h2>系统更新</h2>
       <div class="sub">从 GitHub Release 下载并热更新程序文件；设备、登录态、排版和自定义页面会保留。更新期间面板会短暂离线，完成后需要重新登录后台。</div>
       <div class="grid">
@@ -389,7 +453,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="hint">更新包会校验 SHA256 并验证版本号；替换后自动重启，失败会自动回滚。Docker 容器请在宿主机拉取新镜像，不支持容器内热更新。</div>
     </section>
 
-    <section class="card">
+    <section class="card" id="secLogs">
       <h2>服务日志</h2>
       <div class="row" style="margin-bottom:10px"><button class="danger small" onclick="clearLogs()">清理历史日志</button><span class="hint">Linux 清理 journald（含其他服务）；Windows/Docker 清理面板日志文件。不可恢复。</span></div>
       <pre id="logs">点“查看日志”加载最近 120 行。</pre>
@@ -398,7 +462,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 </div>
 <script>
 var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='';
-var updateTarget='', updateTimer=null;
+var updateTarget='', updateTimer=null, lanInfo=null, stackStatus=null;
 function $(id){return document.getElementById(id);}
 function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
 function toast(msg,err){var el=$('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
@@ -414,6 +478,119 @@ async function api(path,body){
   if(body)opt.body=JSON.stringify(body);
   var r=await fetch(path,opt);var j={};try{j=await r.json();}catch(e){}
   return {status:r.status,data:j};
+}
+function renderOverview(){
+  var c=(state&&state.config)||{}, devs=(state&&state.devices)||[], m=musicState||{};
+  var musicOk=!!(m.songloft&&m.songloft.active);
+  var chips=[
+    ['小米账号',(state&&state.logged_in)?'已登录':'未登录',!!(state&&state.logged_in)],
+    ['设备',devs.length+' 台',devs.length>0],
+    ['音乐中心',musicOk?'已连接':'未连接',musicOk],
+    ['版本','v'+((state&&state.version)||''),true],
+    ['局域网',c.lan_ip||(lanInfo&&lanInfo.lan_ip)||'-',true]
+  ];
+  var el=$('overviewChips');if(!el)return;
+  el.innerHTML=chips.map(function(x){return '<span class="ovChip '+(x[2]?'ok':'off')+'">'+esc(x[0])+' <b>'+esc(x[1])+'</b></span>';}).join('');
+  $('overviewLine').textContent='面板 v'+((state&&state.version)||'')+' · 端口 '+((state&&state.port)||'')+(m.error?(' · '+m.error):' · 服务正常');
+}
+async function loadLanInfo(){
+  var r=await api('/api/admin/laninfo');
+  if(r.status!==200||!r.data||!r.data.ok)return;
+  lanInfo=r.data;
+  var sel=$('lanIpSelect');if(!sel)return;
+  var opts=(r.data.candidates||[]).slice();
+  if(!opts.some(function(x){return x.ip===r.data.lan_ip;}))opts.unshift({ip:r.data.lan_ip,name:'当前'});
+  sel.innerHTML=opts.map(function(x){return '<option value="'+esc(x.ip)+'">'+esc(x.ip)+(x.name?(' · '+esc(x.name)):'')+'</option>';}).join('');
+  sel.value=r.data.lan_ip;
+  $('lanQr').innerHTML=r.data.qr||'';
+  var phone=$('lanPhoneUrl'),panel=$('lanPanelUrl'),admin=$('lanAdminUrl');
+  phone.textContent=r.data.phone_url;phone.href=r.data.phone_url;
+  panel.textContent=r.data.panel_url;panel.href=r.data.panel_url;
+  admin.textContent=r.data.admin_url;admin.href=r.data.admin_url;
+  $('lanStatePill').textContent=r.data.platform==='windows'?'Windows':'Linux';
+  $('firewallBtn').classList.toggle('hidden',r.data.platform!=='windows');
+  $('lanHint').textContent=r.data.platform==='windows'
+    ?'手机打不开时：点“允许局域网访问”并在 UAC 弹窗允许；或手动放行 TCP '+r.data.port+'、58091、8081。'
+    :'检查防火墙是否放行 TCP '+r.data.port+'；手机需与设备在同一 Wi-Fi。';
+  renderOverview();
+}
+async function saveLanIp(){
+  var ip=$('lanIpSelect').value;
+  var r=await api('/api/admin/save',{lan_ip:ip});
+  if(r.data&&r.data.ok){if(state)state.config=r.data.config;toast('局域网地址已保存');loadLanInfo();}
+  else toast((r.data&&r.data.msg)||'保存失败',true);
+}
+async function openFirewall(){
+  var r=await api('/api/admin/firewall',{});
+  if(r.data&&r.data.ok)toast(r.data.message||'已请求管理员权限');
+  else toast((r.data&&r.data.message)||'操作失败',true);
+}
+function renderMusicConnection(){
+  var c=(state&&state.config)||{},m=musicState||{};
+  var active=!!(m.songloft&&m.songloft.active);
+  var badge=$('musicConnState');if(badge){badge.textContent=active?('已连接 '+(m.songloft.version||'')):'未连接';badge.className='pill '+(active?'ok':'off');}
+  if(document.activeElement!==$('musicUrl'))$('musicUrl').value=c.songloft_url||(m.songloft&&m.songloft.url)||'';
+  if(document.activeElement!==$('musicUser'))$('musicUser').value=c.songloft_user||'';
+  if(document.activeElement!==$('musicGmdUrl'))$('musicGmdUrl').value=c.go_music_dl_url||(m.gmd&&m.gmd.url)||'';
+  $('musicPass').placeholder=c.songloft_pass_set?'已保存，留空保持':'音乐中心管理员密码';
+}
+async function connectMusic(){
+  var url=$('musicUrl').value.trim(),user=$('musicUser').value.trim(),pass=$('musicPass').value,gmd=$('musicGmdUrl').value.trim();
+  if(!url){toast('请输入音乐中心地址',true);return;}
+  $('musicConnMsg').textContent='连接中…';
+  var r=await api('/api/admin/music/connect',{url:url,user:user,password:pass,gmd_url:gmd});
+  if(r.status===401){show('loginView');return;}
+  if(!r.data.ok){$('musicConnMsg').textContent=r.data.error||'连接失败';return;}
+  $('musicPass').value='';
+  $('musicConnMsg').textContent='已连接 '+(r.data.version||'')+'，正在刷新…';
+  await load();
+  toast('音乐中心已连接');
+}
+async function clearMusic(){
+  if(!confirm('断开当前音乐中心？已安装的本地音乐服务不会被删除。'))return;
+  var r=await api('/api/admin/music/connect',{clear:true});
+  if(r.data.ok){toast('已断开音乐中心');await load();}
+  else toast((r.data.error)||'操作失败',true);
+}
+async function loadMusicStackStatus(){
+  try{
+    var r=await api('/api/admin/music/stack/status');
+    if(r.status!==200||!r.data||!r.data.ok)return;
+    stackStatus=r.data;
+    var installed=!!r.data.installed,running=!!r.data.running,windows=r.data.platform==='windows';
+    $('musicStackInstall').classList.toggle('hidden',!(windows&&r.data.supported&&!installed));
+    $('musicStackStart').classList.toggle('hidden',!(windows&&installed&&!running));
+    $('musicStackStop').classList.toggle('hidden',!(windows&&installed&&running));
+    if(windows){
+      $('musicStackHint').textContent=installed
+        ?(running?'Windows 音乐中心运行中：Songloft :'+r.data.songloft_port+' · go-music-dl :'+r.data.gmd_port
+        :'Windows 音乐中心已安装但未运行，点“启动服务”。')
+        :(r.data.supported?'可一键安装本机 Songloft + go-music-dl（首次启动后在此扫码绑定小米账号）。':'当前安装包未包含 Windows 音乐组件，请使用 v0.3.6+ 安装包。');
+    }else{
+      $('musicStackHint').textContent='Linux：在解压包 music/ 目录运行 sudo bash install-music-stack.sh；或在上方连接另一台设备上的音乐中心。';
+    }
+  }catch(e){}
+}
+async function installMusicStack(){
+  if(!confirm('将在本机安装并启动 Songloft + go-music-dl（约 50MB，写入当前用户数据目录），继续？'))return;
+  $('musicConnMsg').textContent='正在安装并启动音乐服务，第一次可能需要 20-60 秒…';
+  $('musicStackInstall').disabled=true;
+  var r=await api('/api/admin/music/stack/install',{});
+  $('musicStackInstall').disabled=false;
+  if(r.data.ok){$('musicConnMsg').textContent='音乐中心已安装并启动';await load();}
+  else $('musicConnMsg').textContent=r.data.error||'安装失败';
+}
+async function startMusicStack(){
+  $('musicConnMsg').textContent='正在启动…';
+  var r=await api('/api/admin/music/stack/start',{});
+  if(r.data.ok){$('musicConnMsg').textContent='已启动';await load();}
+  else $('musicConnMsg').textContent=r.data.error||'启动失败';
+}
+async function stopMusicStack(){
+  if(!confirm('停止 Windows 音乐服务？面板会断开音乐中心，直到再次启动。'))return;
+  var r=await api('/api/admin/music/stack/stop',{});
+  if(r.data.ok){$('musicConnMsg').textContent='已停止';await load();}
+  else $('musicConnMsg').textContent=r.data.error||'停止失败';
 }
 function setUpdateMsg(text,err){var el=$('updateMsg');if(!el)return;el.textContent=text||'';el.style.color=err?'var(--err)':'var(--muted)';}
 async function loadUpdateStatus(){
@@ -502,7 +679,7 @@ async function loadMusicInfo(){
     var r=await api('/api/admin/music_info');
     if(r.status===200&&r.data.ok){
       var d=r.data;
-      musicURL='http://'+location.hostname+':'+(d.port||58091)+'/';
+      musicURL=String(d.url||('http://'+location.hostname+':'+(d.port||58091))).replace(/\/+$/,'')+'/';
       $('musicHost').textContent=musicURL;
     }
   }catch(e){}
@@ -512,7 +689,7 @@ async function loadMusicState(force){
   var r=await api('/api/admin/music_state');
   if(r.status!==200||!r.data){$('musicInfo').textContent='音乐中心状态读取失败';return;}
   musicState=r.data;
-  renderMusicStatus();
+  renderMusicStatus();renderOverview();renderMusicConnection();
   if(!musicLoaded||force){renderMusicForms();musicLoaded=true;}
   if((musicState.accounts||[]).length&&(!musicDeviceGroups.length||force))loadMusicDevices();
 }
@@ -1213,6 +1390,7 @@ function render(){
   renderThemeSwatches();
   $('updateCurrent').value='v'+(state.version||'');
   $('updateUrl').value=c.update_url||'';
+  renderOverview();renderMusicConnection();loadLanInfo();loadMusicStackStatus();
   loadUpdateStatus();
   if(!pagesLoaded)loadCustomPages();
 }
@@ -1303,4 +1481,5 @@ async function refreshData(){
 initAIPresets('aiPreset');
 initAIPresets('chatPreset');
 load();
+document.querySelectorAll('.adminNav a').forEach(function(a){a.addEventListener('click',function(){document.querySelectorAll('.adminNav a').forEach(function(x){x.classList.toggle('active',x===a);});});});
 </script></body></html>
