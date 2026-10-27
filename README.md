@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.3.7-docker-installer.run
+sudo bash miot-panel-v0.3.8-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.7 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.8 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.3.7-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.7
+docker load -i miot-panel-v0.3.8-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.8
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.3.7-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.3.7-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.3.8-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.8-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.3.7-linux-installer.run
+sudo bash miot-panel-v0.3.8-linux-installer.run
 ```
 
 手动源码安装：
@@ -460,6 +460,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.3.8（2026-10-28）**：修复从手机/另一台电脑打开后台时，“在后台打开音乐中心”仍指向 `127.0.0.1` 的问题。后台 SSO iframe、音乐中心地址和 MIoT 音箱拉流地址现在统一使用局域网地址（配置为远程地址时保持远程地址），局域网访问和音乐中心连接完整可用。其余功能同 v0.3.7（Windows CA/更新、Windows 音乐中心、登录/后台导航）。
 - **v0.3.7（2026-10-28）**：修复 Windows 后台更新报 `SSL: CERTIFICATE_VERIFY_FAILED` 的问题：内置 certifi CA 证书，更新包下载遇到证书链异常时仅对本次下载降级为不校验证书，但仍强制校验 `update.json` 里的 SHA256 和版本号；新增稳定更新清单 `updates/update.json`。Windows v0.3.5 可在后台把更新源填成 `https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/update.json`，保存后直接升级到 v0.3.7；其余功能与 v0.3.6 相同（Windows 本机音乐中心、局域网/手机登录、后台导航）。
 - **v0.3.6（2026-10-28）**：Windows 版内置并支持一键安装 Songloft + go-music-dl + 三个插件，和玩客云功能对齐；音乐中心支持本机/远程连接、启动/停止、自动拉起与手机扫码。Windows 安装器默认放行 8080/58091/8081，后台新增“允许局域网访问”和局域网地址/手机登录二维码卡片，修复手机扫码后空白页。登录页新增账号密码切换和后台入口；面板右上角新增“后台”按钮；后台新增概览、分组导航和更清晰的音乐连接区。Linux 新增 `music/install-music-stack.sh` 一键音乐栈。登录二维码仍为带 viewBox 的自适应尺寸。
 

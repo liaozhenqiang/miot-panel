@@ -192,7 +192,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.3.7"
+APP_VERSION = "0.3.8"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -2999,11 +2999,20 @@ def _songloft_port():
         return 58091
 
 
+def _songloft_public_url():
+    base = _songloft_base()
+    try:
+        parsed = urllib.parse.urlsplit(base)
+        host = (parsed.hostname or "").lower()
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return "http://%s:%d" % (LAN_IP, parsed.port or _songloft_port())
+    except ValueError:
+        pass
+    return base
+
+
 def _songloft_server_url():
-    configured = str(CONFIG.get("songloft_url") or "").strip().rstrip("/")
-    if configured:
-        return configured
-    return "http://%s:%d" % (LAN_IP, SONGLOFT_PORT)
+    return _songloft_public_url()
 
 
 def _songloft_creds():
@@ -3529,7 +3538,8 @@ def _songloft_sso_url():
     frag = base64.urlsafe_b64encode(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).decode("ascii").rstrip("=")
-    return "%s/api/v1/jsplugin/%s/#%s" % (base, SONGLOFT_SSO_ENTRY, frag)
+    return "%s/api/v1/jsplugin/%s/#%s" % (
+        _songloft_public_url(), SONGLOFT_SSO_ENTRY, frag)
 
 
 def _songloft_req(method, path, payload=None, timeout=15, retry=True):
@@ -3583,7 +3593,7 @@ def _music_state():
     state = {
         "ok": True, "error": "",
         "songloft": {"active": False, "port": _songloft_port(),
-                     "version": "", "url": _songloft_base()},
+                     "version": "", "url": _songloft_public_url()},
         "gmd": {"active": False, "port": _gmd_port(), "url": _gmd_base()},
         "plugins": {}, "accounts": [], "groups": [], "providers": [],
         "miot": {}, "ai": {}, "chat": {}, "gmd_config": {},
@@ -5049,7 +5059,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._admin_require():
             return
         info = {"ok": True, "port": _songloft_port(), "active": False,
-                "version": "", "plugin": False, "url": _songloft_base()}
+                "version": "", "plugin": False, "url": _songloft_public_url()}
         try:
             with urllib.request.urlopen(_songloft_base() + "/api/v1/version", timeout=3) as r:
                 data = json.loads(r.read() or b"{}")
