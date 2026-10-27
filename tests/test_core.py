@@ -126,11 +126,11 @@ def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
                         lambda pt, uid, name: {
                             "user_id": uid, "service_token": "io", "ssecurity": "ss",
                             "pass_token": pt, "expires_at": int(miot.time.time()) + 3600})
-    monkeypatch.setattr(miot, "_import_panel_auth_to_plugin",
-                        lambda force=False, auth=None: {"ok": True, "imported": True})
+    monkeypatch.setattr(miot, "_plugin_connected", lambda: False)
     result = miot._qr_poll("sid")
     assert result["state"] == "success"
     assert result["user_id"] == "42"
-    assert result["imported"] is True
+    assert result["pending"] is True
     assert miot._read_auth_file()["source"] == "qrcode"
+    assert miot._read_pending_plugin_auth()["user_id"] == "42"
     assert "sid" not in miot.QR_SESSIONS

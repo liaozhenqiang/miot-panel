@@ -195,7 +195,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -1283,18 +1283,29 @@ def _qr_poll(sid):
         auth["country"] = CONFIG.get("country") or "cn"
         auth["expires_at"] = int(time.time()) + 10 * 3600
         _save_auth(auth)
-        imported = _import_panel_auth_to_plugin(force=True, auth=auth)
         with QR_LOCK:
             QR_SESSIONS.pop(sid, None)
         msg = "扫码登录成功"
-        if imported.get("ok") and imported.get("imported"):
-            msg += "，已同步到音乐中心"
-        elif imported.get("pending"):
-            msg += "，音乐中心未安装，登录已暂存"
+        importing = False
+        pending = False
+        try:
+            if _plugin_connected():
+                importing = True
+                msg += "，正在同步到音乐中心"
+                threading.Thread(target=_import_panel_auth_to_plugin,
+                                 kwargs={"force": True, "auth": auth},
+                                 daemon=True).start()
+            else:
+                _write_pending_plugin_auth(user_id, pass_token, auth.get("username") or "")
+                pending = True
+                msg += "，音乐中心未安装，登录已暂存"
+        except Exception as exc:
+            LOG.warning("queue plugin import after QR failed: %s", str(exc)[:160])
+            pending = True
+            msg += "，音乐中心同步稍后重试"
         return {"ok": True, "state": "success", "user_id": user_id,
-                "imported": bool(imported.get("ok") and imported.get("imported")),
-                "pending": bool(imported.get("pending")),
-                "plugin": imported, "message": msg}
+                "imported": False, "importing": importing,
+                "pending": pending, "message": msg}
     finally:
         with QR_LOCK:
             if sid in QR_SESSIONS:
@@ -2898,7 +2909,7 @@ function render(){
   $('pinDoneBox').classList.toggle('hidden',!pinDone);
   if(step===2)renderMusic();
   if(step===3)renderAccount();
-  if(step===4){$('doneHint').textContent='面板 v'+(S.version||'')+' · '+(S.music_connected?'音乐中心已连接':'音乐中心未连接')+' · '+(S.logged_in?'小米账号已登录':'账号未同步')+' · http://'+(S.lan_ip||location.hostname)+((S.port&&S.port!==80)?(':'+S.port):'');}
+  if(step===4){$('doneHint').textContent='面板 v'+(S.version||'')+' · '+(S.music_connected?'音乐中心已连接':'音乐中心未连接')+' · '+(S.logged_in?'小米账号已登录':'账号未同步')+(S.plugin_sync_pending?' · 音乐中心登录待同步':'')+' · http://'+(S.lan_ip||location.hostname)+((S.port&&S.port!==80)?(':'+S.port):'');}
 }
 function renderMusic(){
   var j=S.job||{};

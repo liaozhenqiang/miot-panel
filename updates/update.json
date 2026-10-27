@@ -1,8 +1,8 @@
 {
-  "version": "0.5.0",
+  "version": "0.5.1",
   "released": "2026-10-28",
-  "notes": "新增面板原生小米扫码登录（无需先装 Songloft，登录后自动同步/暂存带入）；摄像头组件自动检测、下载安装与失败分步引导；后台分级恢复默认设置。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.5.0-linux-universal.tar.gz",
-  "sha256": "726e3930790d87d9b5ec94f05e88229366b2190ba1686ff60805a7f5f9ef9cf0",
-  "size": 2340325
+  "notes": "修复扫码成功后音乐中心同步可能超时的问题（改为后台同步，向导显示待同步）；原生扫码、摄像头组件自动安装和分级恢复默认同 v0.5.0。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.5.1-linux-universal.tar.gz",
+  "sha256": "af078cc1a5a8bd4daf0ea2261d13f6041af072405ca7604e6e9dae1960219a61",
+  "size": 2340602
 }
