@@ -1,8 +1,8 @@
 {
-  "version": "0.3.8",
+  "version": "0.3.9",
   "released": "2026-10-28",
-  "notes": "修复后台音乐中心的局域网地址：SSO iframe、音乐中心地址和音箱拉流地址不再指向 127.0.0.1；手机/另一台电脑打开后台也能正常进入音乐中心。包含 v0.3.7 的 Windows 更新证书修复与稳定更新源。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.3.8-linux-universal.tar.gz",
-  "sha256": "82e6461fb1183d5ebc299bb3aeb27d4b07709709f01bfa614c5530490bbd6617",
-  "size": 2320770
+  "notes": "Windows 后台音乐中心新增“检测并安装”：缺组件时自动下载 Songloft/go-music-dl/插件并校验 SHA256，直接启动配置；未连接时提示更清楚。包含 v0.3.8 的局域网音乐中心地址修复。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.3.9-linux-universal.tar.gz",
+  "sha256": "f29fe8b4a55fa4f012b4b0cc2407a791ac0155ad62be0d9a25fc82beaeb43b3e",
+  "size": 2321935
 }

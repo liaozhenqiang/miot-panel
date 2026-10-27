@@ -187,7 +187,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
           <div><label>管理员密码</label><input id="musicPass" type="password" autocomplete="new-password" placeholder="已保存，留空保持不变"></div>
           <div><label>go-music-dl 地址（可选）</label><input id="musicGmdUrl" placeholder="http://127.0.0.1:8081"></div>
         </div>
-        <div class="row"><button class="primary" onclick="connectMusic()">连接/保存</button><button onclick="clearMusic()">断开</button><button id="musicStackInstall" class="hidden" onclick="installMusicStack()">安装 Windows 音乐中心</button><button id="musicStackStart" class="hidden" onclick="startMusicStack()">启动服务</button><button id="musicStackStop" class="hidden" onclick="stopMusicStack()">停止服务</button></div>
+        <div class="row"><button class="primary" onclick="connectMusic()">连接/保存</button><button onclick="clearMusic()">断开</button><button id="musicStackInstall" class="hidden" onclick="installMusicStack()">检测并安装 Windows 音乐中心</button><button id="musicStackStart" class="hidden" onclick="startMusicStack()">启动服务</button><button id="musicStackStop" class="hidden" onclick="stopMusicStack()">停止服务</button></div>
         <div class="msg" id="musicConnMsg"></div>
         <div class="hint" id="musicStackHint"></div>
       </div>
@@ -565,15 +565,15 @@ async function loadMusicStackStatus(){
       $('musicStackHint').textContent=installed
         ?(running?'Windows 音乐中心运行中：Songloft :'+r.data.songloft_port+' · go-music-dl :'+r.data.gmd_port
         :'Windows 音乐中心已安装但未运行，点“启动服务”。')
-        :(r.data.supported?'可一键安装本机 Songloft + go-music-dl（首次启动后在此扫码绑定小米账号）。':'当前安装包未包含 Windows 音乐组件，请使用 v0.3.6+ 安装包。');
+        :(r.data.source_ready?'已检测到内置音乐组件，点“检测并安装”即可启动（首次启动后在此扫码绑定小米账号）。':(r.data.can_download?'未检测到本机音乐组件，点“检测并安装”会自动从官方源下载 Songloft + go-music-dl + 插件（约 50MB）。':'当前系统不支持自动安装音乐组件。'));
     }else{
       $('musicStackHint').textContent='Linux：在解压包 music/ 目录运行 sudo bash install-music-stack.sh；或在上方连接另一台设备上的音乐中心。';
     }
   }catch(e){}
 }
 async function installMusicStack(){
-  if(!confirm('将在本机安装并启动 Songloft + go-music-dl（约 50MB，写入当前用户数据目录），继续？'))return;
-  $('musicConnMsg').textContent='正在安装并启动音乐服务，第一次可能需要 20-60 秒…';
+  if(!confirm('将检测本机音乐组件；缺少时从官方源下载 Songloft + go-music-dl + 插件（约 50MB），然后启动。首次可能需要几分钟，继续？'))return;
+  $('musicConnMsg').textContent=(stackStatus&&stackStatus.source_ready)?'已检测到组件，正在安装并启动…':'正在检测并下载/安装音乐组件，首次可能需要 5-10 分钟…';
   $('musicStackInstall').disabled=true;
   var r=await api('/api/admin/music/stack/install',{});
   $('musicStackInstall').disabled=false;

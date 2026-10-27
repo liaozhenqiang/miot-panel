@@ -53,6 +53,8 @@ import subprocess
 import tarfile
 import tempfile
 import ssl
+import zipfile
+from pathlib import Path
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -192,7 +194,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.3.8"
+APP_VERSION = "0.3.9"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -3319,17 +3321,115 @@ def _stack_start_services(sport, gport, user, pwd):
     return state
 
 
+MUSIC_STACK_CACHE = os.path.join(ROOT, "music-stack-cache")
+MUSIC_STACK_DOWNLOADS = (
+    ("songloft.exe",
+     "https://github.com/songloft-org/songloft/releases/download/v2.13.5/songloft-windows-amd64.exe",
+     "6ea4120ff643923a879f4840b362e55d0d77e268e1bab2b1f8e6b1b1467c81a7"),
+    ("miot.jsplugin.zip",
+     "https://github.com/songloft-org/songloft-plugin-miot/releases/download/v2026.10.25.0/miot.jsplugin.zip",
+     "40750a25b367fd9838e0f5c1623ed8b4955f6f9d75734653a3cfe6742b9ef22a"),
+    ("go-music-dl.jsplugin.zip",
+     "https://github.com/songloft-org/songloft-plugin-go-music-dl/releases/download/v2026.10.16/go-music-dl.jsplugin.zip",
+     "71135b9f4cb5028fc7ac473e30a61576060310203fb8cafbd1279946c27d08b1"),
+    ("panel-sso.jsplugin.zip",
+     "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/music/panel-sso.jsplugin.zip",
+     "f0ad8826172816d358752a277586affe196cd0ae00fcc5d56d1dfc609718f36c"),
+)
+GMD_WIN_ZIP_URL = "https://github.com/guohuiyuan/go-music-dl/releases/download/v1.1.3/go-music-dl_windows_amd64.zip"
+GMD_WIN_ZIP_SHA = "bffb84679bbba84d765331d068e28037b03993ceb493f201bd2ccfce4ce71776"
+GMD_WIN_EXE_SHA = "c3bab7b23c5c37187b9209067767ec3fd2991883799696253462a5f2a6f19deb"
+
+
+def _stack_required_files():
+    return ("songloft.exe", "music-dl.exe",
+            os.path.join("plugins", "miot.jsplugin.zip"),
+            os.path.join("plugins", "go-music-dl.jsplugin.zip"),
+            os.path.join("plugins", "panel-sso.jsplugin.zip"))
+
+
+def _stack_missing(src):
+    return [name for name in _stack_required_files()
+            if not os.path.isfile(os.path.join(src, name))]
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download_verified(url, dest, expected_sha, timeout=180):
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_file() and _sha256_file(dest) == expected_sha:
+        return dest
+    req = urllib.request.Request(url, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as exc:
+        reason = str(getattr(exc, "reason", exc))
+        if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason:
+            LOG.warning("music component TLS chain untrusted; retrying with SHA256-anchored download")
+            resp = urllib.request.urlopen(req, timeout=timeout,
+                                          context=ssl._create_unverified_context())
+        else:
+            raise
+    part = str(dest) + ".part"
+    with resp, open(part, "wb") as out:
+        for chunk in iter(lambda: resp.read(65536), b""):
+            out.write(chunk)
+    if _sha256_file(part) != expected_sha:
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        raise RuntimeError("下载校验失败：%s" % url.rsplit("/", 1)[-1])
+    os.replace(part, dest)
+    return dest
+
+
+def _stack_download_bundle():
+    src = Path(MUSIC_STACK_CACHE)
+    plugins = src / "plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    for name, url, sha in MUSIC_STACK_DOWNLOADS:
+        target = plugins / name if name.endswith(".jsplugin.zip") else src / name
+        _download_verified(url, target, sha)
+    gmd_zip = src / "music-dl.zip"
+    _download_verified(GMD_WIN_ZIP_URL, gmd_zip, GMD_WIN_ZIP_SHA)
+    exe = src / "music-dl.exe"
+    with zipfile.ZipFile(gmd_zip) as zf:
+        data = zf.read("music-dl.exe")
+    tmp = exe.with_suffix(".exe.part")
+    with open(tmp, "wb") as f:
+        f.write(data)
+    if _sha256_file(tmp) != GMD_WIN_EXE_SHA:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise RuntimeError("go-music-dl.exe 校验失败")
+    os.replace(tmp, exe)
+    return str(src)
+
+
 def _stack_install():
     if os.name != "nt":
         raise RuntimeError("一键安装音乐中心仅支持 Windows；Linux 请运行 music/install-music-stack.sh")
     src = MUSIC_STACK_SRC
-    required = ("songloft.exe", "music-dl.exe",
-                os.path.join("plugins", "miot.jsplugin.zip"),
-                os.path.join("plugins", "go-music-dl.jsplugin.zip"),
-                os.path.join("plugins", "panel-sso.jsplugin.zip"))
-    missing = [name for name in required if not os.path.isfile(os.path.join(src, name))]
+    missing = _stack_missing(src)
     if missing:
-        raise RuntimeError("安装包未包含 Windows 音乐组件（%s）" % ", ".join(missing))
+        LOG.info("music stack components missing, downloading: %s", ",".join(missing))
+        try:
+            src = _stack_download_bundle()
+        except Exception as exc:
+            raise RuntimeError("下载 Windows 音乐组件失败：%s" % str(exc)[:200])
+        missing = _stack_missing(src)
+        if missing:
+            raise RuntimeError("下载后仍缺少组件：%s" % ", ".join(missing))
     with MUSIC_STACK_LOCK:
         paths = _stack_paths()
         os.makedirs(paths["root"], exist_ok=True)
@@ -5170,9 +5270,15 @@ class Handler(BaseHTTPRequestHandler):
                 logs = f.read()[-4000:].decode("utf-8", "replace")
         except OSError:
             pass
+        missing_src = _stack_missing(MUSIC_STACK_SRC) if os.name == "nt" else []
+        missing_cache = _stack_missing(MUSIC_STACK_CACHE) if os.name == "nt" else []
+        source_ready = not missing_src or not missing_cache
+        can_download = os.name == "nt"
         self._send(200, {
             "ok": True, "platform": "windows" if os.name == "nt" else "linux",
-            "supported": os.path.isdir(MUSIC_STACK_SRC),
+            "supported": source_ready or can_download,
+            "source_ready": source_ready, "can_download": can_download,
+            "missing": [] if source_ready else missing_src,
             "installed": bool(state.get("installed")),
             "running": bool(sl) and gmd,
             "songloft_running": bool(sl), "gmd_running": gmd,
@@ -5263,6 +5369,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_admin_music_web_sso(self):
         if not self._admin_require():
+            return
+        try:
+            _songloft_req("GET", "/api/v1/version", timeout=3)
+        except Exception:
+            self._send(200, {"ok": False,
+                             "error": "音乐中心未连接，请先安装或连接音乐中心"})
             return
         try:
             self._send(200, {"ok": True, "url": _songloft_sso_url()})
