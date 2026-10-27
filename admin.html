@@ -120,7 +120,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 @media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;} .musicFrame{height:70vh;min-height:500px;} .deviceCtl input[type=range]{width:100%;} .qrBox img{width:180px;height:180px;} .lanGrid{grid-template-columns:1fr;} .adminNav{top:0;}}
 </style></head><body>
 <div class="wrap">
-  <header><h1>米家面板 · 后台</h1><div class="links"><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
+  <header><h1>米家面板 · 后台</h1><div class="links"><a href="/setup">首次设置向导</a><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
   <div class="toast" id="toast"></div>
 
   <section class="card hidden" id="setupView">
@@ -189,6 +189,8 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         </div>
         <div class="row"><button class="primary" onclick="connectMusic()">连接/保存</button><button onclick="clearMusic()">断开</button><button id="musicStackInstall" class="hidden" onclick="installMusicStack()">检测并安装 Windows 音乐中心</button><button id="musicStackStart" class="hidden" onclick="startMusicStack()">启动服务</button><button id="musicStackStop" class="hidden" onclick="stopMusicStack()">停止服务</button></div>
         <div class="msg" id="musicConnMsg"></div>
+        <div class="upBar hidden" id="musicStackBarWrap"><i id="musicStackBar"></i></div>
+        <div class="hint" id="musicStackProgress"></div>
         <div class="hint" id="musicStackHint"></div>
       </div>
       <div class="musicStatus" id="musicStatus"></div>
@@ -238,7 +240,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
           <div class="deviceList" id="musicDeviceList">尚未读取音箱，请先扫码绑定。</div>
           <div class="groupPanel">
             <div class="aiHead">多房间分组</div>
-            <div class="hint">可以按房间创建多个组，组内播放同步。成员至少 2 台，一台音箱只能属于一个组；不建组时各音箱独立播放。</div>
+            <div class="hint">可以按房间创建多个组，组内播放同步。成员至少 2 台，一台音箱只能属于一个组；默认不会自动创建“全屋音箱”组，未组网时各音箱独立播放。</div>
             <div class="groupList" id="groupList">暂无分组</div>
             <div class="grid">
               <div><label>分组名称</label><input id="groupName" maxlength="30" value="全屋音箱"></div>
@@ -462,7 +464,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 </div>
 <script>
 var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='';
-var updateTarget='', updateTimer=null, lanInfo=null, stackStatus=null;
+var updateTarget='', updateTimer=null, lanInfo=null, stackStatus=null, stackPollTimer=null;
 function $(id){return document.getElementById(id);}
 function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
 function toast(msg,err){var el=$('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
@@ -561,6 +563,18 @@ async function loadMusicStackStatus(){
     $('musicStackInstall').classList.toggle('hidden',!(windows&&r.data.supported&&!installed));
     $('musicStackStart').classList.toggle('hidden',!(windows&&installed&&!running));
     $('musicStackStop').classList.toggle('hidden',!(windows&&installed&&running));
+    var job=r.data.job||{};
+    if(job.running){
+      $('musicStackBarWrap').classList.remove('hidden');
+      $('musicStackBar').style.width=Math.max(2,Math.min(100,Number(job.percent||0)))+'%';
+      $('musicStackProgress').textContent=job.message||'正在安装音乐组件…';
+      $('musicStackInstall').disabled=true;
+      if(!stackPollTimer)stackPollTimer=setInterval(pollStackInstall,1200);
+    }else if(installed){
+      $('musicStackBarWrap').classList.add('hidden');$('musicStackProgress').textContent='';
+    }else if(job.state==='failed'){
+      $('musicStackBarWrap').classList.add('hidden');$('musicStackProgress').textContent=job.message||'安装失败';$('musicStackInstall').disabled=false;
+    }
     if(windows){
       $('musicStackHint').textContent=installed
         ?(running?'Windows 音乐中心运行中：Songloft :'+r.data.songloft_port+' · go-music-dl :'+r.data.gmd_port
@@ -572,13 +586,32 @@ async function loadMusicStackStatus(){
   }catch(e){}
 }
 async function installMusicStack(){
-  if(!confirm('将检测本机音乐组件；缺少时从官方源下载 Songloft + go-music-dl + 插件（约 50MB），然后启动。首次可能需要几分钟，继续？'))return;
-  $('musicConnMsg').textContent=(stackStatus&&stackStatus.source_ready)?'已检测到组件，正在安装并启动…':'正在检测并下载/安装音乐组件，首次可能需要 5-10 分钟…';
+  if(!confirm('将检测本机音乐组件；缺少时从官方源/国内镜像下载 Songloft + go-music-dl + 插件（约 50MB），然后启动。首次可能需要几分钟，继续？'))return;
+  $('musicConnMsg').textContent=(stackStatus&&stackStatus.source_ready)?'已检测到组件，正在安装并启动…':'正在检测并下载/安装音乐组件，首次可能需要几分钟…';
   $('musicStackInstall').disabled=true;
   var r=await api('/api/admin/music/stack/install',{});
-  $('musicStackInstall').disabled=false;
-  if(r.data.ok){$('musicConnMsg').textContent='音乐中心已安装并启动';await load();}
-  else $('musicConnMsg').textContent=r.data.error||'安装失败';
+  if(r.status===409){$('musicConnMsg').textContent=r.data.error||'已有安装正在进行';startStackPoll();return;}
+  if(!r.data.ok){$('musicConnMsg').textContent=r.data.error||'安装失败';$('musicStackInstall').disabled=false;return;}
+  $('musicStackBarWrap').classList.remove('hidden');startStackPoll();
+}
+function startStackPoll(){if(stackPollTimer)return;stackPollTimer=setInterval(pollStackInstall,1200);pollStackInstall();}
+async function pollStackInstall(){
+  var r=await api('/api/admin/music/stack/status');
+  if(!r.data||!r.data.ok)return;
+  var j=r.data.job||{};
+  if(j.running||j.message){
+    $('musicStackBarWrap').classList.remove('hidden');
+    $('musicStackBar').style.width=Math.max(2,Math.min(100,Number(j.percent||0)))+'%';
+    $('musicStackProgress').textContent=(j.message||'正在安装音乐组件…')+(j.state==='failed'?'（失败）':'');
+  }
+  if(j.state==='failed'){
+    if(stackPollTimer){clearInterval(stackPollTimer);stackPollTimer=null;}
+    $('musicConnMsg').textContent=(j.message||'安装失败')+'。可重试，或改用 Windows 安装器（已内置离线组件）。';$('musicStackInstall').disabled=false;
+  }else if(j.state==='done'||(r.data.installed&&r.data.running)){
+    if(stackPollTimer){clearInterval(stackPollTimer);stackPollTimer=null;}
+    $('musicStackBar').style.width='100%';$('musicConnMsg').textContent='音乐中心已安装并启动';
+    setTimeout(function(){load();},800);
+  }
 }
 async function startMusicStack(){
   $('musicConnMsg').textContent='正在启动…';

@@ -194,7 +194,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.3.9"
+APP_VERSION = "0.4.0"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -2505,6 +2505,236 @@ setInterval(function(){
 </script></body></html>"""
 
 
+SETUP_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>MIOT Panel 首次设置</title><style>
+:root{--bg:#0d1117;--card:#171d27;--line:rgba(255,255,255,.1);--txt:#eef2f7;--muted:#98a2b3;--accent:#ff7a18;--ok:#35c77a;--err:#ff7a6a;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;background:radial-gradient(1000px 600px at 85% -10%,rgba(255,105,0,.18),transparent 60%),linear-gradient(165deg,#151b27,#0b0f15);color:var(--txt);font-family:'PingFang SC','Noto Sans CJK SC',sans-serif;display:flex;justify-content:center;padding:22px}
+.wrap{width:100%;max-width:820px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px}
+h1{font-size:26px;line-height:1.2}
+.sub{color:var(--muted);font-size:13px;line-height:1.7;margin-top:6px}
+.link{color:var(--accent);text-decoration:none;font-size:13px;white-space:nowrap;margin-top:4px}
+.steps{display:flex;gap:7px;margin:12px 0 16px;flex-wrap:wrap}
+.step{flex:1;min-width:110px;text-align:center;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:8px 6px;background:rgba(255,255,255,.025)}
+.step.active{color:#ffb36b;border-color:rgba(255,122,24,.55);background:rgba(255,122,24,.09)}
+.step.done{color:var(--ok);border-color:rgba(53,199,122,.4);background:rgba(53,199,122,.07)}
+.card{background:rgba(23,29,39,.92);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:14px;box-shadow:0 12px 38px rgba(0,0,0,.18)}
+h2{font-size:18px;margin-bottom:8px}
+p{font-size:13.5px;color:var(--muted);line-height:1.75}
+input,select{width:100%;padding:12px 13px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.24);color:#fff;font-size:15px;margin-top:8px}
+button,.button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:#222a36;color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;text-decoration:none}
+button.primary,.button.primary{background:var(--accent);border-color:transparent;color:#fff}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hidden{display:none!important}
+.hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:8px}
+.msg{font-size:13px;color:var(--err);min-height:18px;margin-top:8px;line-height:1.5}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
+.chip{font-size:12px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted)}
+.chip.ok{color:var(--ok);border-color:rgba(53,199,122,.35);background:rgba(53,199,122,.08)}
+.chip.off{color:var(--err);border-color:rgba(255,122,106,.35);background:rgba(255,122,106,.07)}
+.bar{height:9px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff7a18,#ffb36b);transition:width .3s}
+details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;color:#ffb36b;font-size:13px}
+.qr{background:#fff;border-radius:14px;padding:12px;display:inline-block;margin:12px 0}
+.qr img{display:block;width:220px;height:220px;object-fit:contain}
+.qr .hint{color:#606a78;text-align:center}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#232c3a;border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;max-width:90vw}
+.toast.show{opacity:1}
+@media(max-width:640px){body{padding:12px}h1{font-size:21px}.card{padding:16px}.grid{grid-template-columns:1fr}.step{min-width:0;flex:1;font-size:11px}}
+</style></head><body>
+<div class="wrap">
+  <header><div><h1>MIOT Panel 首次设置</h1><div class="sub">按顺序完成：后台 PIN → 音乐中心 → 小米账号。先装音乐中心再登录，才能获取全部设备和小爱音箱。</div></div><a class="link" href="/admin">后台</a></header>
+  <div class="steps"><span class="step" id="step1">1 后台 PIN</span><span class="step" id="step2">2 音乐中心</span><span class="step" id="step3">3 小米账号</span><span class="step" id="step4">4 完成</span></div>
+
+  <section class="card" id="pinCard">
+    <h2>1. 设置后台 PIN</h2>
+    <p>PIN 只保护后台管理页，不是小米账号密码。设置后再安装音乐中心并登录小米。</p>
+    <div id="pinSetupBox" class="hidden">
+      <input id="pin1" type="password" inputmode="numeric" placeholder="设置 4-20 位 PIN">
+      <input id="pin2" type="password" inputmode="numeric" placeholder="再次输入 PIN">
+      <div class="row"><button class="primary" onclick="setupPin()">设置 PIN 并继续</button></div>
+    </div>
+    <div id="pinLoginBox" class="hidden">
+      <p>后台 PIN 已设置，请输入 PIN 继续首次设置。</p>
+      <input id="pinLoginInput" type="password" inputmode="numeric" placeholder="后台 PIN">
+      <div class="row"><button class="primary" onclick="loginPin()">登录并继续</button></div>
+    </div>
+    <div id="pinDoneBox" class="hidden"><span class="chip ok">PIN 已设置</span></div>
+    <div class="msg" id="pinMsg"></div>
+  </section>
+
+  <section class="card hidden" id="musicCard">
+    <h2>2. 安装/连接音乐中心</h2>
+    <p>音乐中心负责小爱音箱、在线搜索和音乐播放。默认不会自动创建“全屋音箱”组，各音箱保持独立。</p>
+    <div class="chips" id="musicChips"></div>
+    <div id="musicInstallBox">
+      <button class="primary" id="musicInstallBtn" onclick="installMusic()">检测并安装 Windows 音乐中心</button>
+      <div class="hint">约 50MB；国内网络会自动尝试镜像；首次可能需要几分钟。安装期间请勿关闭页面。</div>
+    </div>
+    <div class="bar hidden" id="musicBar"><i id="musicBarFill"></i></div>
+    <div class="hint" id="musicProgress"></div>
+    <details>
+      <summary>已有音乐中心？填写地址连接</summary>
+      <div class="grid"><input id="mUrl" placeholder="http://192.168.1.10:58091"><input id="mUser" placeholder="管理员账号"><input id="mPass" type="password" placeholder="管理员密码"></div>
+      <div class="row"><button onclick="connectMusic()">连接音乐中心</button></div>
+    </details>
+    <div class="row"><button onclick="skipMusic()">暂时跳过音乐中心（仅面板设备控制）</button></div>
+    <div class="hint" id="musicHint"></div>
+    <div class="msg" id="musicMsg"></div>
+  </section>
+
+  <section class="card hidden" id="accountCard">
+    <h2>3. 登录小米账号</h2>
+    <div id="qrBox" class="hidden">
+      <p>用米家 App 扫描二维码。绑定成功后会自动同步设备控制和小爱音箱；默认不自动组网。</p>
+      <div class="qr"><img id="qrImg" alt="小米登录二维码"><div class="hint" id="qrState">正在获取二维码…</div></div>
+      <div class="row"><button onclick="startQR()">刷新二维码</button></div>
+      <div class="hint" id="qrFallback"></div>
+      <div class="hint">也可以 <a style="color:#ffb36b" href="/login?force=1">使用面板小米账号登录</a>（不安装音乐中心时设备/音箱可能不完整）。</div>
+    </div>
+    <div id="panelLoginBox" class="hidden">
+      <p>未安装音乐中心时，只能使用面板的小米账号登录，设备和音箱可能不完整。建议返回上一步安装音乐中心。</p>
+      <div class="row"><a class="button primary" href="/login?force=1">使用面板小米账号登录</a></div>
+    </div>
+    <div class="msg" id="accountMsg"></div>
+  </section>
+
+  <section class="card hidden" id="doneCard">
+    <h2>4. 完成</h2>
+    <p>设置完成。默认各音箱独立，不会自动创建“全屋音箱”组；需要时可在后台“音乐与 AI 音箱”里手动组网。</p>
+    <div class="row"><a class="button primary" href="/">进入面板</a><a class="button" href="/admin">打开后台</a><a class="button" href="/setup">重新检查</a></div>
+    <div class="hint" id="doneHint"></div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+</div>
+<script>
+var S={},qr=null,qrTimer=null,stackTimer=null,skipped=false,busy=false,qrStarting=false,qrFailed=false;
+function $(id){return document.getElementById(id);}
+function toast(t,e){var x=$('toast');x.textContent=t;x.className='toast show';clearTimeout(x._t);x._t=setTimeout(function(){x.className='toast';},2800);}
+async function api(path,body){var o={method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'}};if(body)o.body=JSON.stringify(body);var r=await fetch(path,o);var j={};try{j=await r.json();}catch(e){}return {status:r.status,data:j};}
+function setStep(n){for(var i=1;i<=4;i++){var el=$('step'+i);el.className='step'+(i===n?' active':(i<n?' done':''));}['pinCard','musicCard','accountCard','doneCard'].forEach(function(id,i){$(id).classList.toggle('hidden',i!==n-1);});}
+async function refresh(){try{S=await api('/api/setup_state');if(S.data&&S.data.ok)S=S.data;else S={};}catch(e){S={};}render();}
+function render(){
+  var pinDone=!!(S.pin_set&&S.admin_authed);
+  var accountDone=!!(S.logged_in||S.account_count>0);
+  var step=!pinDone?1:(!S.music_connected&&!skipped?2:(!accountDone?3:4));
+  setStep(step);
+  $('pinSetupBox').classList.toggle('hidden',!!S.pin_set);
+  $('pinLoginBox').classList.toggle('hidden',!(S.pin_set&&!S.admin_authed));
+  $('pinDoneBox').classList.toggle('hidden',!pinDone);
+  if(step===2)renderMusic();
+  if(step===3)renderAccount();
+  if(step===4){$('doneHint').textContent='面板 v'+(S.version||'')+' · '+(S.music_connected?'音乐中心已连接':'音乐中心未连接')+' · '+(S.logged_in?'小米账号已登录':'账号未同步')+' · http://'+(S.lan_ip||location.hostname)+((S.port&&S.port!==80)?(':'+S.port):'');}
+}
+function renderMusic(){
+  var j=S.job||{};
+  var chips='<span class="chip '+(S.music_connected?'ok':'off')+'">音乐中心 '+(S.music_connected?'已连接':'未连接')+'</span>';
+  chips+='<span class="chip">'+(S.platform==='windows'?'Windows':'Linux')+'</span>';
+  if(j.running)chips+='<span class="chip">安装中</span>';
+  $('musicChips').innerHTML=chips;
+  var win=S.platform==='windows';
+  $('musicInstallBox').classList.toggle('hidden',!win);
+  $('musicHint').textContent=win?'':'Linux：在解压包的 music/ 目录运行 sudo bash install-music-stack.sh，或填写已有音乐中心地址。';
+  if(j.running||j.percent!==undefined&&j.state!=='idle'){
+    $('musicBar').classList.remove('hidden');
+    $('musicBarFill').style.width=Math.max(2,Math.min(100,Number(j.percent||0)))+'%';
+    $('musicProgress').textContent=(j.message||'正在安装…')+(j.state==='failed'?'（失败）':'');
+    if(j.state==='failed'){$('musicInstallBtn').disabled=false;setTimeout(function(){S.job=null;},0);}
+    if(j.running)startStackPoll();
+  }
+}
+function renderAccount(){
+  var connected=!!S.music_connected;
+  $('qrBox').classList.toggle('hidden',!connected);
+  $('panelLoginBox').classList.toggle('hidden',connected);
+  $('accountMsg').textContent='';
+  if(connected&&S.admin_authed&&!qr&&!qrStarting&&!qrFailed)startQR();
+  if(!connected&&!S.logged_in)$('panelLoginBox').classList.remove('hidden');
+}
+async function setupPin(){
+  var a=$('pin1').value,b=$('pin2').value,m=$('pinMsg');
+  if(a.length<4||a.length>20){m.textContent='PIN 长度需为 4-20 位';return;}
+  if(a!==b){m.textContent='两次 PIN 不一致';return;}
+  busy=true;m.textContent='';
+  var r=await api('/api/admin/setup',{pin:a});busy=false;
+  if(r.data.ok){await refresh();}else m.textContent=r.data.msg||'设置失败';
+}
+async function loginPin(){
+  var p=$('pinLoginInput').value,m=$('pinMsg');if(!p){m.textContent='请输入 PIN';return;}
+  busy=true;m.textContent='';
+  var r=await api('/api/admin/login',{pin:p});busy=false;
+  if(r.data.ok)await refresh();else m.textContent=r.data.msg||'PIN 不正确';
+}
+async function installMusic(){
+  if(busy)return;
+  busy=true;$('musicInstallBtn').disabled=true;$('musicMsg').textContent='正在启动安装…';
+  var r=await api('/api/admin/music/stack/install',{});busy=false;
+  if(r.status===409){$('musicMsg').textContent=r.data.error||'安装正在进行';startStackPoll();return;}
+  if(!r.data.ok){$('musicMsg').textContent=r.data.error||'安装失败';$('musicInstallBtn').disabled=false;return;}
+  $('musicBar').classList.remove('hidden');startStackPoll();
+}
+function startStackPoll(){if(stackTimer)return;stackTimer=setInterval(pollStack,1200);pollStack();}
+async function pollStack(){
+  var r=await api('/api/admin/music/stack/status');if(!r.data||!r.data.ok)return;
+  var j=r.data.job||{};
+  if(j.message||j.running){
+    $('musicBar').classList.remove('hidden');
+    $('musicBarFill').style.width=Math.max(2,Math.min(100,Number(j.percent||0)))+'%';
+    $('musicProgress').textContent=(j.message||'正在安装…')+(j.state==='failed'?'（失败）':'');
+  }
+  if(j.state==='failed'){if(stackTimer){clearInterval(stackTimer);stackTimer=null;}$('musicInstallBtn').disabled=false;$('musicMsg').textContent=(j.message||'安装失败')+'。可重试，或改用 Windows 安装器（已内置离线音乐组件）。';}
+  else if(j.state==='done'|| (r.data.installed&&r.data.running)){
+    if(stackTimer){clearInterval(stackTimer);stackTimer=null;}
+    $('musicBarFill').style.width='100%';await refresh();
+  }
+}
+async function connectMusic(){
+  var url=$('mUrl').value.trim(),user=$('mUser').value.trim(),pass=$('mPass').value;
+  if(!url){$('musicMsg').textContent='请输入音乐中心地址';return;}
+  $('musicMsg').textContent='正在连接…';
+  var r=await api('/api/admin/music/connect',{url:url,user:user,password:pass});
+  if(!r.data.ok){$('musicMsg').textContent=r.data.error||'连接失败';return;}
+  $('musicMsg').textContent='连接成功';await refresh();
+}
+function skipMusic(){skipped=true;qrFailed=false;render();}
+async function startQR(){
+  if(!S.admin_authed){$('qrState').textContent='请先在第一步输入后台 PIN';return;}
+  if(qrStarting)return;qrStarting=true;qrFailed=false;
+  if(qrTimer){clearInterval(qrTimer);qrTimer=null;}
+  $('qrState').textContent='正在获取二维码…';$('qrFallback').textContent='';
+  var r=await api('/api/admin/music/qr_start',{});qrStarting=false;
+  if(!r.data.ok){qrFailed=true;$('qrState').textContent=r.data.error||'二维码获取失败';return;}
+  qr={account_id:r.data.account_id};
+  var img=$('qrImg');img.style.display='';img.src=r.data.qrcode_url||'';
+  img.onerror=function(){
+    img.style.display='none';var fb=$('qrFallback');fb.textContent='二维码图片加载失败，请刷新，或';
+    var u=String(r.data.login_url||'');if(/^https:\/\//i.test(u)){var a=document.createElement('a');a.href=u;a.target='_blank';a.rel='noopener';a.textContent='点此打开小米登录页';a.style.color='#ffb36b';fb.appendChild(a);}else{fb.textContent='二维码图片加载失败，请刷新。';}
+  };
+  $('qrState').textContent='等待扫码…（约 2 分钟有效）';
+  qrTimer=setInterval(pollQR,2500);pollQR();
+}
+async function pollQR(){
+  if(!qr)return;
+  var r=await api('/api/admin/music/qr_poll',{account_id:qr.account_id});
+  if(!r.data||!r.data.ok){$('qrState').textContent=(r.data&&r.data.error)||'等待扫码…';return;}
+  var st=r.data.state;
+  if(st==='success'){if(qrTimer){clearInterval(qrTimer);qrTimer=null;}qr=null;$('qrState').textContent='绑定成功，正在同步…';await refresh();}
+  else if(st==='scanned'){$('qrState').textContent='已扫码，请在手机上确认…';}
+  else if(st==='expired'||st==='failed'||st==='error'){if(qrTimer){clearInterval(qrTimer);qrTimer=null;}qr=null;qrFailed=true;$('qrState').textContent='二维码已失效，请刷新';}
+  else {$('qrState').textContent='等待扫码…';}
+}
+refresh();setInterval(function(){if(!busy)refresh();},3000);setInterval(function(){if(S.admin_authed&&S.music_connected&&!qr&&!qrStarting&&!qrFailed&&!S.logged_in&&!S.account_count)startQR();},2500);
+</script></body></html>
+"""
+
+
 # ----------------------------------------------------------------- 管理后台鉴权
 ADMIN_SESSIONS = {}
 ADMIN_LOCK = threading.Lock()
@@ -2534,6 +2764,10 @@ def _rate_ok(key, limit, window, min_interval=0.0):
 
 def admin_pin_set():
     return bool(CONFIG.get("admin_pin_hash"))
+
+
+def _needs_onboarding():
+    return (not admin_pin_set()) or (not bool(_load_auth()))
 
 def _pin_hash(pin, salt):
     return hashlib.sha256((salt + pin).encode("utf-8")).hexdigest()
@@ -3053,6 +3287,23 @@ def _clear_songloft_token():
 MUSIC_STACK_DIR = os.path.join(ROOT, "music-stack")
 MUSIC_STACK_SRC = os.path.join(APP_DIR, "music-stack")
 MUSIC_STACK_LOCK = threading.Lock()
+MUSIC_STACK_JOB = {"running": False, "state": "idle", "message": "",
+                   "percent": 0, "ts": 0.0}
+MUSIC_STACK_JOB_LOCK = threading.Lock()
+
+
+def _stack_job_set(state, message="", percent=None):
+    with MUSIC_STACK_JOB_LOCK:
+        MUSIC_STACK_JOB["state"] = str(state)
+        MUSIC_STACK_JOB["message"] = str(message)[:300]
+        if percent is not None:
+            MUSIC_STACK_JOB["percent"] = max(0, min(100, int(percent)))
+        MUSIC_STACK_JOB["ts"] = time.time()
+
+
+def _stack_job_get():
+    with MUSIC_STACK_JOB_LOCK:
+        return dict(MUSIC_STACK_JOB)
 
 
 def _stack_paths():
@@ -3361,45 +3612,88 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
-def _download_verified(url, dest, expected_sha, timeout=180):
+def _mirror_candidates(url):
+    if url.startswith(("https://github.com/", "https://raw.githubusercontent.com/")):
+        return [url, "https://gh-proxy.com/" + url, "https://ghproxy.net/" + url]
+    return [url]
+
+
+def _download_verified(url, dest, expected_sha, timeout=180, progress=None):
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.is_file() and _sha256_file(dest) == expected_sha:
         return dest
-    req = urllib.request.Request(url, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
-    try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-    except urllib.error.URLError as exc:
-        reason = str(getattr(exc, "reason", exc))
-        if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason:
-            LOG.warning("music component TLS chain untrusted; retrying with SHA256-anchored download")
-            resp = urllib.request.urlopen(req, timeout=timeout,
-                                          context=ssl._create_unverified_context())
-        else:
-            raise
-    part = str(dest) + ".part"
-    with resp, open(part, "wb") as out:
-        for chunk in iter(lambda: resp.read(65536), b""):
-            out.write(chunk)
-    if _sha256_file(part) != expected_sha:
+    last_error = None
+    for candidate in _mirror_candidates(url):
+        part = str(dest) + ".part"
         try:
-            os.remove(part)
-        except OSError:
-            pass
-        raise RuntimeError("下载校验失败：%s" % url.rsplit("/", 1)[-1])
-    os.replace(part, dest)
-    return dest
+            req = urllib.request.Request(
+                candidate, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+            try:
+                resp = urllib.request.urlopen(req, timeout=timeout)
+            except urllib.error.URLError as exc:
+                reason = str(getattr(exc, "reason", exc))
+                if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason:
+                    LOG.warning("music component TLS chain untrusted; retrying with SHA256-anchored download")
+                    resp = urllib.request.urlopen(
+                        req, timeout=timeout, context=ssl._create_unverified_context())
+                else:
+                    raise
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = 0
+            with resp, open(part, "wb") as out:
+                for chunk in iter(lambda: resp.read(65536), b""):
+                    out.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        try:
+                            progress(done, total)
+                        except Exception:
+                            pass
+            if _sha256_file(part) != expected_sha:
+                raise RuntimeError("SHA256 不匹配")
+            os.replace(part, dest)
+            return dest
+        except Exception as exc:
+            last_error = exc
+            LOG.warning("music component download failed (%s): %s",
+                        candidate.split("/")[2] if "://" in candidate else candidate,
+                        str(exc)[:120])
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+    raise RuntimeError("下载失败（官方源和国内镜像均不可用）：%s" % str(last_error)[:160])
 
 
-def _stack_download_bundle():
+def _stack_download_bundle(progress=None):
+    progress = progress or (lambda *a: None)
     src = Path(MUSIC_STACK_CACHE)
     plugins = src / "plugins"
     plugins.mkdir(parents=True, exist_ok=True)
-    for name, url, sha in MUSIC_STACK_DOWNLOADS:
+    items = list(MUSIC_STACK_DOWNLOADS)
+    total_items = len(items) + 1
+    span = 58.0 / total_items
+    index = 0
+    for name, url, sha in items:
+        index += 1
+        label = "Songloft" if name == "songloft.exe" else (
+            "panel-sso 插件" if name.startswith("panel-sso") else name)
+        base = (index - 1) * span
+        progress("正在下载 %s (%d/%d)" % (label, index, total_items), base)
+
+        def on_bytes(done, total, base=base):
+            pct = base + (span * done / total if total else 0)
+            progress(None, pct)
+
         target = plugins / name if name.endswith(".jsplugin.zip") else src / name
-        _download_verified(url, target, sha)
+        _download_verified(url, target, sha, progress=on_bytes)
+    progress("正在下载 go-music-dl (5/5)", 4 * span)
     gmd_zip = src / "music-dl.zip"
-    _download_verified(GMD_WIN_ZIP_URL, gmd_zip, GMD_WIN_ZIP_SHA)
+    _download_verified(GMD_WIN_ZIP_URL, gmd_zip, GMD_WIN_ZIP_SHA,
+                       progress=lambda done, total: progress(
+                           None, 4 * span + (span * done / total if total else 0)))
+    progress("正在解压 go-music-dl", 64)
     exe = src / "music-dl.exe"
     with zipfile.ZipFile(gmd_zip) as zf:
         data = zf.read("music-dl.exe")
@@ -3413,23 +3707,26 @@ def _stack_download_bundle():
             pass
         raise RuntimeError("go-music-dl.exe 校验失败")
     os.replace(tmp, exe)
+    progress("组件下载与校验完成", 65)
     return str(src)
 
-
-def _stack_install():
+def _stack_install(progress=None):
+    progress = progress or (lambda *a: None)
     if os.name != "nt":
         raise RuntimeError("一键安装音乐中心仅支持 Windows；Linux 请运行 music/install-music-stack.sh")
     src = MUSIC_STACK_SRC
     missing = _stack_missing(src)
     if missing:
         LOG.info("music stack components missing, downloading: %s", ",".join(missing))
+        progress("正在检测组件，准备下载", 1)
         try:
-            src = _stack_download_bundle()
+            src = _stack_download_bundle(progress)
         except Exception as exc:
             raise RuntimeError("下载 Windows 音乐组件失败：%s" % str(exc)[:200])
         missing = _stack_missing(src)
         if missing:
             raise RuntimeError("下载后仍缺少组件：%s" % ", ".join(missing))
+    progress("正在安装程序文件", 68)
     with MUSIC_STACK_LOCK:
         paths = _stack_paths()
         os.makedirs(paths["root"], exist_ok=True)
@@ -3472,10 +3769,12 @@ def _stack_install():
             gport += 1
         if sport >= 58099 or gport >= 8089:
             raise RuntimeError("找不到空闲的音乐服务端口")
+        progress("正在启动 Songloft 和 go-music-dl", 76)
         state = _stack_start_services(sport, gport,
                                       creds["songloft_user"], creds["songloft_pass"])
         state["disabled"] = False
         _stack_state_write(state)
+        progress("正在配置插件", 88)
         sl_base = "http://127.0.0.1:%d" % sport
         gmd_base = "http://127.0.0.1:%d" % gport
         token = _stack_login(sl_base, creds["songloft_user"], creds["songloft_pass"])
@@ -3527,11 +3826,44 @@ def _stack_install():
         })
         _clear_songloft_token()
         _add_firewall_rules([PORT, sport, gport])
+        progress("安装完成", 100)
         return {"ok": True, "songloft_url": sl_base, "go_music_dl_url": gmd_base,
                 "songloft_port": sport, "gmd_port": gport,
                 "plugins": [{"name": p.get("name"), "status": p.get("status")}
                             for p in plugins if isinstance(p, dict)],
                 "server_host": server_host}
+
+
+def _stack_install_job():
+    def report(message, percent=None):
+        message = str(message or "").strip()
+        if not message:
+            previous = _stack_job_get()
+            message = previous.get("message") or "正在下载组件"
+            state = previous.get("state") or "downloading"
+            if state in ("starting", "idle", "done", "failed"):
+                state = "downloading"
+        elif "完成" in message:
+            state = "done"
+        elif "下载" in message or "组件" in message or "镜像" in message:
+            state = "downloading"
+        else:
+            state = "installing"
+        _stack_job_set(state, message, percent)
+
+    try:
+        _stack_install(progress=report)
+        _stack_job_set("done", "安装完成", 100)
+    except Exception as exc:
+        LOG.exception("music stack install failed")
+        try:
+            _stack_stop()
+        except Exception:
+            pass
+        _stack_job_set("failed", str(exc)[:400], 100)
+    finally:
+        with MUSIC_STACK_JOB_LOCK:
+            MUSIC_STACK_JOB["running"] = False
 
 
 def _stack_start():
@@ -4112,22 +4444,8 @@ def _music_autoconfig():
                         "device_id": d["device_id"],
                         "managed": True,
                     }, timeout=12)
-        all_devs = [m for acc in devs for m in
-                    ({"account_id": acc["account_id"], "device_id": d["device_id"]}
-                     for d in acc.get("devices") or [] if d.get("device_id"))]
-        if len(all_devs) >= 2:
-            _, grp = _songloft_req("GET", MIOT_PLUGIN_API + "/groups", timeout=10)
-            groups = grp.get("data") if isinstance(grp, dict) else []
-            existing = next((g for g in (groups or [])
-                             if isinstance(g, dict) and g.get("name") == "全屋音箱"), None)
-            if existing:
-                _songloft_req("POST", MIOT_PLUGIN_API + "/groups/update", {
-                    "id": existing.get("id"), "name": "全屋音箱", "members": all_devs,
-                }, timeout=15)
-            else:
-                _songloft_req("POST", MIOT_PLUGIN_API + "/groups", {
-                    "name": "全屋音箱", "members": all_devs,
-                }, timeout=15)
+        # 不自动创建“全屋音箱”组：默认各音箱独立，用户需要时在后台手动组网。
+        LOG.info("music autoconfig: groups left unchanged by default")
     except Exception as e:
         LOG.warning("music autoconfig devices: %s", e)
 
@@ -4191,6 +4509,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         if u.path in ("/", "/index.html"):
+            if _needs_onboarding():
+                self._send(302, b"", "text/plain; charset=utf-8",
+                           {"Location": "/setup"})
+                return
             page = _active_page()
             if page:
                 html = _inject_page_watch(page["html"], page["id"], page["version"])
@@ -4198,7 +4520,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, PANEL_HTML, "text/html; charset=utf-8")
         elif u.path in ("/panel", "/panel/"):
+            if _needs_onboarding():
+                self._send(302, b"", "text/plain; charset=utf-8",
+                           {"Location": "/setup"})
+                return
             self._send(200, PANEL_HTML, "text/html; charset=utf-8")
+        elif u.path in ("/setup", "/setup/"):
+            self._send(200, SETUP_HTML, "text/html; charset=utf-8")
         elif u.path.startswith("/custom/"):
             pid = urllib.parse.unquote(u.path[len("/custom/"):]).strip("/")
             html = _read_page_html(pid)
@@ -4207,6 +4535,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, html, "text/html; charset=utf-8")
         elif u.path == "/login":
+            if not admin_pin_set():
+                self._send(302, b"", "text/plain; charset=utf-8",
+                           {"Location": "/setup"})
+                return
+            force = ("force=1" in u.query) or ("m=phone" in u.query)
+            if not _load_auth() and not force:
+                self._send(302, b"", "text/plain; charset=utf-8",
+                           {"Location": "/setup"})
+                return
             host = (self.headers.get("Host") or "").strip()
             hostname = host.rsplit(":", 1)[0].strip("[]").lower() if host else ""
             if (not host) or hostname in ("127.0.0.1", "localhost", "::1"):
@@ -4243,6 +4580,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "favicon missing"})
         elif u.path == "/api/status":
             self.api_status()
+        elif u.path == "/api/setup_state":
+            self.api_setup_state()
         elif u.path == "/api/devices":
             self.api_devices()
         elif u.path == "/api/caps":
@@ -4772,6 +5111,42 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def api_setup_state(self):
+        music_connected = False
+        account_count = 0
+        music_url = ""
+        try:
+            _, ver = _songloft_req("GET", "/api/v1/version", timeout=2)
+            music_connected = bool(str(ver.get("version") or "")) if isinstance(ver, dict) else False
+            if music_connected:
+                music_url = _songloft_public_url()
+        except Exception:
+            pass
+        if music_connected:
+            try:
+                _, acc = _songloft_req("GET", MIOT_PLUGIN_API + "/accounts", timeout=4)
+                data = acc.get("data") if isinstance(acc, dict) else []
+                account_count = len(data) if isinstance(data, list) else 0
+            except Exception:
+                pass
+        stack = _stack_state_read()
+        logged_in = bool(_load_auth())
+        pin_set = admin_pin_set()
+        self._send(200, {
+            "ok": True, "pin_set": pin_set,
+            "admin_authed": _admin_authed(self),
+            "logged_in": logged_in,
+            "music_connected": music_connected,
+            "music_url": music_url,
+            "account_count": account_count,
+            "stack_installed": bool(stack.get("installed")),
+            "platform": "windows" if os.name == "nt" else "linux",
+            "job": _stack_job_get(),
+            "lan_ip": str(CONFIG.get("lan_ip") or LAN_IP),
+            "port": PORT, "version": APP_VERSION,
+            "needs_onboarding": _needs_onboarding(),
+        })
+
     def api_admin_status(self):
         if not admin_pin_set():
             self._send(200, {"ok": False, "setup": True})
@@ -5270,9 +5645,14 @@ class Handler(BaseHTTPRequestHandler):
                 logs = f.read()[-4000:].decode("utf-8", "replace")
         except OSError:
             pass
-        missing_src = _stack_missing(MUSIC_STACK_SRC) if os.name == "nt" else []
-        missing_cache = _stack_missing(MUSIC_STACK_CACHE) if os.name == "nt" else []
-        source_ready = not missing_src or not missing_cache
+        if os.name == "nt":
+            missing_src = _stack_missing(MUSIC_STACK_SRC)
+            missing_cache = _stack_missing(MUSIC_STACK_CACHE)
+            source_ready = not missing_src or not missing_cache
+        else:
+            missing_src = []
+            missing_cache = []
+            source_ready = False
         can_download = os.name == "nt"
         self._send(200, {
             "ok": True, "platform": "windows" if os.name == "nt" else "linux",
@@ -5286,6 +5666,7 @@ class Handler(BaseHTTPRequestHandler):
             "songloft_url": state.get("songloft_url") or
             ("http://127.0.0.1:%d" % sport if state.get("installed") else ""),
             "disabled": bool(state.get("disabled")),
+            "job": _stack_job_get(),
             "log_tail": logs[-2000:],
         })
 
@@ -5296,15 +5677,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False,
                              "error": "Linux 请运行 music/install-music-stack.sh；Docker 请连接外部音乐中心"})
             return
-        try:
-            result = _stack_install()
-            self._send(200, result)
-        except Exception as exc:
-            try:
-                _stack_stop()
-            except Exception:
-                pass
-            self._send(200, {"ok": False, "error": str(exc)[:300]})
+        with MUSIC_STACK_JOB_LOCK:
+            if MUSIC_STACK_JOB["running"]:
+                self._send(409, {"ok": False, "error": "音乐组件正在安装，请稍候"})
+                return
+            MUSIC_STACK_JOB.update({
+                "running": True, "state": "starting",
+                "message": "正在启动安装", "percent": 0,
+                "ts": time.time(),
+            })
+        threading.Thread(target=_stack_install_job, daemon=True).start()
+        self._send(202, {"ok": True, "state": "starting"})
 
     def api_admin_music_stack_start(self):
         if not self._admin_require():
