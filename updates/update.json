@@ -1,8 +1,8 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "released": "2026-10-28",
-  "notes": "新增首次安装向导（PIN→音乐中心→小米扫码），默认不自动创建全屋音箱组；Windows 音乐中心检测安装支持国内镜像与分阶段进度；修复局域网音乐中心地址。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.4.0-linux-universal.tar.gz",
-  "sha256": "a1959ea633ac3181e7f98cee53ef54652473f2e135fe2cd94649ae42c99ffc04",
-  "size": 2327490
+  "notes": "修复 Windows 后台热更新卡在“正在重启”的问题（更新器不再连带结束 worker）；首次安装向导、默认不自动创建全屋音箱组、国内镜像下载进度与局域网音乐中心修复同 v0.4.0。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.4.1-linux-universal.tar.gz",
+  "sha256": "480c0ec6b4b0cb375fb9c910a113377340827fbd6c27ba603e1d26cd12401dc3",
+  "size": 2327261
 }

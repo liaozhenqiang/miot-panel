@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.4.0-docker-installer.run
+sudo bash miot-panel-v0.4.1-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.4.0 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.4.1 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.4.0-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.4.0
+docker load -i miot-panel-v0.4.1-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.4.1
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.4.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.4.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.4.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.4.1-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.4.1-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.4.0-linux-installer.run
+sudo bash miot-panel-v0.4.1-linux-installer.run
 ```
 
 手动源码安装：
@@ -471,6 +471,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.4.1（2026-10-28）**：修复 Windows 后台热更新在“正在重启”卡住的问题（v0.3.6–v0.4.0 的更新器用 `taskkill /T` 会连带结束更新 worker；现已只结束旧面板进程，worker 继续拉起新版本并通过健康检查）。v0.4.0 的首次向导、默认不组网、国内镜像和分阶段进度不变。注意：Windows v0.3.6–v0.3.9 仍受旧更新器影响，请用 v0.4.1 安装包覆盖安装（保留数据）；Windows v0.3.5 及更早、Linux 可直接后台更新。
 - **v0.4.0（2026-10-28）**：新增首次安装向导，按 **后台 PIN → 音乐中心 → 小爱扫码** 的顺序引导：未设置 PIN/未登录时根路径和登录页自动进入 `/setup`；Windows 可直接检测并在线安装音乐组件（官方源失败自动尝试国内镜像，后台任务显示分阶段进度），也可连接已有音乐中心或暂时跳过；安装后再扫码绑定小米账号，自动同步完整设备与小爱音箱。默认**不再自动创建“全屋音箱”组**，各音箱保持独立，需要时在后台手动组网。音乐组件安装改为后台任务，后台和向导均显示下载/校验/启动进度；下载失败可用 Windows 安装器离线组件。修复局域网音乐中心地址。
 - **v0.3.9（2026-10-28）**：Windows 后台音乐中心新增“检测并安装”：组件缺失时自动从官方源下载 Songloft/go-music-dl/插件并校验 SHA256，然后启动、配置面板；不需要重新下载整包。后台“打开音乐中心”未连接时改为明确提示“音乐中心未连接，请先安装或连接”。其余功能同 v0.3.8。
 - **v0.3.8（2026-10-28）**：修复从手机/另一台电脑打开后台时，“在后台打开音乐中心”仍指向 `127.0.0.1` 的问题。后台 SSO iframe、音乐中心地址和 MIoT 音箱拉流地址现在统一使用局域网地址（配置为远程地址时保持远程地址），局域网访问和音乐中心连接完整可用。其余功能同 v0.3.7（Windows CA/更新、Windows 音乐中心、登录/后台导航）。

@@ -194,7 +194,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -3041,7 +3041,7 @@ def _spawn_app(app_dir, port):
 def _signal_restart(parent_pid, app_dir, port):
     if os.name == "nt":
         try:
-            subprocess.run(["taskkill", "/PID", str(parent_pid), "/T", "/F"],
+            subprocess.run(["taskkill", "/PID", str(parent_pid), "/F"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=10, check=False)
         except Exception:
