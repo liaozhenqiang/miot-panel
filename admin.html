@@ -45,6 +45,9 @@ td input.rename{padding:7px 8px;min-width:150px;}
 .pill.home{background:#fff2e8;color:#b54708;}
 pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:12px;line-height:1.6;overflow:auto;max-height:360px;white-space:pre-wrap;}
 .hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px;}
+.upBar{height:8px;background:rgba(127,127,127,.18);border-radius:999px;overflow:hidden;margin-top:10px;}
+.upBar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s;}
+.upNotes{white-space:pre-wrap;font:12px/1.6 ui-monospace,Consolas,monospace;background:rgba(0,0,0,.12);border-radius:10px;padding:10px;max-height:180px;overflow:auto;margin-top:8px;}
 .sep{height:1px;background:var(--line);margin:14px 0;}
 .twoCols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .musicFrame{width:100%;height:78vh;min-height:620px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:12px;}
@@ -368,6 +371,25 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
     </div>
 
     <section class="card">
+      <h2>系统更新</h2>
+      <div class="sub">从 GitHub Release 下载并热更新程序文件；设备、登录态、排版和自定义页面会保留。更新期间面板会短暂离线，完成后需要重新登录后台。</div>
+      <div class="grid">
+        <div><label>当前版本</label><input id="updateCurrent" disabled></div>
+        <div><label>最新版本</label><input id="updateLatest" disabled placeholder="点击“检查更新”"></div>
+        <div><label>更新源（manifest）</label><input id="updateUrl" placeholder="https://.../update.json"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button onclick="saveUpdateUrl()">保存更新源</button>
+        <button onclick="checkUpdate(true)">检查更新</button>
+        <button class="primary" id="updateApplyBtn" onclick="applyUpdate()" disabled>下载并更新</button>
+      </div>
+      <div class="msg" id="updateMsg"></div>
+      <div class="upBar hidden" id="updateBarWrap"><i id="updateBar"></i></div>
+      <pre class="upNotes hidden" id="updateNotes"></pre>
+      <div class="hint">更新包会校验 SHA256 并验证版本号；替换后自动重启，失败会自动回滚。Docker 容器请在宿主机拉取新镜像，不支持容器内热更新。</div>
+    </section>
+
+    <section class="card">
       <h2>服务日志</h2>
       <div class="row" style="margin-bottom:10px"><button class="danger small" onclick="clearLogs()">清理历史日志</button><span class="hint">Linux 清理 journald（含其他服务）；Windows/Docker 清理面板日志文件。不可恢复。</span></div>
       <pre id="logs">点“查看日志”加载最近 120 行。</pre>
@@ -376,6 +398,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 </div>
 <script>
 var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='';
+var updateTarget='', updateTimer=null;
 function $(id){return document.getElementById(id);}
 function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
 function toast(msg,err){var el=$('toast');el.textContent=msg;el.className='toast show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
@@ -391,6 +414,75 @@ async function api(path,body){
   if(body)opt.body=JSON.stringify(body);
   var r=await fetch(path,opt);var j={};try{j=await r.json();}catch(e){}
   return {status:r.status,data:j};
+}
+function setUpdateMsg(text,err){var el=$('updateMsg');if(!el)return;el.textContent=text||'';el.style.color=err?'var(--err)':'var(--muted)';}
+async function loadUpdateStatus(){
+  try{
+    var r=await fetch(API+'/api/admin/update/status',{cache:'no-store'});
+    var d=await r.json();
+    if(!d||!d.state||d.state==='idle')return;
+    var names={downloading:'下载中',verifying:'校验中',installing:'安装中',restarting:'重启中',rolling_back:'回滚中',success:'更新完成',rolled_back:'已回滚',failed:'更新失败'};
+    if(d.state==='success')setUpdateMsg('上次更新已完成：v'+(d.target||'')+'，当前运行 v'+(d.version||''));
+    else if(d.state==='failed'||d.state==='rolled_back')setUpdateMsg((names[d.state]||d.state)+'：'+(d.message||''),true);
+  }catch(e){}
+}
+async function saveUpdateUrl(){
+  var url=$('updateUrl').value.trim();
+  var r=await api('/api/admin/save',{update_url:url});
+  if(r.data.ok){if(state)state.config=r.data.config;toast('更新源已保存');checkUpdate(true);}
+  else toast(r.data.msg||'保存失败',true);
+}
+async function checkUpdate(force){
+  setUpdateMsg('正在检查更新…');$('updateApplyBtn').disabled=true;
+  var r=await api('/api/admin/update/check',{force:!!force});
+  if(r.status===401){show('loginView');return;}
+  if(!r.data.ok){setUpdateMsg(r.data.error||'检查失败',true);return;}
+  updateTarget=r.data.latest||'';
+  $('updateLatest').value='v'+updateTarget;
+  if(r.data.update_url)$('updateUrl').value=r.data.update_url;
+  var notes=$('updateNotes');
+  if(r.data.notes){notes.textContent=r.data.notes;notes.classList.remove('hidden');}
+  else{notes.textContent='';notes.classList.add('hidden');}
+  if(r.data.update_available){
+    setUpdateMsg('发现新版本 v'+updateTarget+'（当前 v'+r.data.current+'）');
+    $('updateApplyBtn').disabled=false;
+  }else{
+    setUpdateMsg('已是最新版本 v'+r.data.current);
+    $('updateApplyBtn').disabled=true;
+  }
+}
+async function applyUpdate(){
+  if(!updateTarget)return;
+  if(!confirm('将下载并安装 v'+updateTarget+'，面板会重启并需要重新登录后台。继续？'))return;
+  $('updateApplyBtn').disabled=true;
+  setUpdateMsg('正在启动更新…');
+  var r=await api('/api/admin/update/apply',{});
+  if(r.status===401){show('loginView');return;}
+  if(!r.data.ok){setUpdateMsg(r.data.error||'更新失败',true);$('updateApplyBtn').disabled=false;return;}
+  $('updateBarWrap').classList.remove('hidden');
+  $('updateBar').style.width='2%';
+  if(updateTimer)clearInterval(updateTimer);
+  updateTimer=setInterval(pollUpdate,1500);
+  pollUpdate();
+}
+async function pollUpdate(){
+  try{
+    var r=await fetch(API+'/api/admin/update/status',{cache:'no-store'});
+    var d=await r.json();if(!d||!d.state)return;
+    var names={downloading:'下载中',verifying:'校验中',installing:'安装中',restarting:'重启中',rolling_back:'回滚中',success:'更新完成',rolled_back:'已回滚',failed:'更新失败'};
+    var st=d.state,pct=Number(d.percent||0);
+    $('updateBarWrap').classList.remove('hidden');
+    $('updateBar').style.width=Math.max(2,Math.min(100,pct))+'%';
+    setUpdateMsg((names[st]||st)+(d.message?('：'+d.message):''),(st==='failed'||st==='rolled_back'));
+    if(st==='success'){
+      if(updateTimer){clearInterval(updateTimer);updateTimer=null;}
+      setUpdateMsg('已更新到 v'+(d.target||'')+'，正在重新加载…');
+      setTimeout(function(){location.reload();},2500);
+    }else if(st==='failed'||st==='rolled_back'){
+      if(updateTimer){clearInterval(updateTimer);updateTimer=null;}
+      $('updateApplyBtn').disabled=false;
+    }
+  }catch(e){setUpdateMsg('面板重启中，等待恢复…');}
 }
 async function load(){
   try{
@@ -1119,6 +1211,9 @@ function render(){
   renderSpeakerPanelSettings();
   $('adminTheme').value=state.theme||'dark';
   renderThemeSwatches();
+  $('updateCurrent').value='v'+(state.version||'');
+  $('updateUrl').value=c.update_url||'';
+  loadUpdateStatus();
   if(!pagesLoaded)loadCustomPages();
 }
 function renderDevices(){

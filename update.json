@@ -1,0 +1,8 @@
+{
+  "version": "0.3.5",
+  "released": "2026-10-27",
+  "notes": "修复登录二维码被裁切；新增后台一键热更新（SHA256 校验、自动重启、失败回滚）。",
+  "url": "https://github.com/liaozhenqiang/miot-panel/releases/download/v0.3.5/miot-panel-v0.3.5-linux-universal.tar.gz",
+  "sha256": "8db36109c42f3d861a2d76d0da79e05286565641de4fe618e1123f70e59e27f6",
+  "size": 2170773
+}

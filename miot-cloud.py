@@ -37,6 +37,7 @@ import gzip
 import time
 import socket
 import threading
+import signal
 import logging
 from logging.handlers import RotatingFileHandler
 import urllib.parse
@@ -49,6 +50,7 @@ import random
 import secrets
 import shutil
 import subprocess
+import tarfile
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -153,11 +155,30 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
+APP_VERSION = "0.3.5"
+APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
     PORT = int(os.environ.get("MIOT_PORT") or ("8080" if os.name == "nt" else "80"))
 except ValueError:
     PORT = 8080 if os.name == "nt" else 80
+
+UPDATE_URL_DEFAULT = os.environ.get(
+    "MIOT_UPDATE_URL",
+    "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/update.json")
+UPDATE_DIR = os.path.join(ROOT, "update")
+UPDATE_STATUS_FILE = os.path.join(UPDATE_DIR, "status.json")
+UPDATE_MAX_BYTES = 40 * 1024 * 1024
+UPDATE_CACHE = {"ts": 0.0, "data": None}
+UPDATE_CACHE_LOCK = threading.Lock()
+UPDATE_RUNNING = {"active": False, "target": ""}
+UPDATE_APP_FILES = (
+    "miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html",
+    "manifest.webmanifest", "sw.js", "sensor_models.json", "miot_models.json.gz",
+    "config.example.json", "README.md", "LICENSE",
+)
+UPDATE_STATES = ("downloading", "verifying", "installing", "restarting",
+                 "rolling_back")
 
 GO2RTC_API = os.environ.get("MIOT_GO2RTC", "http://127.0.0.1:1984")
 SONGLOFT_API = os.environ.get("MIOT_SONGLOFT", "http://127.0.0.1:58091")
@@ -216,6 +237,7 @@ DEFAULT_CONFIG = {
     "speaker_max_chars": 200,
     "speaker_hidden": [],
     "speaker_default": "",
+    "update_url": "",
     "admin_pin_salt": "",
     "admin_pin_hash": "",
 }
@@ -258,6 +280,8 @@ def _normalize_config(data):
         out["speaker_max_chars"] = 200
     out["speaker_hidden"] = _str_list(src.get("speaker_hidden"), 500)
     out["speaker_default"] = str(src.get("speaker_default") or "")[:120]
+    update_url = str(src.get("update_url") or "").strip()[:500]
+    out["update_url"] = update_url if update_url.startswith(("http://", "https://")) else ""
     out["admin_pin_salt"] = str(src.get("admin_pin_salt") or "")
     out["admin_pin_hash"] = str(src.get("admin_pin_hash") or "")
     return out
@@ -512,7 +536,20 @@ def build_qr(url):
     if segno is None:
         return '<div style="color:#ff8a6a;font-size:13px">服务端未安装二维码库</div>'
     qr = segno.make(url, error="m")
-    return qr.svg_inline(scale=9, border=2)
+    try:
+        return qr.svg_inline(scale=9, border=2, omitsize=True)
+    except TypeError:
+        svg = qr.svg_inline(scale=9, border=2)
+        head_end = svg.find(">")
+        head = svg[:head_end]
+        try:
+            width = head.split('width="', 1)[1].split('"', 1)[0]
+            height = head.split('height="', 1)[1].split('"', 1)[0]
+        except IndexError:
+            return svg
+        head = head.replace('width="%s"' % width, 'viewBox="0 0 %s %s"' % (width, height), 1)
+        head = head.replace('height="%s"' % height, "", 1)
+        return head + svg[head_end:]
 
 # ----------------------------------------------------------------- 登录链（自包含，文件持久化）
 UA = "Android-7.1.2-1.0.0-ONEPLUS A3010-136-%s APP/xiaomi.smarthome APPV/62830"
@@ -2272,8 +2309,8 @@ background:rgba(0,0,0,.25);color:#fff;font-size:15px;}
 background:#ff6900;color:#fff;font-size:16px;font-weight:600;}
 .msg{margin-top:14px;font-size:13px;color:#ff8a6a;min-height:18px;}
 .note{margin-top:18px;font-size:12px;color:#7a8290;line-height:1.7;}
-.qr{background:#fff;border-radius:16px;padding:16px;display:inline-block;margin:4px auto 8px;}
-.qr svg{display:block;width:260px;height:260px;}
+.qr{background:#fff;border-radius:16px;padding:clamp(10px,2vh,18px);display:inline-block;margin:4px auto 8px;}
+.qr svg{display:block;width:min(72vw,46vh,340px);height:auto;aspect-ratio:1/1;}
 .hint{font-size:12px;color:#8a93a2;line-height:1.7;margin-top:6px;}
 .center{text-align:center;}
 </style></head><body><div class="card">
@@ -2409,8 +2446,387 @@ def _public_config():
             "weather_label", "country", "page_size", "hidden_devices", "renames",
             "speaker_panel_enabled", "speaker_text_enabled", "speaker_voice_enabled",
             "speaker_answer_mode", "speaker_max_chars", "speaker_hidden",
-            "speaker_default")
+            "speaker_default", "update_url")
     return {k: CONFIG.get(k) for k in keys}
+
+
+# ----------------------------------------------------------------- 后台热更新
+def _version_tuple(value):
+    parts = []
+    for item in str(value or "").strip().lstrip("vV").split("."):
+        try:
+            parts.append(max(0, int(item)))
+        except ValueError:
+            parts.append(0)
+    return tuple((parts + [0, 0, 0, 0])[:4])
+
+
+def _update_source():
+    value = str(CONFIG.get("update_url") or "").strip()
+    if value and not value.startswith(("http://", "https://")):
+        value = ""
+    return value or UPDATE_URL_DEFAULT
+
+
+def _update_status_write(state, message="", pct=None, target="", path=None, current=None):
+    data = {
+        "state": state, "message": str(message)[:500], "ts": int(time.time()),
+        "target": str(target or ""), "current": current or APP_VERSION,
+    }
+    if pct is not None:
+        data["percent"] = max(0, min(100, int(pct)))
+    try:
+        path = path or UPDATE_STATUS_FILE
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        LOG.warning("write update status failed", exc_info=True)
+    return data
+
+
+def _update_status_read():
+    try:
+        with open(UPDATE_STATUS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {"state": "idle"}
+
+
+def _fetch_update_manifest(force=False):
+    now = time.time()
+    with UPDATE_CACHE_LOCK:
+        if not force and UPDATE_CACHE["data"] and now - UPDATE_CACHE["ts"] < 120:
+            return dict(UPDATE_CACHE["data"])
+    source = _update_source()
+    if not source:
+        raise RuntimeError("未配置更新源")
+    req = urllib.request.Request(
+        source, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read(512 * 1024)
+    data = json.loads(raw.decode("utf-8", "replace") or "{}")
+    if not isinstance(data, dict):
+        raise RuntimeError("更新清单格式不正确")
+    version = str(data.get("version") or "").strip().lstrip("vV")
+    url = str(data.get("url") or "").strip()
+    digest = str(data.get("sha256") or "").strip().lower()
+    if not version or not url.startswith(("http://", "https://")):
+        raise RuntimeError("更新清单缺少 version/url")
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise RuntimeError("更新清单的 sha256 无效")
+    try:
+        size = int(data.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size > UPDATE_MAX_BYTES:
+        raise RuntimeError("更新包超过大小限制")
+    result = {
+        "version": version, "url": url, "sha256": digest, "size": size,
+        "notes": str(data.get("notes") or "")[:4000],
+        "released": str(data.get("released") or "")[:40],
+    }
+    with UPDATE_CACHE_LOCK:
+        UPDATE_CACHE["ts"] = now
+        UPDATE_CACHE["data"] = result
+    return dict(result)
+
+
+def _file_version(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _ in range(400):
+                line = f.readline()
+                if not line:
+                    break
+                if line.startswith("APP_VERSION"):
+                    return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return ""
+
+
+def _extract_update_package(path, dest):
+    total = 0
+    members = []
+    with tarfile.open(path, "r:gz") as tar:
+        for member in tar:
+            name = member.name.replace("\\", "/")
+            while name.startswith("./"):
+                name = name[2:]
+            if not name or name.startswith("/") or ".." in name.split("/"):
+                continue
+            parts = [p for p in name.split("/") if p and p != "."]
+            if not parts or any(p in ("__pycache__", ".git") for p in parts):
+                continue
+            if len(parts) > 3 or member.issym() or member.islnk() or member.isdev():
+                continue
+            if not (member.isfile() or member.isdir()):
+                continue
+            if len(members) >= 300:
+                raise RuntimeError("更新包文件数量异常")
+            if member.isfile():
+                total += int(member.size or 0)
+                if total > 60 * 1024 * 1024:
+                    raise RuntimeError("更新包解压后超过大小限制")
+            members.append((member, parts))
+        for member, parts in members:
+            target = os.path.join(dest, *parts)
+            if member.isdir():
+                os.makedirs(target, exist_ok=True)
+                continue
+            os.makedirs(os.path.dirname(target) or dest, exist_ok=True)
+            src = tar.extractfile(member)
+            if src is None:
+                continue
+            with open(target, "wb") as out:
+                shutil.copyfileobj(src, out, 1024 * 1024)
+    for root, _dirs, files in os.walk(dest):
+        if "miot-cloud.py" in files and "cloud_panel.html" in files:
+            return root
+    return ""
+
+
+def _copy_app_files(src_dir, target_dir):
+    copied = []
+    for name in UPDATE_APP_FILES:
+        src = os.path.join(src_dir, name)
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(target_dir, name)
+        os.makedirs(os.path.dirname(dst) or target_dir, exist_ok=True)
+        tmp = dst + ".update-tmp"
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+        copied.append(name)
+    src_icons = os.path.join(src_dir, "icons")
+    if os.path.isdir(src_icons):
+        dst_icons = os.path.join(target_dir, "icons")
+        os.makedirs(dst_icons, exist_ok=True)
+        for name in os.listdir(src_icons):
+            src = os.path.join(src_icons, name)
+            if not os.path.isfile(src):
+                continue
+            dst = os.path.join(dst_icons, name)
+            tmp = dst + ".update-tmp"
+            shutil.copy2(src, tmp)
+            os.replace(tmp, dst)
+            copied.append("icons/" + name)
+    return copied
+
+
+def _backup_app_files(app_dir, backup_dir):
+    os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+    copied = _copy_app_files(app_dir, backup_dir)
+    with open(os.path.join(backup_dir, "version.txt"), "w", encoding="utf-8") as f:
+        f.write(_file_version(os.path.join(app_dir, "miot-cloud.py")) or APP_VERSION)
+    return copied
+
+
+def _health_version(port, timeout=2):
+    try:
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%d/api/status" % int(port), timeout=timeout) as resp:
+            data = json.loads(resp.read() or b"{}")
+        if isinstance(data, dict):
+            return str(data.get("version") or "")
+    except Exception:
+        pass
+    return ""
+
+
+def _wait_health(port, version, timeout):
+    deadline = time.time() + max(1, timeout)
+    while time.time() < deadline:
+        if _health_version(port) == version:
+            return True
+        time.sleep(1)
+    return False
+
+
+def _spawn_app(app_dir, port):
+    env = os.environ.copy()
+    env.pop("MIOT_UPDATE_WORKER", None)
+    env["MIOT_PORT"] = str(port)
+    env["MIOT_APP_DIR"] = app_dir
+    args = [sys.executable, os.path.join(app_dir, "miot-cloud.py")]
+    try:
+        if os.name == "nt":
+            flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                     | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+            subprocess.Popen(args, cwd=app_dir, env=env, close_fds=True,
+                             creationflags=flags)
+        else:
+            subprocess.Popen(args, cwd=app_dir, env=env, close_fds=True,
+                             start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        LOG.exception("spawn app failed")
+        return False
+
+
+def _signal_restart(parent_pid, app_dir, port):
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(parent_pid), "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, check=False)
+        except Exception:
+            pass
+        time.sleep(1)
+        _spawn_app(app_dir, port)
+    else:
+        try:
+            os.kill(parent_pid, signal.SIGUSR1)
+        except OSError:
+            pass
+
+
+def _spawn_update_worker(src_dir, target, backup_dir):
+    args = [sys.executable, os.path.join(APP_DIR, "miot-cloud.py"), "--update-worker",
+            src_dir, target, backup_dir, UPDATE_STATUS_FILE, str(PORT),
+            str(os.getpid()), APP_DIR]
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+    log = open(os.path.join(UPDATE_DIR, "update.log"), "ab")
+    env = os.environ.copy()
+    env["MIOT_UPDATE_WORKER"] = "1"
+    try:
+        if os.name == "nt":
+            flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                     | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+            subprocess.Popen(args, cwd=APP_DIR, env=env, stdout=log, stderr=log,
+                             close_fds=True, creationflags=flags)
+        else:
+            subprocess.Popen(args, cwd=APP_DIR, env=env, stdout=log, stderr=log,
+                             close_fds=True, start_new_session=True)
+    finally:
+        log.close()
+
+
+def _cleanup_update_packages():
+    for name in ("download.tar.gz", "download.tar.gz.part"):
+        try:
+            os.remove(os.path.join(UPDATE_DIR, name))
+        except OSError:
+            pass
+    shutil.rmtree(os.path.join(UPDATE_DIR, "stage"), ignore_errors=True)
+
+
+def _update_prepare(manifest):
+    target = manifest["version"]
+    tar_path = os.path.join(UPDATE_DIR, "download.tar.gz")
+    part_path = tar_path + ".part"
+    stage = os.path.join(UPDATE_DIR, "stage")
+    try:
+        os.makedirs(UPDATE_DIR, mode=0o700, exist_ok=True)
+        _update_status_write("downloading", "开始下载 v%s" % target, 0, target)
+        req = urllib.request.Request(
+            manifest["url"],
+            headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+        with urllib.request.urlopen(req, timeout=30) as resp, open(part_path, "wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            got = 0
+            last = 0
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > UPDATE_MAX_BYTES:
+                    raise RuntimeError("更新包超过大小限制")
+                out.write(chunk)
+                if got - last >= 512 * 1024:
+                    pct = int(got * 100 / total) if total else 0
+                    _update_status_write(
+                        "downloading", "已下载 %.1f MB" % (got / 1048576.0),
+                        pct, target)
+                    last = got
+        os.replace(part_path, tar_path)
+        _update_status_write("verifying", "校验更新包", 100, target)
+        digest = hashlib.sha256()
+        with open(tar_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest().lower() != manifest["sha256"]:
+            raise RuntimeError("SHA256 校验失败，已拒绝安装")
+        shutil.rmtree(stage, ignore_errors=True)
+        os.makedirs(stage, exist_ok=True)
+        src_dir = _extract_update_package(tar_path, stage)
+        if not src_dir:
+            raise RuntimeError("更新包中未找到程序文件")
+        for required in ("miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html"):
+            if not os.path.isfile(os.path.join(src_dir, required)):
+                raise RuntimeError("更新包缺少 %s" % required)
+        if _file_version(os.path.join(src_dir, "miot-cloud.py")) != target:
+            raise RuntimeError("更新包版本与清单不一致")
+        _update_status_write("installing", "正在安装 v%s" % target, 100, target)
+        backup_dir = os.path.join(
+            UPDATE_DIR, "backup-%s-%s" % (APP_VERSION, target))
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        _backup_app_files(APP_DIR, backup_dir)
+        _spawn_update_worker(src_dir, target, backup_dir)
+    except Exception as exc:
+        LOG.exception("update prepare failed")
+        _update_status_write("failed", str(exc)[:400], None, target)
+        for path in (part_path, tar_path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    finally:
+        UPDATE_RUNNING["active"] = False
+
+
+def _run_update_worker(args):
+    if len(args) < 7:
+        return
+    src_dir, target, backup_dir, status_file, port_s, parent_pid_s, app_dir = args[:7]
+    try:
+        port = int(port_s)
+    except ValueError:
+        port = PORT
+    try:
+        parent_pid = int(parent_pid_s)
+    except ValueError:
+        parent_pid = 0
+    old_version = _file_version(os.path.join(backup_dir, "miot-cloud.py")) or APP_VERSION
+
+    def status(state, message, pct=None, current=None):
+        _update_status_write(state, message, pct, target, path=status_file,
+                             current=current)
+
+    time.sleep(2.5)
+    try:
+        status("installing", "正在替换程序文件", 100, target)
+        _copy_app_files(src_dir, app_dir)
+        status("restarting", "正在重启面板", 100, target)
+        _signal_restart(parent_pid, app_dir, port)
+        if _wait_health(port, target, 90):
+            status("success", "已更新到 v%s" % target, 100, target)
+            _cleanup_update_packages()
+            return
+        status("rolling_back", "新版本未通过健康检查，正在回滚", 100, old_version)
+        _copy_app_files(backup_dir, app_dir)
+        if not _wait_health(port, old_version, 10) and not _health_version(port):
+            _spawn_app(app_dir, port)
+        if _wait_health(port, old_version, 45):
+            status("rolled_back", "已回滚到 v%s，请检查更新包" % old_version, 100, old_version)
+        else:
+            status("failed", "更新失败，回滚后面板未恢复，请用安装包重装", 100, old_version)
+    except Exception as exc:
+        LOG.exception("update worker failed")
+        try:
+            _copy_app_files(backup_dir, app_dir)
+            _signal_restart(parent_pid, app_dir, port)
+        except Exception:
+            pass
+        status("failed", str(exc)[:400], 100)
 
 
 # ----------------------------------------------------------------- 音乐 / 小爱音箱
@@ -3109,6 +3525,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_devices()
         elif u.path == "/api/admin/music/web_sso":
             self.api_admin_music_web_sso()
+        elif u.path == "/api/admin/update/status":
+            self.api_admin_update_status()
         elif u.path == "/api/speaker_assist":
             self.api_speaker_assist()
         elif u.path == "/api/speaker/chat_status":
@@ -3199,6 +3617,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_ai_test(body)
         elif u.path == "/api/admin/music/ai_check":
             self.api_admin_music_ai_check()
+        elif u.path == "/api/admin/update/check":
+            self.api_admin_update_check(body)
+        elif u.path == "/api/admin/update/apply":
+            self.api_admin_update_apply(body)
         elif u.path == "/api/speaker/chat":
             self.api_speaker_chat(body)
         else:
@@ -3224,6 +3646,7 @@ class Handler(BaseHTTPRequestHandler):
             theme = "dark"
         page = _page_state()
         self._send(200, {"logged_in": bool(auth),
+                         "version": APP_VERSION,
                          "home_label": CONFIG.get("home_label") or "我的家",
                          "weather_label": CONFIG.get("weather_label") or "天气",
                          "page_size": int(CONFIG.get("page_size") or 10),
@@ -3612,8 +4035,68 @@ class Handler(BaseHTTPRequestHandler):
             "logged_in": bool(_load_auth()), "auth_source": _auth_source(),
             "theme": theme,
             "layout": load_layout(), "weather": weather or None,
-            "port": PORT, "pin_set": True,
+            "port": PORT, "pin_set": True, "version": APP_VERSION,
         })
+
+    def api_admin_update_status(self):
+        data = _update_status_read()
+        payload = {k: data.get(k) for k in
+                   ("state", "message", "percent", "ts", "current", "target")}
+        payload["version"] = APP_VERSION
+        self._send(200, payload)
+
+    def api_admin_update_check(self, body):
+        if not self._admin_require():
+            return
+        try:
+            manifest = _fetch_update_manifest(force=bool(body.get("force")))
+        except Exception as exc:
+            self._send(200, {"ok": False, "current": APP_VERSION,
+                             "update_url": _update_source(),
+                             "error": str(exc)[:240]})
+            return
+        latest = manifest["version"]
+        self._send(200, {
+            "ok": True, "current": APP_VERSION, "latest": latest,
+            "update_available": _version_tuple(latest) > _version_tuple(APP_VERSION),
+            "notes": manifest["notes"], "size": manifest["size"],
+            "released": manifest["released"], "update_url": _update_source(),
+        })
+
+    def api_admin_update_apply(self, body):
+        if not self._admin_require():
+            return
+        if os.path.exists("/.dockerenv") or os.environ.get("MIOT_DOCKER") == "1":
+            self._send(409, {"ok": False,
+                             "error": "Docker 容器内不支持热更新，请在宿主机拉取新镜像"})
+            return
+        status = _update_status_read()
+        try:
+            age = time.time() - float(status.get("ts") or 0)
+        except (TypeError, ValueError):
+            age = 999999
+        if status.get("state") in UPDATE_STATES and age < 300:
+            self._send(409, {"ok": False,
+                             "error": "已有更新正在进行：%s" % status.get("message", "")})
+            return
+        if UPDATE_RUNNING["active"]:
+            self._send(409, {"ok": False, "error": "已有更新正在进行"})
+            return
+        UPDATE_RUNNING["active"] = True
+        try:
+            manifest = _fetch_update_manifest(force=True)
+            if _version_tuple(manifest["version"]) <= _version_tuple(APP_VERSION):
+                UPDATE_RUNNING["active"] = False
+                self._send(400, {"ok": False,
+                                 "error": "当前已是最新版本 v%s" % APP_VERSION})
+                return
+            threading.Thread(target=_update_prepare, args=(manifest,),
+                             daemon=True).start()
+            self._send(202, {"ok": True, "state": "downloading",
+                             "target": manifest["version"]})
+        except Exception as exc:
+            UPDATE_RUNNING["active"] = False
+            self._send(200, {"ok": False, "error": str(exc)[:240]})
 
     def api_admin_setup(self, body):
         if admin_pin_set():
@@ -3697,6 +4180,15 @@ class Handler(BaseHTTPRequestHandler):
             updates["speaker_hidden"] = _str_list(body.get("speaker_hidden"), 500)
         if "speaker_default" in body:
             updates["speaker_default"] = str(body.get("speaker_default") or "")[:120]
+        if "update_url" in body:
+            value = str(body.get("update_url") or "").strip()[:500]
+            if value and not value.startswith(("http://", "https://")):
+                self._send(400, {"ok": False, "msg": "更新源必须是 http(s) 地址"})
+                return
+            updates["update_url"] = value
+            with UPDATE_CACHE_LOCK:
+                UPDATE_CACHE["ts"] = 0
+                UPDATE_CACHE["data"] = None
         save_config(updates)
         threading.Thread(target=poll_once, daemon=True).start()
         WEATHER_WAKE.set()
@@ -4455,8 +4947,24 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True})
 
 
+def _reexec_for_update(_signum=None, _frame=None):
+    LOG.info("re-exec for update")
+    try:
+        logging.shutdown()
+    except Exception:
+        pass
+    script = os.path.join(APP_DIR, "miot-cloud.py")
+    os.execv(sys.executable, [sys.executable, script])
+
+
 def main():
+    if "--update-worker" in sys.argv:
+        idx = sys.argv.index("--update-worker")
+        _run_update_worker(sys.argv[idx + 1:])
+        return
     _load_caches()
+    if hasattr(signal, "SIGUSR1"):
+        signal.signal(signal.SIGUSR1, _reexec_for_update)
     threading.Thread(target=poll_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

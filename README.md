@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.3.4-docker-installer.run
+sudo bash miot-panel-v0.3.5-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.4 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.3.5 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.3.4-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.4
+docker load -i miot-panel-v0.3.5-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.5
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.3.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.3.4-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.3.4-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.3.5-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.3.5-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.3.4-linux-installer.run
+sudo bash miot-panel-v0.3.5-linux-installer.run
 ```
 
 手动源码安装：
@@ -189,6 +189,25 @@ Android 平板、手机和 iPhone 不需要安装后端：把服务跑在 Docker
 | `MIOT_SONGLOFT` / `MIOT_GO_MUSIC_DL` | 可选，音乐服务地址 |
 
 Linux 默认使用 journald，Windows/Docker 使用文件日志；后台日志页会按平台显示和清理。
+
+## 后台热更新（v0.3.5+）
+
+后台 `/admin` → “系统更新”可从 GitHub Release 一键更新程序，不需要重新下载安装包：
+
+1. 点“检查更新”，读取 `update.json`（默认 `https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/update.json`）。
+2. 点“下载并更新”，面板下载通用程序包，校验 SHA256 和版本号，替换 `miot-cloud.py`、页面和型号表后自动重启；设备、登录态、排版、自定义页面和 `cloud_config.json` 都会保留。
+3. 新版本启动后自动通过 `/api/status` 做健康检查；失败会自动回滚到旧版本。
+4. 更新完成后后台会话会失效，重新输入 PIN 登录即可；前台数秒内恢复。
+
+注意事项：
+
+- 只有 **v0.3.5 及以后** 内置更新器；从 v0.3.4 升级到 v0.3.5 仍需手动安装一次。
+- 更新只替换程序文件，不升级系统 Python 依赖、systemd 单元、`install.sh` 或 Docker 镜像；依赖/镜像有变化时请使用安装包或拉取新镜像。
+- Docker 容器内不支持热更新（容器重建会丢改动），请在宿主机拉取 `liaozhenqiang/miot-panel:latest` 后重建。
+- 设备需要能访问 GitHub；访问不了时可在“更新源”填写可访问的 `update.json` 镜像地址（仍会校验 SHA256）。
+- 更新包只从清单里的 URL 下载，SHA256 不匹配会拒绝安装；解压只接受白名单文件。
+
+维护者发布新版本后，把 `update.json` 的 `version/url/sha256/size/notes` 更新为该版本 Release 的 `linux-universal.tar.gz`，提交到 main 即可。
 
 ## 第一次使用
 
@@ -423,6 +442,8 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+
+- **v0.3.5（2026-10-27）**：修复登录页二维码被裁切导致无法扫描的问题（segno SVG 没有 `viewBox`，CSS 固定 260px，右侧和底部各丢失约 12.5%）；改为带 `viewBox` 的自适应尺寸，1280×720 / 1080p 实测可解码。新增后台“系统更新”：读取 `update.json`，校验 SHA256/版本后热替换程序文件并自动重启，失败自动回滚；Linux 与 Windows 均已实测成功更新和失败回滚，Docker 提示拉取新镜像。首次从 v0.3.4 升级到 v0.3.5 仍需手动安装一次。
 
 - **v0.3.4（2026-10-27）**：修复按文档部署 go-music-dl 并开启 Web 管理员登录后，Songloft 扫码登录提示“请先登录”（上游 401）的问题。新增 `music/fix-gmd-auth.py`：在本机读取 Songloft 与 go-music-dl 管理员凭据，写入 GoMusicDL 插件「账号登录」并逐个音源自检，密码不回显、不联网；文档补充 go-music-dl 账号文件格式、设置页旧状态覆盖凭据的注意事项，以及 QQ 音乐（微信）入口 8 秒轮询超时的上游限制。Windows 卸载器修复从安装目录启动时偶发清理不完整的问题：改为等待进程退出后再删除，并保留用户数据。面板主服务、设备控制与传感器代码无改动。
 - **v0.3.3（2026-10-26）**：温湿度/环境传感器改为 MIoT 规格自动发现，不再限定具体型号；支持温度、湿度、电量、PM2.5、CO₂ 等可读属性，没数据的 BLE 设备自动隐藏。新增全量 MIoT 型号索引（46,159 个型号）和通用属性/动作控制：卡片“更多”自动生成开关、滑杆、枚举、动作按钮；已对当前 15 台可控设备逐台写入当前值验证。安全加固：登录/验证码/管理 PIN/控制接口按 IP 限流，请求体上限 1MB、连接超时 30 秒，文件日志 5MB×3 轮转，轮询状态使用快照锁，依赖版本锁定；天气源增加 Open-Meteo 备用；总闸/门锁类通用操作二次确认；控制操作写入审计日志。

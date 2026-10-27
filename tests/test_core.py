@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -64,3 +65,32 @@ def test_weather_code_text():
 
 def test_body_limit_constant():
     assert miot.Handler.max_body == 1024 * 1024
+
+
+def test_update_version_compare():
+    assert miot._version_tuple("v0.3.5") == (0, 3, 5, 0)
+    assert miot._version_tuple("0.3.5") < miot._version_tuple("0.3.10")
+    assert miot._version_tuple(None) == (0, 0, 0, 0)
+
+
+def test_update_extract_rejects_traversal(tmp_path):
+    package = tmp_path / "pkg.tar.gz"
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    src = tmp_path / "src"
+    files = {
+        "../evil.txt": b"x",
+        "miot-panel-linux-v9/miot-cloud.py": b'APP_VERSION = "9.9.9"\n',
+        "miot-panel-linux-v9/cloud_panel.html": b"<html></html>\n",
+    }
+    with tarfile.open(package, "w:gz") as tar:
+        for name, data in files.items():
+            path = src / Path(name).name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            tar.add(path, arcname=name)
+    found = miot._extract_update_package(str(package), str(stage))
+    assert found and found.endswith("miot-panel-linux-v9")
+    assert not (tmp_path / "evil.txt").exists()
+    assert not (stage / "evil.txt").exists()
+    assert miot._file_version(os.path.join(found, "miot-cloud.py")) == "9.9.9"
