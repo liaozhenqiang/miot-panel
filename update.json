@@ -1,8 +1,8 @@
 {
-  "version": "0.3.6",
+  "version": "0.3.7",
   "released": "2026-10-28",
-  "notes": "Windows 原生音乐中心（Songloft+go-music-dl+插件）一键安装；后台局域网/手机二维码与账号密码登录；后台概览与分组导航；登录二维码裁切修复。",
-  "url": "https://github.com/liaozhenqiang/miot-panel/releases/download/v0.3.6/miot-panel-v0.3.6-linux-universal.tar.gz",
-  "sha256": "2398d57f58068b0d6b48e61f0b7b571163699923fb9dddb6f3e6717915701a1a",
-  "size": 2183383
+  "notes": "修复 Windows 后台更新 HTTPS 证书校验失败：内置 CA 证书，并在仅更新包下载遇到证书链异常时降级为非校验连接，但仍强制校验清单里的 SHA256 和版本号。同步包含 Windows 音乐中心、局域网/手机登录、后台导航等 v0.3.6 功能。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.3.7-linux-universal.tar.gz",
+  "sha256": "1eb0b50c3ff44de37354a7764c55d423e9d0b35cf6b2083c8263e1b31d85d551",
+  "size": 2320355
 }
