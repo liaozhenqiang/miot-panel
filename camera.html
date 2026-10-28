@@ -257,7 +257,7 @@ body.light .compBar .compProgressWrap{background:#f1e3d5;}
 <a class="homeFloat" href="/">返回面板</a>
 <script>
 var HOST = location.hostname || '127.0.0.1';
-var PLAY_BASE = 'http://' + HOST + ':1984/stream.html?src=';
+var PLAY_BASE = '/go2rtc/stream.html?src=';
 var initialDid = '';
 try { initialDid = new URLSearchParams(location.search).get('did') || ''; } catch (e) {}
 var player = document.getElementById('player');
@@ -285,9 +285,7 @@ function missingText(st){
   return (st.missing||[]).map(function(x){return names[x]||x;}).join('、');
 }
 function applyGo2rtcPage(st){
-  if(st && st.go2rtc_page_url){
-    PLAY_BASE = String(st.go2rtc_page_url).replace(/\/+$/,'') + '/stream.html?src=';
-  }
+  PLAY_BASE = '/go2rtc/stream.html?src=';
 }
 function renderComponents(){
   if(!compState) return;
@@ -499,7 +497,7 @@ function playCamera(cam) {
   }
   setLoading('正在连接「' + cam.name + '」…');
   barHint.textContent = cam.name + ' · 连接中';
-  player.src = PLAY_BASE + encodeURIComponent(cam.stream);
+  player.src = PLAY_BASE + encodeURIComponent(cam.stream) + '&mode=mse,hls';
   watchStream(cam);
 }
 function renderList() {

@@ -433,7 +433,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <section class="card" id="secSystem">
         <h2>维护与恢复默认</h2>
         <div class="sub">调试配置出错时可按需要恢复：只重置外观不会影响设备；重置设置会保留后台 PIN 和小米登录；完全重置会重新进入首次向导。</div>
-        <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="loadLogs()">查看日志</button></div>
+        <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="loadLogs()">查看日志</button><button onclick="lockDevice()">锁定此设备</button></div>
         <div class="sep"></div>
         <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
         <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
@@ -441,11 +441,11 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <div class="sep"></div>
         <label>远程摄像头服务（go2rtc 地址，可选）</label>
         <div class="row">
-          <input id="go2rtcUrl" placeholder="http://192.168.0.123:1984" style="max-width:360px">
+          <input id="go2rtcUrl" placeholder="http://192.168.1.10:1984" style="max-width:360px">
           <button onclick="saveGo2rtc()">保存并检测</button>
           <button onclick="suggestGo2rtc()">使用音乐中心主机</button>
         </div>
-        <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc。摄像头页会使用这个地址播放。</div>
+        <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc（仅监听 127.0.0.1，由面板代理播放）。远程 go2rtc 需自行限制来源/认证。</div>
         <div class="msg" id="go2rtcMsg"></div>
       </section>
     </div>
@@ -1501,6 +1501,11 @@ async function adminLogout(){
   musicQR=null;musicQRLock=false;
   await api('/api/admin/logout',{});state=null;$('adminLogout').classList.add('hidden');
   show('loginView');
+}
+async function lockDevice(){
+  if(!confirm('锁定后本设备需要重新输入 PIN 才能打开面板和后台，确定？'))return;
+  await api('/api/device_lock',{});
+  location.href='/unlock';
 }
 async function importPanelAuth(){
   var r=await api('/api/admin/music/import_auth',{});

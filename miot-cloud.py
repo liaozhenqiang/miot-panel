@@ -44,7 +44,10 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import hashlib
+import hmac
 import base64
+import select
+import http.client
 import ipaddress
 import random
 import secrets
@@ -195,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.6.0"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -2713,6 +2716,27 @@ PWA_ICONS = {
 }
 
 
+UNLOCK_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>MIOT Panel 验证</title><style>
+:root{--bg:#0a0d13;--card:#121722;--line:rgba(255,255,255,.1);--text:#eef2f7;--muted:#8f9aaa;--accent:#ff6a00;}
+*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 30% 0,#1a2433,#0a0d13);color:var(--text);font-family:'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif;padding:20px}
+.card{width:min(430px,100%);background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px 28px;box-shadow:0 24px 80px rgba(0,0,0,.4)}
+h1{font-size:28px;margin-bottom:10px}.sub{font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:22px}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:8px}input{width:100%;height:56px;border-radius:12px;border:1px solid var(--line);background:#0b1019;color:var(--text);font-size:24px;letter-spacing:6px;padding:0 16px;outline:none}input:focus{border-color:var(--accent)}
+button{width:100%;height:54px;margin-top:16px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:18px;font-weight:700;cursor:pointer}button:disabled{opacity:.5}
+.msg{min-height:24px;margin-top:14px;color:#ff8a6a;font-size:14px;line-height:1.5}.hint{margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6}
+</style></head><body><div class="card"><h1>MIOT Panel</h1>
+<div class="sub">此设备首次访问需要验证后台 PIN。验证通过后本设备会记住登录，后续无需重复输入。</div>
+<label>后台 PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" autofocus onkeydown="if(event.key==='Enter')unlock()">
+<button id="btn" onclick="unlock()">验证并进入</button><div class="msg" id="msg"></div>
+<div class="hint">PIN 与后台管理 PIN 相同。忘记 PIN 时请在设备上重置面板数据后重新设置。</div></div>
+<script>
+function next(){var n='';try{n=new URLSearchParams(location.search).get('next')||'';}catch(e){}if(!n||n.charAt(0)!=='/'||n.charAt(1)==='/')n='/';return n;}
+async function unlock(){var p=document.getElementById('pin').value;var m=document.getElementById('msg');var b=document.getElementById('btn');if(!p){m.textContent='请输入 PIN';return;}b.disabled=true;m.textContent='正在验证…';try{var r=await fetch('/api/device_unlock',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p})});var j=await r.json().catch(function(){return {};});if(r.ok&&j.ok){location.replace(next());return;}m.textContent=j.msg||j.error||('验证失败（'+r.status+'）');}catch(e){m.textContent='网络错误：'+e;}b.disabled=false;}
+</script></body></html>"""
+
 LOGIN_HTML = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -3053,6 +3077,8 @@ ADMIN_SESSIONS = {}
 ADMIN_LOCK = threading.Lock()
 ADMIN_TTL = 12 * 3600
 ADMIN_COOKIE = "miot_admin"
+DEVICE_COOKIE = "miot_device"
+DEVICE_TTL = 180 * 86400
 RATE_LOCK = threading.RLock()
 RATE_EVENTS = {}
 
@@ -3095,6 +3121,50 @@ def _cookie_value(handler, name):
             return v.strip()
     return ""
 
+def _is_loopback(handler):
+    try:
+        return ipaddress.ip_address(str(handler.client_address[0])).is_loopback
+    except Exception:
+        return False
+
+
+def _device_key():
+    return ("%s|%s|miot-device-v1" % (
+        CONFIG.get("admin_pin_salt") or "",
+        CONFIG.get("admin_pin_hash") or "")).encode("utf-8")
+
+
+def _device_cookie_header():
+    exp = int(time.time()) + DEVICE_TTL
+    nonce = secrets.token_hex(8)
+    sig = hmac.new(_device_key(), ("%d.%s" % (exp, nonce)).encode("utf-8"),
+                   hashlib.sha256).hexdigest()
+    return "%s=%d.%s.%s; HttpOnly; Path=/; SameSite=Lax; Max-Age=%d" % (
+        DEVICE_COOKIE, exp, nonce, sig, DEVICE_TTL)
+
+
+def _device_cookie_valid(handler):
+    if not admin_pin_set():
+        return False
+    raw = _cookie_value(handler, DEVICE_COOKIE)
+    try:
+        exp_s, nonce, sig = raw.split(".", 2)
+        exp = int(exp_s)
+    except (TypeError, ValueError):
+        return False
+    if exp < time.time():
+        return False
+    want = hmac.new(_device_key(), ("%d.%s" % (exp, nonce)).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+    return hmac.compare_digest(want, sig)
+
+
+def _device_authed(handler):
+    if not admin_pin_set() or _is_loopback(handler):
+        return True
+    return _device_cookie_valid(handler)
+
+
 def _admin_authed(handler):
     token = _cookie_value(handler, ADMIN_COOKIE)
     if not token:
@@ -3102,10 +3172,10 @@ def _admin_authed(handler):
     now = time.time()
     with ADMIN_LOCK:
         exp = ADMIN_SESSIONS.get(token)
-        if not exp or exp < now:
-            ADMIN_SESSIONS.pop(token, None)
-            return False
-        return True
+        if exp and exp >= now:
+            return True
+        ADMIN_SESSIONS.pop(token, None)
+    return _device_cookie_valid(handler)
 
 def _new_admin_session():
     token = secrets.token_hex(24)
@@ -4527,13 +4597,14 @@ def _camera_start():
         raise RuntimeError("端口 1984 已被占用，请先关闭占用程序")
     ff_bin = _camera_ffmpeg_bin()
     os.makedirs(paths["root"], exist_ok=True)
+    config = ('api:\n  listen: "127.0.0.1:1984"\n'
+              'rtsp:\n  listen: "127.0.0.1:8554"\n'
+              'webrtc:\n  listen: "127.0.0.1:8555"\n')
     if ff_bin:
-        config = 'api:\n  listen: "127.0.0.1:1984"\nffmpeg:\n  bin: %s\n' % json.dumps(ff_bin)
-        with open(paths["config"], "w", encoding="utf-8") as f:
-            f.write(config)
-        args = [go_bin, "-config", paths["config"]]
-    else:
-        args = [go_bin]
+        config += 'ffmpeg:\n  bin: %s\n' % json.dumps(ff_bin)
+    with open(paths["config"], "w", encoding="utf-8") as f:
+        f.write(config)
+    args = [go_bin, "-config", paths["config"]]
     pid = _stack_popen(args, paths["root"], paths["log"])
     state = _camera_state_read()
     state.update({"go2rtc_pid": pid, "installed": True, "updated_at": int(time.time())})
@@ -5293,12 +5364,142 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         for k, v in (headers or {}).items():
-            self.send_header(k, v)
+            if isinstance(v, (list, tuple)):
+                for item in v:
+                    self.send_header(k, item)
+            else:
+                self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
+    def _proxy_go2rtc(self):
+        base = _go2rtc_base()
+        target = urllib.parse.urlsplit(base)
+        host = target.hostname or "127.0.0.1"
+        port = target.port or (443 if target.scheme == "https" else 80)
+        path = self.path[len("/go2rtc"):] or "/"
+        upgrade = (self.headers.get("Upgrade") or "").lower()
+        if upgrade == "websocket":
+            self._proxy_go2rtc_ws(target, host, port, path)
+        else:
+            self._proxy_go2rtc_http(target, host, port, path)
+
+    def _proxy_go2rtc_http(self, target, host, port, path):
+        cls = http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
+        conn = cls(host, port, timeout=25)
+        headers = {}
+        for key, value in self.headers.items():
+            if key.lower() not in ("host", "connection", "proxy-connection",
+                                   "keep-alive", "transfer-encoding", "upgrade"):
+                headers[key] = value
+        headers["Host"] = "%s:%d" % (host, port)
+        body = None
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > 0:
+                body = self.rfile.read(length)
+            conn.request(self.command, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read()
+            self.send_response(resp.status)
+            for key, value in resp.getheaders():
+                if key.lower() in ("connection", "keep-alive", "transfer-encoding",
+                                   "content-length", "upgrade"):
+                    continue
+                self.send_header(key, value)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(data)
+            self.close_connection = True
+        except Exception as exc:
+            LOG.debug("go2rtc proxy failed: %s", exc)
+            try:
+                self._send(502, {"ok": False, "error": "go2rtc 代理不可用"})
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+    def _proxy_go2rtc_ws(self, target, host, port, path):
+        upstream = None
+        try:
+            upstream = socket.create_connection((host, port), timeout=10)
+            if target.scheme == "https":
+                upstream = ssl.create_default_context().wrap_socket(
+                    upstream, server_hostname=host)
+            lines = ["%s %s HTTP/1.1" % (self.command, path)]
+            for key, value in self.headers.items():
+                if key.lower() == "origin":
+                    continue  # go2rtc checks Origin against upstream Host
+                if key.lower() == "host":
+                    value = "%s:%d" % (host, port)
+                lines.append("%s: %s" % (key, value))
+            upstream.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                chunk = upstream.recv(8192)
+                if not chunk:
+                    break
+                raw += chunk
+            if b"\r\n\r\n" not in raw:
+                return
+            head, _, rest = raw.partition(b"\r\n\r\n")
+            self.connection.sendall(head + b"\r\n\r\n" + rest)
+            if b" 101 " not in head.split(b"\r\n", 1)[0]:
+                return
+            self.close_connection = True
+            client = self.connection
+            client.setblocking(True)
+            upstream.setblocking(True)
+            while True:
+                ready, _, _ = select.select([client, upstream], [], [], 120)
+                if not ready:
+                    break
+                for sock in ready:
+                    data = sock.recv(65536)
+                    if not data:
+                        return
+                    if sock is client:
+                        upstream.sendall(data)
+                    else:
+                        client.sendall(data)
+        except Exception as exc:
+            LOG.debug("go2rtc websocket proxy failed: %s", exc)
+        finally:
+            try:
+                if upstream:
+                    upstream.close()
+            except Exception:
+                pass
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/unlock":
+            self._send(200, UNLOCK_HTML, "text/html; charset=utf-8")
+            return
+        if u.path.startswith("/go2rtc"):
+            if not _device_authed(self):
+                self._send(401, {"ok": False, "unlock": True,
+                                 "error": "此设备需要先输入 PIN"})
+                return
+            self._proxy_go2rtc()
+            return
+        if not _device_authed(self):
+            public = (u.path in ("/setup", "/admin", "/api/setup_state",
+                                 "/manifest.webmanifest", "/sw.js", "/favicon.ico")
+                      or u.path.startswith("/icons/")
+                      or u.path.startswith(("/api/admin/", "/api/auth/")))
+            if not public:
+                if u.path.startswith("/api/"):
+                    self._send(401, {"ok": False, "unlock": True,
+                                     "error": "此设备需要先输入 PIN"})
+                else:
+                    nxt = urllib.parse.quote(self.path, safe="")
+                    self._send(302, b"", "text/plain; charset=utf-8",
+                               {"Location": "/unlock?next=" + nxt})
+                return
         if u.path in ("/", "/index.html"):
             if _needs_onboarding():
                 self._send(302, b"", "text/plain; charset=utf-8",
@@ -5429,7 +5630,17 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw) if raw else {}
         except Exception:
             body = {}
-        if u.path == "/api/login":
+        if u.path == "/api/device_unlock":
+            self.api_device_unlock(body)
+            return
+        if not (u.path.startswith(("/api/admin/", "/api/auth/"))):
+            if not _device_authed(self):
+                self._send(401, {"ok": False, "unlock": True,
+                                 "error": "此设备需要先输入 PIN"})
+                return
+        if u.path == "/api/device_lock":
+            self.api_device_lock()
+        elif u.path == "/api/login":
             self.api_login(body)
         elif u.path == "/api/verify":
             self.api_verify(body)
@@ -6089,7 +6300,9 @@ class Handler(BaseHTTPRequestHandler):
         save_config({"admin_pin_salt": salt, "admin_pin_hash": _pin_hash(pin, salt)})
         token = _new_admin_session()
         LOG.info("admin PIN initialized")
-        self._send(200, {"ok": True}, headers={"Set-Cookie": _admin_cookie_header(token)})
+        self._send(200, {"ok": True},
+                   headers={"Set-Cookie": [_admin_cookie_header(token),
+                                           _device_cookie_header()]})
 
     def api_admin_login(self, body):
         ip = self.client_address[0] if self.client_address else "?"
@@ -6110,7 +6323,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         LOG.info("audit admin_login ip=%s result=ok", ip)
         token = _new_admin_session()
-        self._send(200, {"ok": True}, headers={"Set-Cookie": _admin_cookie_header(token)})
+        self._send(200, {"ok": True},
+                   headers={"Set-Cookie": [_admin_cookie_header(token),
+                                           _device_cookie_header()]})
 
     def api_admin_logout(self):
         token = _cookie_value(self, ADMIN_COOKIE)
@@ -6119,6 +6334,38 @@ class Handler(BaseHTTPRequestHandler):
                 ADMIN_SESSIONS.pop(token, None)
         self._send(200, {"ok": True},
                    headers={"Set-Cookie": "%s=; Path=/; Max-Age=0" % ADMIN_COOKIE})
+
+    def api_device_unlock(self, body):
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("device_unlock:" + ip, 5, 600, 0.4):
+            self._send(429, {"ok": False, "msg": "PIN 尝试过于频繁，请 10 分钟后再试"},
+                       headers={"Retry-After": "600"})
+            return
+        if not admin_pin_set():
+            self._send(200, {"ok": True, "setup": True})
+            return
+        pin = str(body.get("pin") or "").strip()
+        salt = CONFIG.get("admin_pin_salt") or ""
+        expected = CONFIG.get("admin_pin_hash") or ""
+        if not pin or not secrets.compare_digest(_pin_hash(pin, salt), expected):
+            time.sleep(0.4)
+            LOG.warning("audit device_unlock ip=%s result=fail", ip)
+            self._send(401, {"ok": False, "msg": "PIN 不正确"})
+            return
+        LOG.info("audit device_unlock ip=%s result=ok", ip)
+        token = _new_admin_session()
+        self._send(200, {"ok": True},
+                   headers={"Set-Cookie": [_admin_cookie_header(token),
+                                           _device_cookie_header()]})
+
+    def api_device_lock(self):
+        if not _device_authed(self):
+            self._send(401, {"ok": False, "msg": "需要先验证 PIN"})
+            return
+        self._send(200, {"ok": True},
+                   headers={"Set-Cookie": [
+                       "%s=; Path=/; Max-Age=0" % DEVICE_COOKIE,
+                       "%s=; Path=/; Max-Age=0" % ADMIN_COOKIE]})
 
     def api_admin_save(self, body):
         if not self._admin_require():

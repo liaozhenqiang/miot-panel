@@ -134,3 +134,25 @@ def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
     assert miot._read_auth_file()["source"] == "qrcode"
     assert miot._read_pending_plugin_auth()["user_id"] == "42"
     assert "sid" not in miot.QR_SESSIONS
+
+
+def test_device_cookie_invalidates_on_pin_change():
+    class FakeHandler:
+        client_address = ("192.168.1.5", 12345)
+
+        def __init__(self, cookie):
+            self.headers = {"Cookie": cookie}
+
+    old_salt = miot.CONFIG.get("admin_pin_salt")
+    old_hash = miot.CONFIG.get("admin_pin_hash")
+    try:
+        miot.CONFIG["admin_pin_salt"] = "salt"
+        miot.CONFIG["admin_pin_hash"] = "hash-a"
+        header = miot._device_cookie_header()
+        value = header.split(";", 1)[0]
+        assert miot._device_cookie_valid(FakeHandler(value))
+        miot.CONFIG["admin_pin_hash"] = "hash-b"
+        assert not miot._device_cookie_valid(FakeHandler(value))
+    finally:
+        miot.CONFIG["admin_pin_salt"] = old_salt
+        miot.CONFIG["admin_pin_hash"] = old_hash

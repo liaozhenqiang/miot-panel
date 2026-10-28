@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.5.2-docker-installer.run
+sudo bash miot-panel-v0.6.0-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.5.2 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.0 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.5.2-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.2
+docker load -i miot-panel-v0.6.0-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.0
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.5.2-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.5.2-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.6.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.6.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.5.2-linux-installer.run
+sudo bash miot-panel-v0.6.0-linux-installer.run
 ```
 
 手动源码安装：
@@ -309,6 +309,14 @@ Windows 安装包已内置 Songloft v2.13.5、go-music-dl v1.1.3 和三个 Songl
 - **恢复默认排版 / 恢复黑夜主题**：只影响外观。
 - **重置设置（保留 PIN/登录）**：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录、音乐中心连接。需要输入 `RESET` 确认，面板会自动重启。
 - **完全重置（回到首次向导）**：删除 PIN、小米登录、设备缓存和所有自定义设置，重启后进入 `/setup` 首次向导。音乐中心里已解绑/已绑定的账号不会被删除，需要时在音乐区另行解绑。
+
+## 局域网 PIN 验证（v0.6.0+）
+
+- 局域网设备首次访问 `/`、`/panel`、`/camera`、`/login` 或控制 API 时，会跳转到 `/unlock`，输入**与后台相同的 PIN**。
+- 验证通过后写入 HttpOnly 签名 Cookie（`miot_device`），默认记住 180 天；同一设备后续打开面板不再要求 PIN。修改 PIN 会让旧设备 Cookie 自动失效。
+- 本机 `127.0.0.1` 的 kiosk 自动放行，不影响墙屏启动；后台登录/首次设置 PIN 也会同时写入设备 Cookie。
+- 后台“维护与恢复默认”提供“锁定此设备”，清除本机验证和后台会话。
+- **go2rtc 同一 PIN**：本机 go2rtc 只监听 `127.0.0.1:1984`，RTSP/WebRTC 也只监听 localhost；摄像头页使用面板同源 `/go2rtc/` 反向代理（支持 WebSocket MSE 与 HLS），直接访问 `:1984` 不再可用。因此打开 go2rtc 也需要先通过面板 PIN。远程 go2rtc 地址仍可在后台填写，但远程设备需自行加防火墙或认证，建议跨网段时直接使用玩客云的面板 `/camera`。
 
 ## 摄像头（可选，go2rtc + ffmpeg）
 
@@ -490,6 +498,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.6.0（2026-10-28）**：新增**局域网设备 PIN 验证**。LAN 设备首次打开面板/摄像头页会进入 `/unlock`，输入与后台相同的 PIN；验证后本设备记住 180 天（HttpOnly 签名 Cookie），后续无需重复验证；本机 127.0.0.1 kiosk 免验证。面板 HTML、摄像头页、自定义页及所有控制/状态 API 都加验证；管理员登录/设置 PIN 会同时记住设备；后台新增“锁定此设备”。**go2rtc 也统一由面板 PIN 保护**：本机 go2rtc 只监听 `127.0.0.1`，摄像头页改走同源 `/go2rtc` 反向代理（HTTP + WebSocket MSE/HLS），直接访问 1984/RTSP/WebRTC 不再暴露给局域网，后台管理的 go2rtc 与面板使用同一设备 PIN；远程 go2rtc 仍可在后台单独指定（远程端需自行限制来源）。
 - **v0.5.2（2026-10-28）**：修复 Windows 摄像头弹命令行窗口和跨网段无法播放。Windows 改用隐藏控制台的 go2rtc 构建，所有音乐/摄像头子进程使用 `CREATE_NO_WINDOW`，安装器快捷方式通过 `wscript.exe` 静默启动；旧版已装的 go2rtc 会在摄像头页提示“更新 go2rtc”，更新后不再弹出 ffmpeg 窗口。新增后台“远程摄像头服务（go2rtc 地址）”：Windows 与摄像头不在同一网段时，填玩客云/同网段设备的 `http://IP:1984`，摄像头页自动改用远程 go2rtc 播放；本机跨网段时会直接提示，而不是陷入 ffmpeg 404。可通过“使用音乐中心主机”自动填入地址。
 - **v0.5.1（2026-10-28）**：扫码成功后把登录同步到 Songloft 插件的动作改为后台执行，避免小米长轮询 + 插件换票造成 HTTP 请求超时；首次向导完成页会显示“音乐中心登录待同步”，连接后自动重试。摄像头组件安装、分级恢复默认和 v0.5.0 的其他功能不变。
 - **v0.5.0（2026-10-28）**：新增**面板原生小米扫码登录**：不需要先安装 Songloft，扫码后直接建立设备登录；已连接音乐中心时自动通过 MIoT 插件 `/auth/token` 同步，未安装时暂存登录，安装/连接后自动带入，避免二次扫码。摄像头页新增组件自检：缺少 go2rtc/ffmpeg 时顶部显示安装条，Windows/Linux 可一键下载（go2rtc v1.9.15、ffmpeg-static b6.1.1，SHA256 校验，官方源失败自动尝试国内镜像）并启动；自动安装失败会自动展开分步下载/放置/重试引导，Docker/远程 go2rtc 给出对应说明。后台“维护与恢复默认”新增**重置设置（保留 PIN/登录）**和**完全重置（回到首次向导）**，均需输入 RESET 确认并自动重启；Windows 卸载器会顺带停止本机 go2rtc。 
