@@ -4247,7 +4247,7 @@ CAMERA_STACK_LOCK = threading.RLock()
 CAMERA_STACK_JOB_LOCK = threading.Lock()
 CAMERA_STACK_JOB = {"running": False, "state": "idle", "message": "",
                     "percent": 0, "ts": 0.0}
-CAMERA_STACK_VERSION = {"go2rtc": "v1.9.15", "ffmpeg": "b6.1.1"}
+CAMERA_STACK_VERSION = {"go2rtc": "v1.9.15 (隐藏控制台)", "ffmpeg": "b6.1.1"}
 CAMERA_COMPONENTS = {
     ("windows", "x64"): {
         "go2rtc": {"url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/camera/go2rtc_win64_hidden.exe",

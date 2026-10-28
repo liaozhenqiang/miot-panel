@@ -1,8 +1,8 @@
 {
-  "version": "0.5.1",
+  "version": "0.5.2",
   "released": "2026-10-28",
-  "notes": "修复扫码成功后音乐中心同步可能超时的问题（改为后台同步，向导显示待同步）；原生扫码、摄像头组件自动安装和分级恢复默认同 v0.5.0。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.5.1-linux-universal.tar.gz",
-  "sha256": "af078cc1a5a8bd4daf0ea2261d13f6041af072405ca7604e6e9dae1960219a61",
-  "size": 2340602
+  "notes": "修复 Windows 摄像头 ffmpeg 命令行弹窗（隐藏 go2rtc 子进程、静默快捷方式）；新增远程 go2rtc 地址，跨网段 Windows 可播放玩客云摄像头并给出网段提示。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.5.2-linux-universal.tar.gz",
+  "sha256": "492ad04f382280a41976120d5c9818b7a6980603113f6efbe58e3f83fa0b7521",
+  "size": 2343179
 }
