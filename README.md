@@ -43,7 +43,8 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 | 平台 | 推荐方式 | 状态 |
 |---|---|---|
 | Linux 各发行版 / NAS | Docker 多架构镜像，或 systemd 源码安装 | 支持 |
-| Windows 10/11 x64 / ARM64 | 一键安装 EXE（内置 Python、开机自启）/ 便携 ZIP / Edge kiosk；ARM64 使用系统 x64 仿真 | 支持 |
+| Windows 10/11 x64 | 一键安装 EXE（内置 Python、开机自启）/ 便携 ZIP / Edge kiosk | 支持 |
+| Windows ARM64（Surface Pro X 等） | 原生 ARM64 便携 ZIP（内置 ARM64 Python，免安装）；Windows 11 也可跑 x64 包 | 支持 |
 | Windows 32 位 x86 | 便携 ZIP（内置 32 位 Python；无安装器） | 支持 |
 | macOS | Python 源码 + launchd/登录项手动配置（非 root 用 8080 端口） | 可运行，未做安装器 |
 | Android 手机/平板 | 官方 APK（自动发现/手动 IP/PIN），或浏览器/PWA/Fully Kiosk | 推荐作为客户端 |
@@ -83,7 +84,7 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.4 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.6 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
@@ -101,10 +102,11 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.7.4-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.7.4-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
-- `miot-panel-v0.7.4-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
-- Windows ARM64 可直接运行 x64 安装包/便携包（Windows 11 的 x64 仿真），摄像头组件会自动选择 ARM64 版本（原生 ARM64 Python 时）。
+- `miot-panel-v0.7.6-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.7.6-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
+- `miot-panel-v0.7.6-windows-arm64-portable.zip`：Windows ARM64 原生便携包（内置 ARM64 Python 3.12，免安装、不走仿真），解压后双击 `launch-panel.vbs`；
+- `miot-panel-v0.7.6-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
+- Windows ARM64 上即使跑的是 x86/x64 包，面板也会按 CPU 真实架构下载 ARM64 原生 go2rtc/ffmpeg 摄像头组件。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -507,6 +509,9 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.6（2026-10-28）**：新增 **Windows ARM64 原生便携包**（内置 ARM64 Python 3.12，解压双击即用，免安装、不走 x64 仿真），适合 Surface Pro X 等 ARM64 平板/二合一做墙面板；摄像头组件的架构识别改用 `GetNativeSystemInfo`，因此即使面板本身跑在 x86/x64 仿真下，也会下载并原生运行 ARM64 版 go2rtc/ffmpeg。
+- **v0.7.5（2026-10-28）**：修复 Android 客户端面板**无法下滑、内容显示不完整**：窄屏（≤1500px / ≤860px）改为卡片区域自身滚动，表头时钟固定，15 秒轮询刷新不再把滚动位置弹回顶部；页面去掉 `maximum-scale=1,user-scalable=no`（摄像头页同步）；Android 客户端 1.0.1 取消整页 overview 缩放并允许缩放。
+
 - **v0.7.4（2026-10-28）**：修复 Windows 音乐中心“进程还在但面板管不了”的问题：面板被“停止”后丢失 PID，重新启动时报“端口已被其他 Songloft 占用”，连接配置也被清空导致显示未连接。现在“启动音乐中心”会先用保存的管理员凭据登录验证，成功则直接接管已在运行的 Songloft/go-music-dl 进程并恢复连接，不再要求手动杀进程。
 - **v0.7.3（2026-10-28）**：修复 Windows 端口复用导致的“新旧面板同时监听”问题。Windows 的 HTTP 服务允许同端口多次绑定，旧面板进程残留时新进程也能启动但无法接管请求，健康检查一直读到旧版本而回滚（121 复现）。现在：① 新面板启动时自动结束所有监听本端口的残留进程；② 更新 worker 改为直接运行新包里的代码（不再运行旧代码），重启前也按端口清理残留；③ 新进程 45 秒未通过健康检查会再次清理并重试。v0.7.0 的摄像头组件/Android 客户端功能不变。
 - **v0.7.2（2026-10-28）**：进一步修复 Windows 热更新回滚：121 上存在占用 8080 的旧面板残留进程，更新器只杀记录的 PID 导致新进程起不来。现在通过 netstat 找出监听面板端口的进程并全部结束（排除更新器自身），新进程 45 秒未通过健康检查时再清理一次端口并重试启动；v0.7.0 的功能不变。

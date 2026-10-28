@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.5"
+APP_VERSION = "0.7.6"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -4639,9 +4639,40 @@ def _camera_os_name():
     return "linux"
 
 
+def _windows_native_arch():
+    """Windows on ARM runs x86/x64 Python under emulation, where platform.machine()
+    reports the emulated arch instead of the chip."""
+    try:
+        import ctypes
+
+        class SystemInfo(ctypes.Structure):
+            _fields_ = [
+                ("wProcessorArchitecture", ctypes.c_uint16),
+                ("wReserved", ctypes.c_uint16),
+                ("dwPageSize", ctypes.c_uint32),
+                ("lpMinimumApplicationAddress", ctypes.c_void_p),
+                ("lpMaximumApplicationAddress", ctypes.c_void_p),
+                ("dwActiveProcessorMask", ctypes.c_size_t),
+                ("dwNumberOfProcessors", ctypes.c_uint32),
+                ("dwProcessorType", ctypes.c_uint32),
+                ("dwAllocationGranularity", ctypes.c_uint32),
+                ("wVdmLevel", ctypes.c_uint16),
+                ("wReserved2", ctypes.c_uint16),
+            ]
+
+        info = SystemInfo()
+        ctypes.windll.kernel32.GetNativeSystemInfo(ctypes.byref(info))
+        return {0: "x86", 5: "arm", 6: "arm", 9: "x64", 12: "arm64"}.get(
+            int(info.wProcessorArchitecture))
+    except Exception:
+        return None
+
+
 def _camera_arch():
     import platform
     machine = (platform.machine() or "").lower()
+    if os.name == "nt":
+        machine = _windows_native_arch() or machine
     if machine in ("x86_64", "amd64", "x64"):
         return "x64"
     if machine in ("aarch64", "arm64"):
