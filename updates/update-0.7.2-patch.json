@@ -1,0 +1,8 @@
+{
+  "version": "0.7.2",
+  "released": "2026-10-28",
+  "notes": "Windows 热更新结束残留占用端口的旧进程并重试启动；v0.7.0 功能不变。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.2-update.tar.gz",
+  "sha256": "392e5cc17872c211eedbd41548858d89a5115b1fbca76904484f495da8ce64c1",
+  "size": 2224536
+}

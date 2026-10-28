@@ -127,6 +127,20 @@ def test_windows_pid_alive():
     assert miot._windows_pid_alive(_os.getpid())
 
 
+def test_port_listening_pids():
+    import os as _os
+    if _os.name != "nt":
+        return
+    holder = miot.socket.socket(miot.socket.AF_INET, miot.socket.SOCK_STREAM)
+    holder.bind(("127.0.0.1", 0))
+    port = holder.getsockname()[1]
+    holder.listen(1)
+    try:
+        assert str(_os.getpid()) in miot._port_listening_pids(port)
+    finally:
+        holder.close()
+
+
 def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
     class Resp:
         status_code = 200

@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -3598,6 +3598,39 @@ def _wait_pid_gone(pid, timeout=15):
     return not _windows_pid_alive(pid)
 
 
+def _port_listening_pids(port):
+    pids = set()
+    try:
+        out = subprocess.run(["netstat", "-ano", "-p", "tcp"],
+                             capture_output=True, text=True, timeout=15)
+        for line in (out.stdout or "").splitlines():
+            parts = line.split()
+            if (len(parts) >= 5 and parts[1].endswith(":%d" % int(port))
+                    and parts[3] == "LISTENING" and parts[4].isdigit()):
+                pids.add(parts[4])
+    except Exception:
+        pass
+    return pids
+
+
+def _kill_port_owners(port, exclude=()):
+    exclude = set(str(p) for p in exclude)
+    exclude.add(str(os.getpid()))
+    targets = _port_listening_pids(port) - exclude
+    for pid in sorted(targets):
+        try:
+            subprocess.run(["taskkill", "/PID", pid, "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, check=False)
+        except Exception:
+            pass
+    for pid in sorted(targets):
+        try:
+            _wait_pid_gone(int(pid), 10)
+        except Exception:
+            pass
+
+
 def _signal_restart(parent_pid, app_dir, port):
     if os.name == "nt":
         try:
@@ -3607,6 +3640,7 @@ def _signal_restart(parent_pid, app_dir, port):
         except Exception:
             pass
         _wait_pid_gone(parent_pid, 15)
+        _kill_port_owners(port)
         time.sleep(0.5)
         _spawn_app(app_dir, port)
     else:
@@ -3760,6 +3794,9 @@ def _run_update_worker(args):
         _copy_app_files(src_dir, app_dir)
         status("restarting", "正在重启面板", 100, target)
         _signal_restart(parent_pid, app_dir, port)
+        if not _wait_health(port, target, 45):
+            _kill_port_owners(port)
+            _spawn_app(app_dir, port)
         if _wait_health(port, target, 90):
             status("success", "已更新到 v%s" % target, 100, target)
             _cleanup_update_packages()
@@ -7794,6 +7831,7 @@ def main():
         except Exception:
             pass
         _wait_pid_gone(parent_pid, 15)
+        _kill_port_owners(port)
         time.sleep(0.5)
         _spawn_app(app_dir, port)
         return
