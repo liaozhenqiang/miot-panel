@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -3666,7 +3666,10 @@ def _restart_self():
 
 
 def _spawn_update_worker(src_dir, target, backup_dir):
-    args = [sys.executable, os.path.join(APP_DIR, "miot-cloud.py"), "--update-worker",
+    worker_script = os.path.join(src_dir, "miot-cloud.py")
+    if not os.path.isfile(worker_script):
+        worker_script = os.path.join(APP_DIR, "miot-cloud.py")
+    args = [sys.executable, worker_script, "--update-worker",
             src_dir, target, backup_dir, UPDATE_STATUS_FILE, str(PORT),
             str(os.getpid()), APP_DIR]
     os.makedirs(UPDATE_DIR, exist_ok=True)
@@ -7851,6 +7854,7 @@ def main():
     threading.Thread(target=_startup_import, daemon=True).start()
     threading.Thread(target=discovery_loop, daemon=True).start()
     if os.name == "nt":
+        _kill_port_owners(PORT)
         threading.Thread(target=_stack_autostart, daemon=True).start()
     threading.Thread(target=_camera_autostart, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

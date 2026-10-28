@@ -66,7 +66,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.2-docker-installer.run
+sudo bash miot-panel-v0.7.3-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -83,14 +83,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.2 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.3 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.2-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.2
+docker load -i miot-panel-v0.7.3-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.3
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -101,9 +101,9 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.7.2-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.7.2-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
-- `miot-panel-v0.7.2-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
+- `miot-panel-v0.7.3-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.7.3-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
+- `miot-panel-v0.7.3-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
 - Windows ARM64 可直接运行 x64 安装包/便携包（Windows 11 的 x64 仿真），摄像头组件会自动选择 ARM64 版本（原生 ARM64 Python 时）。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
@@ -138,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.7.2-linux-installer.run
+sudo bash miot-panel-v0.7.3-linux-installer.run
 ```
 
 手动源码安装：
@@ -507,6 +507,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.3（2026-10-28）**：修复 Windows 端口复用导致的“新旧面板同时监听”问题。Windows 的 HTTP 服务允许同端口多次绑定，旧面板进程残留时新进程也能启动但无法接管请求，健康检查一直读到旧版本而回滚（121 复现）。现在：① 新面板启动时自动结束所有监听本端口的残留进程；② 更新 worker 改为直接运行新包里的代码（不再运行旧代码），重启前也按端口清理残留；③ 新进程 45 秒未通过健康检查会再次清理并重试。v0.7.0 的摄像头组件/Android 客户端功能不变。
 - **v0.7.2（2026-10-28）**：进一步修复 Windows 热更新回滚：121 上存在占用 8080 的旧面板残留进程，更新器只杀记录的 PID 导致新进程起不来。现在通过 netstat 找出监听面板端口的进程并全部结束（排除更新器自身），新进程 45 秒未通过健康检查时再清理一次端口并重试启动；v0.7.0 的功能不变。
 - **v0.7.1（2026-10-28）**：修复 Windows 热更新偶发回滚：旧进程被杀后没有立即退出，新面板启动失败导致健康检查超时回滚（在 121 上复现）；更新器现在等待旧 PID 退出再启动新版本。v0.7.0 的功能不变。
 - **v0.7.0（2026-10-28）**：摄像头组件与 Android 客户端更新。① 修复 go2rtc 自指配置：后台把 go2rtc 地址误设成本机局域网 IP 时，旧逻辑一直当作“远程未响应”，导致玩客云明明有 go2rtc 却显示缺少组件；现在自动识别本机地址、清理自指配置，并把 `/opt/go2rtc/go2rtc*` 纳入本地检测。② 组件自动安装扩展到 Windows x64/x86/ARM64、Linux x64/x86/arm/arm64、macOS 和 Docker（安装到数据卷）；新增 Windows x86/ARM64 隐藏控制台 go2rtc、Windows x86/ARM64 ffmpeg。③ 面板新增 UDP `37020` 局域网发现；后台“查看日志”移到“服务日志”卡片。④ 新增官方 Android 客户端 1.0.0（minSdk 14 / target 35）：自动发现、手动 IP、原生 PIN、WebView 兼容层；已在 Android 4.0.4 模拟器连接 v0.7.0 面板并成功加载设备接口。
