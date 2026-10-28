@@ -107,6 +107,18 @@ def test_camera_component_catalog_is_pinned():
             assert len(part["sha256"]) == 64
             assert part["size"] > 0
             assert part["target"]
+    for key in (("windows", "x64"), ("windows", "x86"), ("windows", "arm64"),
+                ("linux", "x64"), ("linux", "arm"), ("linux", "arm64"),
+                ("linux", "x86"), ("darwin", "x64"), ("darwin", "arm64")):
+        assert key in miot.CAMERA_COMPONENTS, key
+
+
+def test_go2rtc_self_url_is_not_external(monkeypatch):
+    monkeypatch.setattr(miot, "LAN_IP", "192.168.1.10")
+    monkeypatch.setitem(miot.CONFIG, "go2rtc_url", "http://192.168.1.10:1984")
+    assert miot._go2rtc_host_is_local("192.168.1.10")
+    assert not miot._camera_external_go2rtc()
+    assert miot._go2rtc_base() == "http://127.0.0.1:1984"
 
 
 def test_qr_poll_success_saves_qrcode_auth(monkeypatch):

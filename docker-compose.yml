@@ -1,11 +1,12 @@
 services:
   panel:
     build: .
-    image: miot-panel:0.6.7
+    image: miot-panel:0.7.0
     container_name: miot-panel
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "37020:37020/udp"
     volumes:
       - panel-data:/data
     environment:

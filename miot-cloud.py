@@ -198,8 +198,12 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.7"
+APP_VERSION = "0.7.0"
 APP_NAME = "miot-panel"
+try:
+    DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
+except ValueError:
+    DISCOVERY_PORT = 37020
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
     PORT = int(os.environ.get("MIOT_PORT") or ("8080" if os.name == "nt" else "80"))
@@ -218,7 +222,7 @@ UPDATE_RUNNING = {"active": False, "target": ""}
 UPDATE_APP_FILES = (
     "miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html",
     "manifest.webmanifest", "sw.js", "sensor_models.json", "miot_models.json.gz",
-    "config.example.json", "README.md", "LICENSE", "cacert.pem",
+    "config.example.json", "README.md", "LICENSE", "cacert.pem", "compat.js",
 )
 UPDATE_STATES = ("downloading", "verifying", "installing", "restarting",
                  "rolling_back")
@@ -470,10 +474,11 @@ def _camera_firewall_programs():
         os.path.isfile(paths["go2rtc"]) or os.path.isfile(paths["ffmpeg"])) else []
 
 
-def _add_firewall_rules(ports, programs=()):
+def _add_firewall_rules(ports, programs=(), udp_ports=()):
     if os.name != "nt":
         return False, "仅 Windows 支持一键放行防火墙"
     ports = [str(p) for p in ports if str(p).isdigit()]
+    udp_ports = [str(p) for p in udp_ports if str(p).isdigit()]
     program_list = [str(p) for p in programs if p and os.path.isfile(str(p))]
     script = (
         "$ErrorActionPreference='SilentlyContinue'\n"
@@ -481,6 +486,11 @@ def _add_firewall_rules(ports, programs=()):
         "  Remove-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" | Out-Null\n"
         "  New-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" -Direction Inbound "
         "-Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null\n"
+        "}\n"
+        "foreach($p in @(%s)){\n"
+        "  Remove-NetFirewallRule -DisplayName \"MIOT Panel UDP $p\" | Out-Null\n"
+        "  New-NetFirewallRule -DisplayName \"MIOT Panel UDP $p\" -Direction Inbound "
+        "-Protocol UDP -LocalPort $p -Action Allow -Profile Any | Out-Null\n"
         "}\n"
         "$progs=@(%s)\n"
         "foreach($prog in $progs){\n"
@@ -492,7 +502,7 @@ def _add_firewall_rules(ports, programs=()):
         "    New-NetFirewallRule -DisplayName \"MIOT Camera $name Out\" -Direction Outbound "
         "-Program $prog -Action Allow -Profile Any | Out-Null\n"
         "  }\n"
-        "}\n" % (",".join(ports),
+        "}\n" % (",".join(ports), ",".join(udp_ports),
                   ",".join("'%s'" % str(p).replace("'", "''") for p in program_list))
     )
     try:
@@ -2217,9 +2227,48 @@ def _x25519_public(raw):
         z2, z3 = z3, z2
     return (x2 * pow(z2, _X25519_P - 2, _X25519_P) % _X25519_P).to_bytes(32, "little")
 
+def _go2rtc_local_hosts():
+    hosts = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
+    try:
+        hosts.add(str(LAN_IP or "").strip())
+    except Exception:
+        pass
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None):
+            hosts.add(str(item[4][0]).strip())
+    except Exception:
+        pass
+    return {h for h in hosts if h}
+
+
+def _go2rtc_host_is_local(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(raw if "://" in raw else "http://" + raw)
+        host = (parsed.hostname or "").strip().lower()
+    except Exception:
+        return False
+    return bool(host) and host in _go2rtc_local_hosts()
+
+
+def _go2rtc_config_url():
+    raw = str(CONFIG.get("go2rtc_url") or "").strip()
+    if raw and _go2rtc_host_is_local(raw):
+        return ""
+    return raw
+
+
 def _go2rtc_base():
-    return (str(CONFIG.get("go2rtc_url") or "").strip().rstrip("/")
-            or GO2RTC_API.rstrip("/"))
+    configured = _go2rtc_config_url()
+    if configured:
+        return configured.rstrip("/")
+    env_url = (os.environ.get("MIOT_GO2RTC")
+               or os.environ.get("MIOT_GO2RTC_API") or "").strip()
+    if env_url and not _go2rtc_host_is_local(env_url):
+        return env_url.rstrip("/")
+    return "http://127.0.0.1:1984"
 
 
 def _go2rtc_put(name, src):
@@ -2803,6 +2852,7 @@ def _read_app_asset(name, binary=False):
 
 PWA_MANIFEST = _read_app_asset("manifest.webmanifest")
 PWA_SW = _read_app_asset("sw.js")
+COMPAT_JS = _read_app_asset("compat.js")
 PWA_ICONS = {
     "/icons/icon-192.png": _read_app_asset("icons/icon-192.png", True),
     "/icons/icon-512.png": _read_app_asset("icons/icon-512.png", True),
@@ -4326,7 +4376,8 @@ def _stack_install(progress=None):
                 paths["songloft_data"], "jsplugins_data", "miot", "data", "accounts"),
         })
         _clear_songloft_token()
-        _add_firewall_rules([PORT, sport, gport], _camera_firewall_programs())
+        _add_firewall_rules([PORT, sport, gport], _camera_firewall_programs(),
+                            [DISCOVERY_PORT])
         progress("安装完成", 100)
         return {"ok": True, "songloft_url": sl_base, "go_music_dl_url": gmd_base,
                 "songloft_port": sport, "gmd_port": gport,
@@ -4427,7 +4478,26 @@ CAMERA_COMPONENTS = {
                    "size": 21084160, "kind": "binary", "target": "go2rtc.exe"},
         "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64.gz",
                    "sha256": "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
-                   "size": 29581307, "kind": "gz", "target": "ffmpeg.exe"},
+                   "size": 29581307, "kind": "gz", "target": "ffmpeg.exe",
+                   "version": "b6.1.1"},
+    },
+    ("windows", "x86"): {
+        "go2rtc": {"url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/camera/go2rtc_win32_hidden.exe",
+                   "sha256": "61d90f76e707e6cc52409a9293ab51d2dc1605e909914e15567c1022091e33ab",
+                   "size": 19799040, "kind": "binary", "target": "go2rtc.exe"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-win32-ia32.gz",
+                   "sha256": "af47ca5de7b9f859f48e4e96ea831bf551b100144b0b871762ab48fba1152f56",
+                   "size": 31390495, "kind": "gz", "target": "ffmpeg.exe",
+                   "version": "b6.0 (x86)"},
+    },
+    ("windows", "arm64"): {
+        "go2rtc": {"url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/camera/go2rtc_win_arm64_hidden.exe",
+                   "sha256": "3e507bc54951dfbf6ec4989d2fe7442c510a90f3c88b004bb41789b02216d8e5",
+                   "size": 19315200, "kind": "binary", "target": "go2rtc.exe"},
+        "ffmpeg": {"url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/camera/ffmpeg_win_arm64.exe.gz",
+                   "sha256": "3a8e1e6f473fe96149192d2d49138e1d894f74eb05bb9cc830c27abdf916a099",
+                   "size": 48625116, "kind": "gz", "target": "ffmpeg.exe",
+                   "version": "ARM64 静态构建"},
     },
     ("linux", "x64"): {
         "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_linux_amd64",
@@ -4452,6 +4522,14 @@ CAMERA_COMPONENTS = {
         "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-arm64.gz",
                    "sha256": "754a678672298bc68156adff58aa7385a592c2b30b1d0ae8750c45c915c4bac0",
                    "size": 25568691, "kind": "gz", "target": "ffmpeg"},
+    },
+    ("linux", "x86"): {
+        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_linux_i386",
+                   "sha256": "3a4d74b7d6ba2a04c5c7e7c7ee6208f9060fd17dfcce5a0975d44b6621a85c1e",
+                   "size": 5412152, "kind": "binary", "target": "go2rtc"},
+        "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-ia32.gz",
+                   "sha256": "169b27c078a8ecedb814cac67afccf15a9868d63e9d74ef86088adefaa500d00",
+                   "size": 22184031, "kind": "gz", "target": "ffmpeg"},
     },
     ("darwin", "x64"): {
         "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_mac_amd64.zip",
@@ -4489,6 +4567,8 @@ def _camera_arch():
         return "arm64"
     if machine.startswith("arm"):
         return "arm"
+    if machine in ("x86", "i386", "i486", "i586", "i686", "x86_32"):
+        return "x86"
     return machine
 
 
@@ -4540,6 +4620,21 @@ def _camera_go2rtc_bin():
     found = shutil.which("go2rtc")
     if found:
         return found
+    candidates = [
+        "/opt/go2rtc/go2rtc", "/opt/go2rtc/go2rtc_linux_arm",
+        "/opt/go2rtc/go2rtc_linux_arm64", "/opt/go2rtc/go2rtc_linux_amd64",
+        "/usr/local/bin/go2rtc", "/usr/bin/go2rtc",
+    ]
+    for item in candidates:
+        if os.path.isfile(item):
+            return item
+    try:
+        for name in sorted(os.listdir("/opt/go2rtc")):
+            if name.startswith("go2rtc") and os.path.isfile(
+                    os.path.join("/opt/go2rtc", name)):
+                return os.path.join("/opt/go2rtc", name)
+    except OSError:
+        pass
     return ""
 
 
@@ -4568,7 +4663,23 @@ def _camera_ffmpeg_bin():
 
 
 def _camera_external_go2rtc():
-    return bool(CONFIG.get("go2rtc_url") or os.environ.get("MIOT_GO2RTC") or os.environ.get("MIOT_GO2RTC_API"))
+    if _go2rtc_config_url():
+        return True
+    for key in ("MIOT_GO2RTC", "MIOT_GO2RTC_API"):
+        value = str(os.environ.get(key) or "").strip()
+        if value and not _go2rtc_host_is_local(value):
+            return True
+    return False
+
+
+def _camera_normalize_go2rtc_url():
+    raw = str(CONFIG.get("go2rtc_url") or "").strip()
+    if not raw or not _go2rtc_host_is_local(raw):
+        return False
+    CONFIG["go2rtc_url"] = ""
+    save_config({"go2rtc_url": ""})
+    LOG.info("cleared self-referencing go2rtc_url: %s", raw[:120])
+    return True
 
 
 def _camera_is_docker():
@@ -4600,11 +4711,13 @@ def _camera_guide():
         go = cat["go2rtc"]
         ff = cat["ffmpeg"]
         items = [
-            {"name": "go2rtc", "version": CAMERA_STACK_VERSION["go2rtc"],
+            {"name": "go2rtc",
+             "version": go.get("version") or CAMERA_STACK_VERSION["go2rtc"],
              "url": go["url"], "mirror": "https://gh-proxy.com/" + go["url"],
              "target": paths["go2rtc"], "sha256": go["sha256"],
              "kind": go["kind"]},
-            {"name": "ffmpeg", "version": CAMERA_STACK_VERSION["ffmpeg"],
+            {"name": "ffmpeg",
+             "version": ff.get("version") or CAMERA_STACK_VERSION["ffmpeg"],
              "url": ff["url"], "mirror": "https://gh-proxy.com/" + ff["url"],
              "target": paths["ffmpeg"], "sha256": ff["sha256"],
              "kind": ff["kind"]},
@@ -4626,15 +4739,15 @@ def _camera_setup_payload():
         missing.append("go2rtc")
     if not ff_bin and not external:
         missing.append("ffmpeg")
-    can_install = bool(cat) and not docker and not external
-    if docker:
-        reason = "Docker 容器内请在宿主机安装 go2rtc/ffmpeg，并通过 MIOT_GO2RTC 指向宿主机"
-    elif external:
+    can_install = bool(cat) and not external
+    if external:
         reason = "使用远程 go2rtc：%s" % _go2rtc_base()
         if not go_ok:
             reason += "（未响应，请检查地址/端口/防火墙）"
     elif not cat:
         reason = "当前平台暂不支持一键安装，请按下方步骤手动安装"
+    elif docker and not (go_ok and ff_bin):
+        reason = "组件会安装到数据卷 /data/camera-stack；首次下载约 30–90MB"
     else:
         reason = ""
     if not go_ok and go_bin and not missing:
@@ -4653,7 +4766,7 @@ def _camera_setup_payload():
             "name": name,
             "ok": ok,
             "needs_update": bool(outdated if name == "go2rtc" else False),
-            "version": CAMERA_STACK_VERSION.get(name, ""),
+            "version": info.get("version") or CAMERA_STACK_VERSION.get(name, ""),
             "url": info.get("url", ""),
             "sha256": info.get("sha256", ""),
             "target": paths[name],
@@ -4761,8 +4874,6 @@ def _camera_extract(component, archive, target):
 
 def _camera_install(progress=None):
     progress = progress or (lambda *a: None)
-    if _camera_is_docker():
-        raise RuntimeError("Docker 容器内不支持自动安装摄像头组件")
     if _camera_external_go2rtc():
         raise RuntimeError("已配置外部 go2rtc，请在其所在设备安装 go2rtc/ffmpeg")
     cat = _camera_catalog()
@@ -4854,10 +4965,10 @@ def _camera_install_job():
 
 
 def _camera_autostart():
-    if os.name != "nt":
-        return
     time.sleep(6)
     try:
+        if _camera_external_go2rtc():
+            return
         state = _camera_state_read()
         if state.get("installed") and not state.get("disabled"):
             _camera_start()
@@ -5590,7 +5701,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not _device_authed(self):
             public = (u.path in ("/setup", "/admin", "/api/setup_state",
-                                 "/manifest.webmanifest", "/sw.js", "/favicon.ico")
+                                 "/manifest.webmanifest", "/sw.js", "/favicon.ico",
+                                 "/compat.js")
                       or u.path.startswith("/icons/")
                       or u.path.startswith(("/api/admin/", "/api/auth/")))
             if not public:
@@ -5669,6 +5781,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, PWA_SW, "application/javascript; charset=utf-8")
             else:
                 self._send(404, {"error": "service worker missing"})
+        elif u.path == "/compat.js":
+            if COMPAT_JS:
+                self._send(200, COMPAT_JS, "application/javascript; charset=utf-8",
+                           {"Cache-Control": "public, max-age=86400"})
+            else:
+                self._send(404, "not found", "text/plain; charset=utf-8")
         elif u.path in PWA_ICONS:
             if PWA_ICONS[u.path]:
                 self._send(200, PWA_ICONS[u.path], "image/png")
@@ -6066,8 +6184,8 @@ class Handler(BaseHTTPRequestHandler):
         if not _camera_catalog():
             self._send(400, {"ok": False, "error": "当前平台不支持一键安装，请按页面步骤手动安装"})
             return
-        if _camera_is_docker() or _camera_external_go2rtc():
-            self._send(409, {"ok": False, "error": "当前环境不支持自动安装摄像头组件"})
+        if _camera_external_go2rtc():
+            self._send(409, {"ok": False, "error": "已配置外部 go2rtc，请在它所在设备安装组件"})
             return
         with CAMERA_STACK_JOB_LOCK:
             if CAMERA_STACK_JOB.get("running"):
@@ -6989,8 +7107,9 @@ class Handler(BaseHTTPRequestHandler):
             if value not in ports:
                 ports.append(value)
         programs = _camera_firewall_programs()
-        ok, message = _add_firewall_rules(ports, programs)
+        ok, message = _add_firewall_rules(ports, programs, [DISCOVERY_PORT])
         self._send(200, {"ok": ok, "message": message, "ports": ports,
+                         "udp_ports": [DISCOVERY_PORT],
                          "camera_programs": len(programs)})
 
     def api_admin_music_state(self):
@@ -7567,6 +7686,61 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True})
 
 
+DISCOVERY_LOCK = threading.Lock()
+DISCOVERY_HITS = {}
+
+
+def discovery_loop():
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        except OSError:
+            pass
+        sock.bind(("", DISCOVERY_PORT))
+        sock.settimeout(1.0)
+    except Exception as exc:
+        LOG.warning("LAN discovery unavailable on udp/%d: %s", DISCOVERY_PORT,
+                    str(exc)[:160])
+        try:
+            if sock:
+                sock.close()
+        except Exception:
+            pass
+        return
+    LOG.info("LAN discovery listening on udp/%d", DISCOVERY_PORT)
+    while True:
+        try:
+            data, addr = sock.recvfrom(1024)
+        except socket.timeout:
+            continue
+        except Exception:
+            continue
+        text = data.decode("utf-8", "ignore").strip()
+        if not text.startswith(("MIOT_DISCOVER", "MIOT_PANEL_DISCOVER")):
+            continue
+        ip = str(addr[0] or "")
+        now = time.time()
+        with DISCOVERY_LOCK:
+            last = DISCOVERY_HITS.get(ip, 0)
+            DISCOVERY_HITS[ip] = now
+        if now - last < 1.0:
+            continue
+        payload = {
+            "service": "miot-panel", "app": APP_NAME, "version": APP_VERSION,
+            "port": PORT, "pin": bool(admin_pin_set()),
+            "platform": "windows" if os.name == "nt" else "linux",
+            "name": socket.gethostname()[:60] or "MIOT Panel",
+        }
+        try:
+            sock.sendto(json.dumps(payload, ensure_ascii=False,
+                                   separators=(",", ":")).encode("utf-8"), addr)
+        except Exception:
+            pass
+
+
 def _reexec_for_update(_signum=None, _frame=None):
     LOG.info("re-exec for update")
     try:
@@ -7603,12 +7777,17 @@ def main():
     _load_caches()
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, _reexec_for_update)
+    try:
+        _camera_normalize_go2rtc_url()
+    except Exception as exc:
+        LOG.warning("go2rtc config normalize failed: %s", str(exc)[:160])
     threading.Thread(target=poll_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     threading.Thread(target=_startup_import, daemon=True).start()
+    threading.Thread(target=discovery_loop, daemon=True).start()
     if os.name == "nt":
         threading.Thread(target=_stack_autostart, daemon=True).start()
-        threading.Thread(target=_camera_autostart, daemon=True).start()
+    threading.Thread(target=_camera_autostart, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)
     srv.serve_forever()

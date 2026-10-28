@@ -1,8 +1,8 @@
 {
-  "version": "0.6.7",
+  "version": "0.7.0",
   "released": "2026-10-28",
-  "notes": "真正修复旧传感器缓存导致数值不显示；空拉取不再写缓存。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.7-update.tar.gz",
-  "sha256": "ab98695317aede839a8659caece6f6cb268ce161d03a3760b43b61f17a75ba47",
-  "size": 2219294
+  "notes": "全平台摄像头组件自动安装、局域网发现与 Android 客户端。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.0-update.tar.gz",
+  "sha256": "b8920739dd0ede9872f0f6a4758bc3b5c39d5041f824540ef36a562f1479178c",
+  "size": 2224390
 }

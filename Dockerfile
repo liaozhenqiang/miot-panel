@@ -33,7 +33,7 @@ RUN apt-get update \
 
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
-COPY miot-cloud.py cloud_panel.html admin.html camera.html \
+COPY miot-cloud.py cloud_panel.html admin.html camera.html compat.js \
      manifest.webmanifest sw.js sensor_models.json miot_models.json.gz /app/
 COPY icons /app/icons
 
@@ -44,6 +44,7 @@ RUN groupadd --gid 10001 panel \
 USER panel
 VOLUME ["/data"]
 EXPOSE 8080
+EXPOSE 37020/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/status', timeout=3)"]

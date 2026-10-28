@@ -33,6 +33,9 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 - 音乐与 AI 音箱（可选）：`/admin` 统一管理 Songloft 音乐中心、小爱扫码绑定、任意数量音箱与多分组、在线搜歌、语音口令、大模型人设与小爱原生 TTS
 - 首页音箱助手（可选）：已绑定小爱音箱以独立卡片显示，点开可文字提问，或点“语音提问”对音箱说“小爱同学，请问……”；后台可开关、按音箱显隐、设默认音箱和“播报/仅面板”回答方式
 - 7 套主题与自定义首页：经典黑夜/白天 + 5 套结构级风格主题（苹果风/魅族风/赛博霓虹/莫兰迪/像素终端），摄像头页同步主题；后台可创建、编辑、预览、启用完整 HTML 自定义页面，内置面板始终保留在 `/panel`
+- 摄像头组件全平台一键安装：Windows x64/x86/ARM64、Linux x64/x86/arm/arm64、macOS 和 Docker 自动检测 go2rtc/ffmpeg，下载并 SHA256 校验后启动；Windows 使用隐藏控制台构建
+- 局域网自动发现：面板监听 UDP `37020`，官方 Android 客户端可自动找到并连接，也可手动输入 IP
+- 官方 Android 客户端：自动发现/手动 IP、原生 PIN 解锁、WebView 打开面板；minSdk 14（Android 4.0）到最新 Android，旧 WebView 自动加载兼容层
 - 日志清理：后台可一键清理系统 journal 历史日志（含其他服务，不可恢复）
 
 ## 支持平台
@@ -40,9 +43,10 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 | 平台 | 推荐方式 | 状态 |
 |---|---|---|
 | Linux 各发行版 / NAS | Docker 多架构镜像，或 systemd 源码安装 | 支持 |
-| Windows 10/11 | 一键安装 EXE（内置 Python、开机自启）/ 便携 ZIP / Edge kiosk | 支持 |
+| Windows 10/11 x64 / ARM64 | 一键安装 EXE（内置 Python、开机自启）/ 便携 ZIP / Edge kiosk；ARM64 使用系统 x64 仿真 | 支持 |
+| Windows 32 位 x86 | 便携 ZIP（内置 32 位 Python；无安装器） | 支持 |
 | macOS | Python 源码 + launchd/登录项手动配置（非 root 用 8080 端口） | 可运行，未做安装器 |
-| Android 手机/平板 | 浏览器/PWA/Fully Kiosk 客户端，连接局域网内的面板服务 | 推荐作为客户端 |
+| Android 手机/平板 | 官方 APK（自动发现/手动 IP/PIN），或浏览器/PWA/Fully Kiosk | 推荐作为客户端 |
 | Android 当主机 | Termux 等方式 | 不推荐，后台保活和媒体依赖复杂 |
 
 核心服务是 Python 3.9+ + 标准库 HTTP 服务，前端是静态 HTML；因此 Linux、Windows、macOS 都能直接运行。摄像头、音乐和 go2rtc 仍是可选外部模块。
@@ -62,7 +66,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.6.7-docker-installer.run
+sudo bash miot-panel-v0.7.0-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,26 +83,28 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.7 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.0 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.6.7-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.7
+docker load -i miot-panel-v0.7.0-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.0
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
 
-容器不内置 go2rtc、ffmpeg、Songloft 和 go-music-dl；需要摄像头/音乐时，让容器通过 `MIOT_GO2RTC`、`MIOT_SONGLOFT`、`MIOT_GO_MUSIC_DL` 访问宿主机或另一台设备上的服务。
+容器不内置 Songloft 和 go-music-dl；音乐中心通过 `MIOT_SONGLOFT`、`MIOT_GO_MUSIC_DL` 访问宿主机或另一台设备。摄像头组件可在后台/摄像头页自动下载到数据卷 `/data/camera-stack`（随 `panel-data` 保留），也可用 `MIOT_GO2RTC` 指向外部 go2rtc。Docker 需发布 UDP `37020` 才能被 Android 客户端自动发现。
 
 ### Windows 10/11
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.6.7-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.6.7-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.7.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.7.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
+- `miot-panel-v0.7.0-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
+- Windows ARM64 可直接运行 x64 安装包/便携包（Windows 11 的 x64 仿真），摄像头组件会自动选择 ARM64 版本（原生 ARM64 Python 时）。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.6.7-linux-installer.run
+sudo bash miot-panel-v0.7.0-linux-installer.run
 ```
 
 手动源码安装：
@@ -169,10 +175,13 @@ MIOT_ROOT=/etc/miot-panel MIOT_PORT=8080 sudo -E bash install.sh
 
 ### Android / iOS 客户端
 
-Android 平板、手机和 iPhone 不需要安装后端：把服务跑在 Docker/NAS/Linux/Windows 上，然后用浏览器打开 `http://服务IP:8080/`。
+Android 平板、手机和 iPhone 不需要安装后端：把服务跑在 Docker/NAS/Linux/Windows 上，然后用浏览器打开 `http://服务IP:8080/`。也可以安装 Release 中的官方 Android 客户端：
 
-- 可“添加到主屏幕”作为快捷入口；
-- 完整 PWA 安装（独立窗口）需要 **HTTPS 或 localhost**；局域网 HTTP 通常只能加桌面快捷方式；
+- `miot-panel-android-1.0.0.apk`：安装后自动广播查找同网段面板，或手动输入 IP/端口；
+- 原生输入面板 PIN，之后由 WebView 打开面板；PIN 失效时会自动拦截 `/unlock` 并重新询问；
+- minSdk 14（Android 4.0）到最新 Android；旧 WebView 自动加载 `/compat.js`（Promise/fetch/Array.from 等补丁）；
+- 首次设置（PIN、音乐中心、小米登录）仍建议先在电脑浏览器完成；Android 4.0 的 WebView 不支持 MSE，摄像头播放建议 Android 5+/新版 WebView；
+- 可“添加到主屏幕”作为快捷入口；完整 PWA 安装（独立窗口）需要 **HTTPS 或 localhost**，局域网 HTTP 通常只能加桌面快捷方式；
 - 做墙屏/看店屏可用 Fully Kiosk Browser、WallPanel 等 WebView kiosk，建议固定充电和网络；
 - 不推荐在普通 Android 手机上直接跑 Python + go2rtc + ffmpeg 宿主，后台保活/端口/媒体依赖成本很高；Termux 仅适合爱好者。
 
@@ -498,6 +507,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.0（2026-10-28）**：摄像头组件与 Android 客户端更新。① 修复 go2rtc 自指配置：后台把 go2rtc 地址误设成本机局域网 IP 时，旧逻辑一直当作“远程未响应”，导致玩客云明明有 go2rtc 却显示缺少组件；现在自动识别本机地址、清理自指配置，并把 `/opt/go2rtc/go2rtc*` 纳入本地检测。② 组件自动安装扩展到 Windows x64/x86/ARM64、Linux x64/x86/arm/arm64、macOS 和 Docker（安装到数据卷）；新增 Windows x86/ARM64 隐藏控制台 go2rtc、Windows x86/ARM64 ffmpeg。③ 面板新增 UDP `37020` 局域网发现；后台“查看日志”移到“服务日志”卡片。④ 新增官方 Android 客户端 1.0.0（minSdk 14 / target 35）：自动发现、手动 IP、原生 PIN、WebView 兼容层；已在 Android 4.0.4 模拟器连接 v0.7.0 面板并成功加载设备接口。
 - **v0.6.7（2026-10-28）**：真正修复传感器规格缓存问题。v0.6.5/v0.6.6 升级后读到缺少 `format` 的旧 `miot_sensor_specs.json` 条目时会生成空列表并长期缓存，导致门磁、温湿度等传感器卡片全部不显示数值；现在旧缓存的不完整条目会被丢弃并自动重新拉取，规格接口返回空结果时也不会写回缓存，网络短暂异常后会自动恢复。新增 3 个缓存回归测试。
 - **v0.6.6（2026-10-28）**：传感器缓存兼容性修正（构建包内代码未实际包含该修复，请使用 v0.6.7）；热更新包不覆盖只读 `cacert.pem`。
 - **v0.6.5（2026-10-28）**：全量传感器显示审计与修正。规格里的 `value-list` 现在会转成文字（如状态/故障/空气质量/档位），不再只显示数字；布尔门磁按 `0=打开/1=关闭`，字符串类型的 `motion-state`（motion/no_motion）也能正确显示；单位按 MIoT 规格映射（气压 Pa、时间分钟/秒、µg/m³ 等），补上 PM1、甲醛 hcho、VOC、UV、雨量、功率/电流、未关时长等属性；`isa.magnet.dw2hl` 光照档继续显示弱/强。已验证现有温湿度、门磁传感器值不变。
