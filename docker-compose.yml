@@ -1,7 +1,7 @@
 services:
   panel:
     build: .
-    image: miot-panel:0.5.1
+    image: miot-panel:0.5.2
     container_name: miot-panel
     restart: unless-stopped
     ports:

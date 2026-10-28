@@ -284,18 +284,26 @@ function missingText(st){
   var names = {go2rtc:'go2rtc',ffmpeg:'ffmpeg'};
   return (st.missing||[]).map(function(x){return names[x]||x;}).join('、');
 }
+function applyGo2rtcPage(st){
+  if(st && st.go2rtc_page_url){
+    PLAY_BASE = String(st.go2rtc_page_url).replace(/\/+$/,'') + '/stream.html?src=';
+  }
+}
 function renderComponents(){
   if(!compState) return;
   var st = compState;
   var j = st.job || {};
-  if(st.ready && !j.running && j.state!=='failed'){
+  var needs = (st.missing && st.missing.length) || st.update_available;
+  if(st.ready && !needs && !j.running && j.state!=='failed'){
     compBar.classList.add('hidden');
     return;
   }
   compBar.classList.remove('hidden');
   var miss = missingText(st);
-  compTitle.textContent = st.ready ? '摄像头组件' : '摄像头组件未就绪';
+  compTitle.textContent = st.ready ? '摄像头组件可更新' : '摄像头组件未就绪';
   var detail = miss ? ('缺少 ' + miss) : '';
+  if(st.update_available && !miss) detail = 'go2rtc 可更新以隐藏 ffmpeg 命令行窗口';
+  if(st.remote) detail = (detail ? detail + ' · ' : '') + '使用远程 go2rtc';
   if(st.reason) detail += (detail ? ' · ' : '') + st.reason;
   if(j.running || j.state==='failed' || j.state==='done'){
     detail = (j.message || detail);
@@ -308,7 +316,9 @@ function renderComponents(){
   compText.textContent = detail;
   compInstall.style.display = (st.can_install ? '' : 'none');
   compInstall.disabled = !!j.running;
-  compInstall.textContent = st.admin_authed ? ((st.missing && st.missing.length) ? '安装缺失组件' : '启动摄像头组件') : '登录后台后安装';
+  compInstall.textContent = st.admin_authed
+    ? ((st.update_available && !(st.missing && st.missing.length)) ? '更新 go2rtc' : ((st.missing && st.missing.length) ? '安装缺失组件' : '启动摄像头组件'))
+    : '登录后台后安装';
   if(j.state==='failed') compGuide.classList.remove('hidden');
   if(!compGuide.classList.contains('hidden')) renderGuide();
 }
@@ -341,9 +351,11 @@ function checkComponents(force){
     .then(function(r){return r.json();})
     .then(function(st){
       compState = st || {};
+      applyGo2rtcPage(compState);
       renderComponents();
+      var needs = (compState.missing && compState.missing.length) || compState.update_available;
       if(compState.ready){
-        compBar.classList.add('hidden');
+        if(!needs) compBar.classList.add('hidden');
         if(force || !cams.length) loadCams(force, current && current.did);
       } else {
         setLoading('');
@@ -363,6 +375,7 @@ function pollComponents(){
     .then(function(r){return r.json();})
     .then(function(st){
       compState = st || {};
+      applyGo2rtcPage(compState);
       renderComponents();
       var j = compState.job || {};
       if(j.running) return;

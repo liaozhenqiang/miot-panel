@@ -195,7 +195,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -281,6 +281,7 @@ DEFAULT_CONFIG = {
     "songloft_user": "",
     "songloft_pass": "",
     "go_music_dl_url": "",
+    "go2rtc_url": "",
     "plugin_account_file": "",
     "lan_ip": "",
     "update_url": "",
@@ -326,7 +327,7 @@ def _normalize_config(data):
         out["speaker_max_chars"] = 200
     out["speaker_hidden"] = _str_list(src.get("speaker_hidden"), 500)
     out["speaker_default"] = str(src.get("speaker_default") or "")[:120]
-    for key in ("songloft_url", "go_music_dl_url"):
+    for key in ("songloft_url", "go_music_dl_url", "go2rtc_url"):
         value = str(src.get(key) or "").strip().rstrip("/")[:500]
         out[key] = value if value.startswith(("http://", "https://")) else ""
     out["songloft_user"] = str(src.get("songloft_user") or "").strip()[:120]
@@ -2120,9 +2121,14 @@ def _x25519_public(raw):
         z2, z3 = z3, z2
     return (x2 * pow(z2, _X25519_P - 2, _X25519_P) % _X25519_P).to_bytes(32, "little")
 
+def _go2rtc_base():
+    return (str(CONFIG.get("go2rtc_url") or "").strip().rstrip("/")
+            or GO2RTC_API.rstrip("/"))
+
+
 def _go2rtc_put(name, src):
     q = urllib.parse.urlencode({"name": name, "src": src})
-    req = urllib.request.Request(GO2RTC_API + "/api/streams?" + q, method="PUT")
+    req = urllib.request.Request(_go2rtc_base() + "/api/streams?" + q, method="PUT")
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.status == 200, ""
@@ -2157,8 +2163,20 @@ def _camera_p2p_url(c, did, model, ip):
         q["uid"] = (vendor.get("vendor_params") or {}).get("p2p_id") or ""
     return "xiaomi://%s?%s" % (ip, urllib.parse.urlencode(q))
 
+def _same_lan_subnet(ip1, ip2):
+    try:
+        a = ipaddress.ip_network(str(ip1).strip() + "/24", strict=False)
+        b = ipaddress.ip_network(str(ip2).strip() + "/24", strict=False)
+        return a == b
+    except Exception:
+        return True
+
+
 def ensure_cameras(force=False):
+    remote = _camera_external_go2rtc()
     ffmpeg_bin = _camera_ffmpeg_bin()
+    transcode = bool(ffmpeg_bin) or remote
+    local_ip = str(CONFIG.get("lan_ip") or LAN_IP)
     with CAM_LOCK:
         if (force and CAM_CACHE["items"]
                 and time.time() - CAM_CACHE["ts"] < 30):
@@ -2166,7 +2184,7 @@ def ensure_cameras(force=False):
         if (not force and CAM_CACHE["items"]
                 and time.time() - CAM_CACHE["ts"] < CAM_TTL):
             return {"ok": True, "cameras": CAM_CACHE["items"],
-                    "transcode": bool(ffmpeg_bin), "cached": True}
+                    "transcode": transcode, "cached": True}
         c = get_cloud()
         if not c:
             raise RuntimeError("未登录小米账号")
@@ -2192,13 +2210,16 @@ def ensure_cameras(force=False):
                 item["error"] = "设备离线"
             elif not ip:
                 item["error"] = "没有局域网地址"
+            elif not remote and local_ip and ip and not _same_lan_subnet(local_ip, ip):
+                item["error"] = "当前电脑与摄像头不在同一网段，请在后台填写远程 go2rtc（如玩客云）"
+                item["network_hint"] = True
             else:
                 try:
                     src = _camera_p2p_url(c, did, model, ip)
                     ok, err = _go2rtc_put("cam_" + did, src)
                     if not ok:
                         raise RuntimeError(err)
-                    if ffmpeg_bin:
+                    if transcode:
                         tsrc = ("ffmpeg:cam_%s#video=h264#width=640#height=360"
                                 "#bitrate=600k" % did)
                         ok, err = _go2rtc_put("cam_%s_h264" % did, tsrc)
@@ -2214,8 +2235,8 @@ def ensure_cameras(force=False):
             items.append(item)
         CAM_CACHE.update(ts=time.time(), items=items)
         LOG.info("cameras refreshed: %d", len(items))
-        return {"ok": True, "cameras": items,
-                "transcode": bool(ffmpeg_bin), "cached": False}
+        return {"ok": True, "cameras": items, "remote": remote,
+                "transcode": transcode, "cached": False}
 
 def ensure_camera_meta(force=False):
     with CAM_LOCK:
@@ -3103,7 +3124,7 @@ def _public_config():
             "speaker_panel_enabled", "speaker_text_enabled", "speaker_voice_enabled",
             "speaker_answer_mode", "speaker_max_chars", "speaker_hidden",
             "speaker_default", "songloft_url", "songloft_user", "go_music_dl_url",
-            "plugin_account_file", "lan_ip", "update_url")
+            "go2rtc_url", "plugin_account_file", "lan_ip", "update_url")
     data = {k: CONFIG.get(k) for k in keys}
     data["songloft_pass_set"] = bool(CONFIG.get("songloft_pass"))
     return data
@@ -3732,7 +3753,8 @@ def _stack_popen(args, cwd, log_path):
     flags = 0
     if os.name == "nt":
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
-                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                 | 0x08000000)  # CREATE_NO_WINDOW
     try:
         proc = subprocess.Popen(
             args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
@@ -4228,9 +4250,9 @@ CAMERA_STACK_JOB = {"running": False, "state": "idle", "message": "",
 CAMERA_STACK_VERSION = {"go2rtc": "v1.9.15", "ffmpeg": "b6.1.1"}
 CAMERA_COMPONENTS = {
     ("windows", "x64"): {
-        "go2rtc": {"url": "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.15/go2rtc_win64.zip",
-                   "sha256": "5b448fc90f15c925406d8da0984301985e385050222c1c2bbdf0a76fe4b1e9cb",
-                   "size": 8123970, "kind": "zip", "target": "go2rtc.exe"},
+        "go2rtc": {"url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/camera/go2rtc_win64_hidden.exe",
+                   "sha256": "d1331144e1fc7520be8422aab8b11b8bef73517b2931e4107d9d677636ad1bd9",
+                   "size": 21084160, "kind": "binary", "target": "go2rtc.exe"},
         "ffmpeg": {"url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64.gz",
                    "sha256": "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
                    "size": 29581307, "kind": "gz", "target": "ffmpeg.exe"},
@@ -4335,7 +4357,7 @@ def _camera_state_write(data):
 
 
 def _camera_go2rtc_ok():
-    data = _port_json(GO2RTC_API.rstrip("/") + "/api", timeout=2)
+    data = _port_json(_go2rtc_base() + "/api", timeout=2)
     return bool(isinstance(data, dict) and (data.get("revision") or data.get("config_path")))
 
 
@@ -4347,6 +4369,17 @@ def _camera_go2rtc_bin():
     if found:
         return found
     return ""
+
+
+def _camera_go2rtc_outdated():
+    if os.name != "nt":
+        return False
+    path = _camera_paths()["go2rtc"]
+    if not os.path.isfile(path):
+        return False
+    comp = _camera_catalog().get("go2rtc") or {}
+    want = str(comp.get("sha256") or "")
+    return bool(want and _sha256_file(path) != want)
 
 
 def _camera_ffmpeg_bin():
@@ -4363,7 +4396,7 @@ def _camera_ffmpeg_bin():
 
 
 def _camera_external_go2rtc():
-    return bool(os.environ.get("MIOT_GO2RTC") or os.environ.get("MIOT_GO2RTC_API"))
+    return bool(CONFIG.get("go2rtc_url") or os.environ.get("MIOT_GO2RTC") or os.environ.get("MIOT_GO2RTC_API"))
 
 
 def _camera_is_docker():
@@ -4415,30 +4448,39 @@ def _camera_setup_payload():
     cat = _camera_catalog()
     external = _camera_external_go2rtc()
     docker = _camera_is_docker()
+    outdated = _camera_go2rtc_outdated()
     missing = []
-    if not go_ok and not go_bin:
+    if (not go_ok and not go_bin) or outdated:
         missing.append("go2rtc")
-    if not ff_bin:
+    if not ff_bin and not external:
         missing.append("ffmpeg")
     can_install = bool(cat) and not docker and not external
     if docker:
         reason = "Docker 容器内请在宿主机安装 go2rtc/ffmpeg，并通过 MIOT_GO2RTC 指向宿主机"
     elif external:
-        reason = "已配置外部 go2rtc，请确认 MIOT_GO2RTC 地址和 ffmpeg 可用"
+        reason = "使用远程 go2rtc：%s" % _go2rtc_base()
+        if not go_ok:
+            reason += "（未响应，请检查地址/端口/防火墙）"
     elif not cat:
         reason = "当前平台暂不支持一键安装，请按下方步骤手动安装"
     else:
         reason = ""
     if not go_ok and go_bin and not missing:
         reason = "go2rtc 未运行，点击按钮即可启动"
-    if ff_bin and go_ok and not missing:
-        reason = ""
+    if outdated and not external:
+        reason = (reason + "；" if reason else "") + "可更新 go2rtc 以隐藏命令行窗口"
+    if (ff_bin or external) and go_ok and not missing and not outdated:
+        reason = reason if external else ""
     components = []
     for name in ("go2rtc", "ffmpeg"):
         info = cat.get(name) or {}
+        ok = bool(go_ok if name == "go2rtc" else (ff_bin or external))
+        if name == "go2rtc" and outdated:
+            ok = False
         components.append({
             "name": name,
-            "ok": bool(go_ok if name == "go2rtc" else ff_bin),
+            "ok": ok,
+            "needs_update": bool(outdated if name == "go2rtc" else False),
             "version": CAMERA_STACK_VERSION.get(name, ""),
             "url": info.get("url", ""),
             "sha256": info.get("sha256", ""),
@@ -4449,15 +4491,18 @@ def _camera_setup_payload():
         "platform": _camera_os_name(),
         "arch": _camera_arch(),
         "external": external,
+        "remote": external,
+        "go2rtc_page_url": _go2rtc_base() if external else "",
         "docker": docker,
         "go2rtc_ok": go_ok,
         "go2rtc_path": go_bin,
-        "ffmpeg_ok": bool(ff_bin),
+        "ffmpeg_ok": bool(ff_bin or external),
         "ffmpeg_path": ff_bin,
-        "installed": bool(go_bin and ff_bin),
-        "ready": bool(go_ok and ff_bin),
+        "installed": bool(go_ok and (ff_bin or external)),
+        "ready": bool(go_ok and (ff_bin or external)),
         "missing": missing,
         "can_install": can_install,
+        "update_available": outdated,
         "reason": reason,
         "components": components,
         "guide": _camera_guide(),
@@ -4467,6 +4512,10 @@ def _camera_setup_payload():
 
 
 def _camera_start():
+    if _camera_external_go2rtc():
+        if _camera_go2rtc_ok():
+            return True
+        raise RuntimeError("远程 go2rtc 未响应，请检查后台填写的地址")
     if _camera_go2rtc_ok():
         _camera_ffmpeg_bin()
         return True
@@ -4489,7 +4538,7 @@ def _camera_start():
     state = _camera_state_read()
     state.update({"go2rtc_pid": pid, "installed": True, "updated_at": int(time.time())})
     _camera_state_write(state)
-    if _wait_http(GO2RTC_API.rstrip("/") + "/api", 25) is None:
+    if _wait_http(_go2rtc_base() + "/api", 25) is None:
         raise RuntimeError("go2rtc 启动超时，请查看 camera-stack/go2rtc.log")
     _camera_ffmpeg_bin()
     return True
@@ -4549,7 +4598,7 @@ def _camera_install(progress=None):
     paths = _camera_paths()
     os.makedirs(paths["downloads"], exist_ok=True)
     missing = []
-    if not _camera_go2rtc_ok() and not _camera_go2rtc_bin():
+    if (not _camera_go2rtc_ok() and not _camera_go2rtc_bin()) or _camera_go2rtc_outdated():
         missing.append("go2rtc")
     if not _camera_ffmpeg_bin():
         missing.append("ffmpeg")
@@ -4576,6 +4625,8 @@ def _camera_install(progress=None):
         _download_verified(comp["url"], archive, comp["sha256"], timeout=600,
                            progress=on_bytes)
         progress("正在校验并解压 %s" % name, base + span - 2)
+        if name == "go2rtc" and _camera_state_read().get("go2rtc_pid"):
+            _camera_stop()
         _camera_extract(comp, archive, paths[name])
         try:
             os.remove(archive)
@@ -5664,7 +5715,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             req = urllib.request.Request(
-                GO2RTC_API + "/api/streams?src=" + urllib.parse.quote(name))
+                _go2rtc_base() + "/api/streams?src=" + urllib.parse.quote(name))
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read() or b"{}")
             cons = data.get("consumers") or []
@@ -6117,6 +6168,14 @@ class Handler(BaseHTTPRequestHandler):
             with UPDATE_CACHE_LOCK:
                 UPDATE_CACHE["ts"] = 0
                 UPDATE_CACHE["data"] = None
+        if "go2rtc_url" in body:
+            value = str(body.get("go2rtc_url") or "").strip().rstrip("/")[:500]
+            if value and not value.startswith(("http://", "https://")):
+                self._send(400, {"ok": False, "msg": "go2rtc 地址必须是 http(s) 地址"})
+                return
+            updates["go2rtc_url"] = value
+            CAM_CACHE.update(ts=0, items=[])
+            CAM_META.update(ts=0, items=[])
         if "lan_ip" in body:
             global LAN_IP
             value = str(body.get("lan_ip") or "").strip()[:64]
@@ -6164,7 +6223,7 @@ class Handler(BaseHTTPRequestHandler):
             if what == "settings":
                 keep = ("admin_pin_salt", "admin_pin_hash", "update_url", "lan_ip",
                         "songloft_url", "songloft_user", "songloft_pass",
-                        "go_music_dl_url", "plugin_account_file", "country")
+                        "go_music_dl_url", "go2rtc_url", "plugin_account_file", "country")
                 base = dict(DEFAULT_CONFIG)
                 base.update({k: CONFIG.get(k) for k in keep if CONFIG.get(k)})
                 save_config(base)

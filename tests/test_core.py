@@ -101,7 +101,7 @@ def test_camera_component_catalog_is_pinned():
     for key, parts in miot.CAMERA_COMPONENTS.items():
         assert set(parts) == {"go2rtc", "ffmpeg"}, key
         for part in parts.values():
-            assert part["url"].startswith("https://github.com/")
+            assert part["url"].startswith(("https://github.com/", "https://raw.githubusercontent.com/"))
             assert len(part["sha256"]) == 64
             assert part["size"] > 0
             assert part["target"]

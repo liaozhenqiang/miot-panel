@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.5.1-docker-installer.run
+sudo bash miot-panel-v0.5.2-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.5.1 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.5.2 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.5.1-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.1
+docker load -i miot-panel-v0.5.2-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.2
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.5.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.5.1-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.5.1-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.5.2-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.5.2-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.5.1-linux-installer.run
+sudo bash miot-panel-v0.5.2-linux-installer.run
 ```
 
 手动源码安装：
@@ -322,6 +322,8 @@ Windows 安装包已内置 Songloft v2.13.5、go-music-dl v1.1.3 和三个 Songl
 - 自动安装需要先登录 `/admin`（PIN 会话）；失败时会自动展开“手动安装步骤”，给出下载链接、目标路径和重试/日志位置，可一步一步手动放置后重新检测。
 - Docker 容器不支持自动安装，请在宿主机安装 go2rtc/ffmpeg，并设置 `MIOT_GO2RTC`；已配置外部 go2rtc 时会显示对应提示，不会重复安装。
 - 安装后的 go2rtc 默认只监听 `127.0.0.1:1984`，RTSP 8554/WebRTC 8555 仅限家庭局域网，不要映射到公网。
+- **Windows 无窗口运行**：使用本项目构建的隐藏控制台 go2rtc（仅修改子进程 `HideWindow`），ffmpeg 不再弹命令行；安装器快捷方式也改为 VBS 静默启动。旧版 go2rtc 可在摄像头页点“更新 go2rtc”。
+- **跨网段/远程 go2rtc**：后台“安全与维护”→“远程摄像头服务”填 `http://玩客云IP:1984`，摄像头页会从该设备播放；可点“使用音乐中心主机”自动填入。留空则使用本机 go2rtc。摄像头与电脑不在同一网段且未配置远程服务时，页面会直接提示，而不是反复 404。
 
 主页也会把当前家庭的每台摄像头做成独立卡片，默认排在 日历/天气/用电 之后，点卡片直接打开对应摄像头（`/camera?did=...`）。每页固定 10 张卡片；摄像头较多时（例如 5 路）会自然分页，原有设备卡片顺延；可以用“排版”拖动调整摄像头和设备的位置。主页的摄像头状态来自轻量接口，不会在主页启动转码，只有点开卡片后才开始拉流。
 
@@ -488,6 +490,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.5.2（2026-10-28）**：修复 Windows 摄像头弹命令行窗口和跨网段无法播放。Windows 改用隐藏控制台的 go2rtc 构建，所有音乐/摄像头子进程使用 `CREATE_NO_WINDOW`，安装器快捷方式通过 `wscript.exe` 静默启动；旧版已装的 go2rtc 会在摄像头页提示“更新 go2rtc”，更新后不再弹出 ffmpeg 窗口。新增后台“远程摄像头服务（go2rtc 地址）”：Windows 与摄像头不在同一网段时，填玩客云/同网段设备的 `http://IP:1984`，摄像头页自动改用远程 go2rtc 播放；本机跨网段时会直接提示，而不是陷入 ffmpeg 404。可通过“使用音乐中心主机”自动填入地址。
 - **v0.5.1（2026-10-28）**：扫码成功后把登录同步到 Songloft 插件的动作改为后台执行，避免小米长轮询 + 插件换票造成 HTTP 请求超时；首次向导完成页会显示“音乐中心登录待同步”，连接后自动重试。摄像头组件安装、分级恢复默认和 v0.5.0 的其他功能不变。
 - **v0.5.0（2026-10-28）**：新增**面板原生小米扫码登录**：不需要先安装 Songloft，扫码后直接建立设备登录；已连接音乐中心时自动通过 MIoT 插件 `/auth/token` 同步，未安装时暂存登录，安装/连接后自动带入，避免二次扫码。摄像头页新增组件自检：缺少 go2rtc/ffmpeg 时顶部显示安装条，Windows/Linux 可一键下载（go2rtc v1.9.15、ffmpeg-static b6.1.1，SHA256 校验，官方源失败自动尝试国内镜像）并启动；自动安装失败会自动展开分步下载/放置/重试引导，Docker/远程 go2rtc 给出对应说明。后台“维护与恢复默认”新增**重置设置（保留 PIN/登录）**和**完全重置（回到首次向导）**，均需输入 RESET 确认并自动重启；Windows 卸载器会顺带停止本机 go2rtc。 
 - **v0.4.1（2026-10-28）**：修复 Windows 后台热更新在“正在重启”卡住的问题（v0.3.6–v0.4.0 的更新器用 `taskkill /T` 会连带结束更新 worker；现已只结束旧面板进程，worker 继续拉起新版本并通过健康检查）。v0.4.0 的首次向导、默认不组网、国内镜像和分阶段进度不变。注意：Windows v0.3.6–v0.3.9 仍受旧更新器影响，请用 v0.4.1 安装包覆盖安装（保留数据）；Windows v0.3.5 及更早、Linux 可直接后台更新。

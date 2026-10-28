@@ -438,6 +438,15 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
         <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
         <div class="hint"><a href="/setup" style="color:var(--accent)">打开首次设置向导</a>，可重新检查 PIN、音乐中心和小米登录状态。</div>
+        <div class="sep"></div>
+        <label>远程摄像头服务（go2rtc 地址，可选）</label>
+        <div class="row">
+          <input id="go2rtcUrl" placeholder="http://192.168.0.123:1984" style="max-width:360px">
+          <button onclick="saveGo2rtc()">保存并检测</button>
+          <button onclick="suggestGo2rtc()">使用音乐中心主机</button>
+        </div>
+        <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc。摄像头页会使用这个地址播放。</div>
+        <div class="msg" id="go2rtcMsg"></div>
       </section>
     </div>
 
@@ -1428,6 +1437,7 @@ function render(){
   renderThemeSwatches();
   $('updateCurrent').value='v'+(state.version||'');
   $('updateUrl').value=c.update_url||'';
+  if($('go2rtcUrl'))$('go2rtcUrl').value=c.go2rtc_url||'';
   renderOverview();renderMusicConnection();loadLanInfo();loadMusicStackStatus();
   loadUpdateStatus();
   if(!pagesLoaded)loadCustomPages();
@@ -1498,6 +1508,26 @@ async function importPanelAuth(){
     toast(r.data.already?'面板登录已在音乐中心':'已从面板登录同步到音乐中心');
     await loadMusicState(true);
   } else toast(r.data.error||(r.data.pending?'登录已暂存，连接音乐中心后自动同步':'同步失败'),true);
+}
+async function saveGo2rtc(){
+  var v=$('go2rtcUrl').value.trim();
+  var r=await api('/api/admin/save',{go2rtc_url:v});
+  if(!r.data.ok){$('go2rtcMsg').textContent=r.data.msg||r.data.error||'保存失败';return;}
+  var st=await api('/api/camera/setup_state');
+  var d=st.data||{};
+  if(!v){$('go2rtcMsg').textContent='已改为使用本机 go2rtc';}
+  else if(d.go2rtc_ok){$('go2rtcMsg').textContent='已保存，远程 go2rtc 连接正常';}
+  else {$('go2rtcMsg').textContent='已保存，但远程 go2rtc 未响应，请检查地址/端口/防火墙';}
+  await load();
+}
+function suggestGo2rtc(){
+  var u=musicURL||'';
+  if(!u){$('go2rtcMsg').textContent='尚未连接音乐中心，无法推断主机';return;}
+  try{
+    var host=new URL(u).hostname;
+    $('go2rtcUrl').value='http://'+host+':1984';
+    $('go2rtcMsg').textContent='已填入音乐中心所在主机的 go2rtc 地址，点“保存并检测”确认';
+  }catch(e){$('go2rtcMsg').textContent='音乐中心地址无法解析';}
 }
 async function changePin(){
   var p=$('newPin').value;if(p.length<4||p.length>20){toast('PIN 长度需为 4-20 位',true);return;}
