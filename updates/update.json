@@ -1,8 +1,8 @@
 {
   "version": "0.6.3",
   "released": "2026-10-28",
-  "notes": "修复首次设置手机二维码内联 SVG 未设置尺寸导致只显示白色小条；现在二维码可正常显示和扫描。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.3-linux-universal.tar.gz",
-  "sha256": "ac29265f6f2cf64dfc0a627ef00e7e8f8658e393a85a52ed7237a750b2d1735d",
-  "size": 2348445
+  "notes": "修复首次设置手机二维码内联 SVG 未设置尺寸；热更新包不覆盖只读 cacert.pem，兼容 Windows 安装目录权限。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.3-update.tar.gz",
+  "sha256": "278567a3366bbe9c45aa35fcb512a376af96071050931161c3bf7ff7415c6432",
+  "size": 2217805
 }
