@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.8"
+APP_VERSION = "0.7.9"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -2860,8 +2860,8 @@ PWA_ICONS = {
 }
 
 ANDROID_APK_NAME = "miot-panel-android.apk"
-ANDROID_VERSION_NAME = "1.0.2"
-ANDROID_VERSION_CODE = 3
+ANDROID_VERSION_NAME = "1.0.3"
+ANDROID_VERSION_CODE = 4
 ANDROID_RELEASE_URL = "https://github.com/liaozhenqiang/miot-panel/releases/latest"
 
 

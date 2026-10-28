@@ -1,7 +1,7 @@
 {
   "version": "0.7.8",
   "released": "2026-10-28",
-  "notes": "安卓客户端新增“检查更新”：面板内置客户端 APK，手机点更新即拿到下载地址（不需要任何权限）。",
+  "notes": "手机/平板横屏自适应重做：头部不再竖排断字，横屏按宽高分级网格（平板 5×2 一屏放下 10 张卡），卡片短高度不压叠、按钮不被裁掉；平板竖屏改两列。",
   "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.8-update.tar.gz",
   "sha256": "ddf52f68c6787e818b3a4872f7965aa5cd070e8017a25b5cf58cab5dc5eba7b4",
   "size": 2393528

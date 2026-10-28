@@ -73,6 +73,7 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {
             }
         }
+        enterImmersive();
         prefs = getSharedPreferences("miot_panel", MODE_PRIVATE);
         showConnectScreen(false);
         String saved = prefs.getString("server", "");
@@ -80,6 +81,49 @@ public class MainActivity extends Activity {
             connectSaved(saved);
         } else {
             startDiscover();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            enterImmersive();
+        }
+    }
+
+    /** 全屏墙屏运行：隐藏状态栏与导航栏，下滑可临时唤出后自动收起。 */
+    private void enterImmersive() {
+        android.view.Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= 28) {
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(attrs);
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false);
+            // getInsetsController() 在 setContentView 之前会 NPE（decor 还没建好）
+            android.view.WindowInsetsController controller =
+                    window.getDecorView().getWindowInsetsController();
+            if (controller != null) {
+                controller.hide(android.view.WindowInsets.Type.systemBars());
+                controller.setSystemBarsBehavior(
+                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+            return;
+        }
+        android.view.View decor = window.getDecorView();
+        if (Build.VERSION.SDK_INT >= 19) {
+            decor.setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } else {
+            decor.setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | android.view.View.SYSTEM_UI_FLAG_LOW_PROFILE);
         }
     }
 
@@ -600,6 +644,7 @@ public class MainActivity extends Activity {
         root.addView(webView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
         setContentView(root);
+        enterImmersive();
         setCookies(base, currentCookie);
         webView.loadUrl(base + (path == null || path.length() == 0 ? "/" : path));
     }
