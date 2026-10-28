@@ -2,6 +2,8 @@ package com.miotpanel.client;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -28,6 +30,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.net.URL;
 import java.util.ArrayList;
@@ -155,7 +159,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hintLp = wrapLp();
         hintLp.topMargin = dp(22);
         box.addView(hint, hintLp);
-        TextView footer = text("Android 4.0+ · 直连局域网 · 不经过第三方服务器",
+        TextView footer = text("Android 4.0+ · 直连局域网 · 不经过第三方服务器 · v" + versionName(),
                 12, 0xff6f8098, false);
         LinearLayout.LayoutParams footerLp = wrapLp();
         footerLp.topMargin = dp(10);
@@ -522,6 +526,12 @@ public class MainActivity extends Activity {
         title.setSingleLine(true);
         bar.addView(title, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        bar.addView(button("更新", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkUpdate();
+            }
+        }));
         bar.addView(button("刷新", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -612,6 +622,123 @@ public class MainActivity extends Activity {
         String base = "http://" + currentHost + ":" + currentPort;
         setCookies(base, currentCookie);
         webView.loadUrl(base + "/");
+    }
+
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private int versionCode() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void checkUpdate() {
+        final int mine = versionCode();
+        final String mineName = versionName();
+        final String base = "http://" + currentHost + ":" + currentPort;
+        Toast.makeText(this, "正在检查更新…", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final JSONObject info;
+                String problem = null;
+                String body = PanelClient.fetch(base + "/api/android", currentCookie, 4000);
+                JSONObject parsed = null;
+                try {
+                    parsed = new JSONObject(body);
+                } catch (Exception e) {
+                    problem = "面板没有返回版本信息。旧版面板（0.7.6 及更早）不支持检查更新，"
+                            + "升级面板后即可使用。";
+                }
+                info = parsed;
+                final String why = problem;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (info == null) {
+                            showUpdateMessage("检查更新失败", why);
+                            return;
+                        }
+                        int code = info.optInt("version_code", 0);
+                        String name = info.optString("version_name", "");
+                        String url = info.optString("url", "");
+                        if (url.length() == 0) {
+                            url = info.optString("release_url", "");
+                        }
+                        if (code <= mine) {
+                            Toast.makeText(MainActivity.this, "已是最新版本 v" + mineName,
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        showUpdateDialog(mineName, name, url);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void showUpdateMessage(String title, String message) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message == null ? "未知错误" : message)
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
+    private void showUpdateDialog(String mineName, String name, final String url) {
+        String message = "当前版本 v" + mineName + "，面板上提供 v" + name + "。\n\n"
+                + (url.length() > 0 ? url : "面板里没有放安装包，请到发布页下载")
+                + "\n\n用浏览器下载后按提示覆盖安装即可，配置不会丢。";
+        new AlertDialog.Builder(this)
+                .setTitle("发现新版本 v" + name)
+                .setMessage(message)
+                .setPositiveButton("浏览器打开", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        openUrl(url);
+                    }
+                })
+                .setNeutralButton("复制地址", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        copyText(url);
+                    }
+                })
+                .setNegativeButton("稍后", null)
+                .show();
+    }
+
+    private void openUrl(String url) {
+        if (url == null || url.length() == 0) {
+            Toast.makeText(this, "没有可用的下载地址", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception e) {
+            Toast.makeText(this, "没有可用浏览器：" + e, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void copyText(String text) {
+        if (text == null || text.length() == 0) {
+            return;
+        }
+        try {
+            ClipboardManager manager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            manager.setPrimaryClip(ClipData.newPlainText("MIOT Panel", text));
+            Toast.makeText(this, "下载地址已复制", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "复制失败：" + e, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void setCookies(String base, String cookie) {

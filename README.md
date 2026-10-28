@@ -106,6 +106,7 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 - `miot-panel-v0.7.6-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
 - `miot-panel-v0.7.6-windows-arm64-portable.zip`：Windows ARM64 原生便携包（内置 ARM64 Python 3.12，免安装、不走仿真），解压后双击 `launch-panel.vbs`；Windows 10 on ARM（不支持 x64 应用）用这个；
 - `miot-panel-v0.7.6-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
+- `miot-panel-android-1.0.2.apk`：安卓客户端；面板包里也内置了同一份 APK，手机连上面板后点顶部「更新」即可看到版本号和下载地址（**不申请任何权限**，用浏览器下载后覆盖安装，配置不丢）；
 - Windows ARM64 上即使跑的是 x86/x64 包，面板也会按 CPU 真实架构下载 ARM64 原生 go2rtc/ffmpeg 摄像头组件。
 
 > **ARM64 验证状态（如实说明）**：本机没有 ARM64 Windows 设备，ARM64 便携包与安装器里的 ARM64 运行时只做了**静态核验** —— 包内 74 个 PE / DLL / `.pyd` 全部为 ARM64（含剔除 python.org 官方 ARM64 嵌入式包里混进来的 x64 `vcruntime140_1.dll`），所有动态库依赖在包内或系统 DLL 中闭环，`go2rtc_win_arm64`、`ffmpeg_win_arm64` 同为 ARM64 且只依赖系统 DLL。**尚未在 ARM64 真机上运行过**。因此：
@@ -514,6 +515,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.7（2026-10-29）**：安卓客户端新增**「检查更新」**（轻量方案、零权限）：面板新增 `/api/android`（返回客户端版本号/下载地址）与 `/android.apk`（面板内置同版本 APK，走局域网直发，不依赖 GitHub）；客户端顶部「更新」按钮比对 `versionCode`，有新版弹窗给出地址（浏览器打开 / 复制地址 / 稍后），已是最新则直接提示；连接页显示当前版本号。已在模拟器验证：旧版→新版弹窗、已是新版提示、浏览器拉起。
 - **v0.7.6（2026-10-28）**：新增 **Windows 通用一键安装包** `miot-panel-v0.7.6-windows-installer.exe`：一个 EXE 内置 x64 / ARM64 / x86 三套运行时，安装时按 `GetNativeSystemInfo` 取真实 CPU 自动选择，Surface Pro X 等 ARM64 设备装到的是原生 ARM64 运行时；同时新增 ARM64 原生便携 ZIP（内置 ARM64 Python 3.12，供 Windows 10 on ARM 使用，该版本不支持 x64 应用）。摄像头组件架构识别同样改用 `GetNativeSystemInfo`，因此即使面板本身跑在 x86/x64 仿真下，也会下载并原生运行 ARM64 版 go2rtc/ffmpeg。
 - **v0.7.5（2026-10-28）**：修复 Android 客户端面板**无法下滑、内容显示不完整**：窄屏（≤1500px / ≤860px）改为卡片区域自身滚动，表头时钟固定，15 秒轮询刷新不再把滚动位置弹回顶部；页面去掉 `maximum-scale=1,user-scalable=no`（摄像头页同步）；Android 客户端 1.0.1 取消整页 overview 缩放并允许缩放。
 

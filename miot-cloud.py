@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.6"
+APP_VERSION = "0.7.7"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -223,6 +223,7 @@ UPDATE_APP_FILES = (
     "miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html",
     "manifest.webmanifest", "sw.js", "sensor_models.json", "miot_models.json.gz",
     "config.example.json", "README.md", "LICENSE", "cacert.pem", "compat.js",
+    "android/miot-panel-android.apk",
 )
 UPDATE_STATES = ("downloading", "verifying", "installing", "restarting",
                  "rolling_back")
@@ -2857,6 +2858,24 @@ PWA_ICONS = {
     "/icons/icon-192.png": _read_app_asset("icons/icon-192.png", True),
     "/icons/icon-512.png": _read_app_asset("icons/icon-512.png", True),
 }
+
+ANDROID_APK_NAME = "miot-panel-android.apk"
+ANDROID_VERSION_NAME = "1.0.2"
+ANDROID_VERSION_CODE = 3
+ANDROID_RELEASE_URL = "https://github.com/liaozhenqiang/miot-panel/releases/latest"
+
+
+def _android_apk():
+    """Ship the client APK with the panel so phones update over the LAN."""
+    for folder in (os.path.join(APP_DIR, "android"), APP_DIR, ROOT):
+        path = os.path.join(folder, ANDROID_APK_NAME)
+        if os.path.isfile(path):
+            try:
+                with open(path, "rb") as fh:
+                    return fh.read()
+            except OSError:
+                return b""
+    return b""
 
 
 UNLOCK_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -5814,7 +5833,7 @@ class Handler(BaseHTTPRequestHandler):
         if not _device_authed(self):
             public = (u.path in ("/setup", "/admin", "/api/setup_state",
                                  "/manifest.webmanifest", "/sw.js", "/favicon.ico",
-                                 "/compat.js")
+                                 "/compat.js", "/api/android", "/android.apk")
                       or u.path.startswith("/icons/")
                       or u.path.startswith(("/api/admin/", "/api/auth/")))
             if not public:
@@ -5899,6 +5918,16 @@ class Handler(BaseHTTPRequestHandler):
                            {"Cache-Control": "public, max-age=86400"})
             else:
                 self._send(404, "not found", "text/plain; charset=utf-8")
+        elif u.path == "/api/android":
+            self.api_android()
+        elif u.path == "/android.apk":
+            apk = _android_apk()
+            if apk:
+                self._send(200, apk, "application/vnd.android.package-archive",
+                           {"Content-Disposition": 'attachment; filename="%s"' % ANDROID_APK_NAME,
+                            "Cache-Control": "no-cache"})
+            else:
+                self._send(404, {"ok": False, "error": "此面板未内置安卓客户端安装包"})
         elif u.path in PWA_ICONS:
             if PWA_ICONS[u.path]:
                 self._send(200, PWA_ICONS[u.path], "image/png")
@@ -6074,6 +6103,19 @@ class Handler(BaseHTTPRequestHandler):
             self.api_speaker_chat(body)
         else:
             self._send(404, {"error": "not found"})
+
+    def api_android(self):
+        apk = _android_apk()
+        host = (self.headers.get("Host") or "").strip()
+        self._send(200, {
+            "ok": True,
+            "version_name": ANDROID_VERSION_NAME,
+            "version_code": ANDROID_VERSION_CODE,
+            "url": ("http://%s/android.apk" % host) if (apk and host) else "",
+            "release_url": ANDROID_RELEASE_URL,
+            "apk_bytes": len(apk),
+            "panel_version": APP_VERSION,
+        })
 
     def api_status(self):
         auth = _load_auth()

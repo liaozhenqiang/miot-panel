@@ -185,6 +185,27 @@ public final class PanelClient {
         return out.toString();
     }
 
+    public static String fetch(String url, String cookie, int timeoutMs) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setRequestMethod("GET");
+            if (cookie != null && cookie.length() > 0) {
+                conn.setRequestProperty("Cookie", cookie);
+            }
+            int code = conn.getResponseCode();
+            return read(code >= 400 ? conn.getErrorStream() : conn.getInputStream());
+        } catch (Exception ignored) {
+            return "";
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
     private static String read(InputStream input) {
         if (input == null) {
             return "";

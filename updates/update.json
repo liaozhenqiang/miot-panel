@@ -1,8 +1,8 @@
 {
-  "version": "0.7.6",
+  "version": "0.7.7",
   "released": "2026-10-28",
-  "notes": "Windows ARM64 原生便携包（Surface Pro X 等）；ARM64 系统下即使 Python 走 x86/x64 模拟也会下载原生 go2rtc/ffmpeg。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.6-update.tar.gz",
-  "sha256": "d8bba2f8b981b3e7be31f9c449a748cca233ce7ce240d58110436df44153f1bb",
-  "size": 2355046
+  "notes": "安卓客户端新增“检查更新”：面板内置客户端 APK，手机点更新即拿到下载地址（不需要任何权限）。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.7-update.tar.gz",
+  "sha256": "09c6520c8ff2f3eb8cd7a05f35c5a9b5918629712e0ca27941123cd6ac87d3c3",
+  "size": 2391101
 }

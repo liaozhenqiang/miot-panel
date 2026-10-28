@@ -36,6 +36,7 @@ WORKDIR /app
 COPY miot-cloud.py cloud_panel.html admin.html camera.html compat.js \
      manifest.webmanifest sw.js sensor_models.json miot_models.json.gz /app/
 COPY icons /app/icons
+COPY android /app/android
 
 RUN groupadd --gid 10001 panel \
     && useradd --uid 10001 --gid panel --home-dir /data --shell /usr/sbin/nologin panel \
