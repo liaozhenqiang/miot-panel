@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.2"
+APP_VERSION = "0.6.3"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -2890,9 +2890,9 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
 .qr .hint{color:#606a78;text-align:center}
 .phoneSetup{display:flex;gap:18px;align-items:center;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 0}
 .phoneSetup .qr{margin:0;flex:0 0 auto;padding:8px}
-.phoneSetup .qr img{width:148px;height:148px}
+.phoneSetup .qr img,.phoneSetup .qr svg{display:block;width:148px;height:148px}
 .phoneSetup .hint{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.6}
-@media(max-width:640px){.phoneSetup{flex-direction:column;align-items:flex-start}.phoneSetup .qr img{width:180px;height:180px}}
+@media(max-width:640px){.phoneSetup{flex-direction:column;align-items:flex-start}.phoneSetup .qr img,.phoneSetup .qr svg{width:180px;height:180px}}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#232c3a;border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;max-width:90vw}
 .toast.show{opacity:1}
 @media(max-width:640px){body{padding:12px}h1{font-size:21px}.card{padding:16px}.grid{grid-template-columns:1fr}.step{min-width:0;flex:1;font-size:11px}}

@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.6.2-docker-installer.run
+sudo bash miot-panel-v0.6.3-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.2 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.3 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.6.2-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.2
+docker load -i miot-panel-v0.6.3-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.3
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.6.2-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.6.2-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.6.3-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.6.3-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.6.2-linux-installer.run
+sudo bash miot-panel-v0.6.3-linux-installer.run
 ```
 
 手动源码安装：
@@ -498,6 +498,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.6.3（2026-10-28）**：修复首次设置手机二维码不显示/只剩白色小条的问题：`build_qr` 生成的是内联 SVG，之前只给 `img` 设置尺寸；现为 `.qr svg` 设置 148/180px，二维码可正常显示并用手机解码。桌面/手机扫码均可打开 `/setup`。
 - **v0.6.2（2026-10-28）**：首次设置页新增**手机扫码入口**（同一局域网扫码打开 `/setup`，电脑进度自动同步）；后台概览移除重复的“检查更新/查看日志”按钮（保留导航和对应页面）；本轮完成 Windows、Linux、Docker 的完整卸载/重新安装回归。
 - **v0.6.1（2026-10-28）**：修复 Windows 摄像头 P2P 在部分机器上因防火墙拦截 UDP 导致 `read udp ... i/o timeout` / ffmpeg 404。摄像头页新增“组件”入口和“修复防火墙”：一次 UAC 授权后为 `go2rtc.exe`、`ffmpeg.exe` 添加入站/出站放行规则；后台“允许局域网访问”也同步包含摄像头程序。组件运行中也可打开状态面板；仍无法连接时会明确提示本机网段/防火墙问题。
 - **v0.6.0（2026-10-28）**：新增**局域网设备 PIN 验证**。LAN 设备首次打开面板/摄像头页会进入 `/unlock`，输入与后台相同的 PIN；验证后本设备记住 180 天（HttpOnly 签名 Cookie），后续无需重复验证；本机 127.0.0.1 kiosk 免验证。面板 HTML、摄像头页、自定义页及所有控制/状态 API 都加验证；管理员登录/设置 PIN 会同时记住设备；后台新增“锁定此设备”。**go2rtc 也统一由面板 PIN 保护**：本机 go2rtc 只监听 `127.0.0.1`，摄像头页改走同源 `/go2rtc` 反向代理（HTTP + WebSocket MSE/HLS），直接访问 1984/RTSP/WebRTC 不再暴露给局域网，后台管理的 go2rtc 与面板使用同一设备 PIN；远程 go2rtc 仍可在后台单独指定（远程端需自行限制来源）。

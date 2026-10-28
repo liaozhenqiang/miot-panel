@@ -1,8 +1,8 @@
 {
-  "version": "0.6.2",
+  "version": "0.6.3",
   "released": "2026-10-28",
-  "notes": "首次设置页支持手机扫码继续；后台概览移除重复的检查更新/查看日志按钮；完成 Windows、Linux、Docker 卸载重装回归。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.2-linux-universal.tar.gz",
-  "sha256": "0aab557c4e97aa9d69f20d60588b7fa1d6607c0dede0c254f85850fabd3dbb9a",
-  "size": 2348268
+  "notes": "修复首次设置手机二维码内联 SVG 未设置尺寸导致只显示白色小条；现在二维码可正常显示和扫描。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.3-linux-universal.tar.gz",
+  "sha256": "ac29265f6f2cf64dfc0a627ef00e7e8f8658e393a85a52ed7237a750b2d1735d",
+  "size": 2348445
 }
