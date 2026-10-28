@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -2888,6 +2888,11 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
 .qr{background:#fff;border-radius:14px;padding:12px;display:inline-block;margin:12px 0}
 .qr img{display:block;width:220px;height:220px;object-fit:contain}
 .qr .hint{color:#606a78;text-align:center}
+.phoneSetup{display:flex;gap:18px;align-items:center;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 0}
+.phoneSetup .qr{margin:0;flex:0 0 auto;padding:8px}
+.phoneSetup .qr img{width:148px;height:148px}
+.phoneSetup .hint{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.6}
+@media(max-width:640px){.phoneSetup{flex-direction:column;align-items:flex-start}.phoneSetup .qr img{width:180px;height:180px}}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#232c3a;border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;max-width:90vw}
 .toast.show{opacity:1}
 @media(max-width:640px){body{padding:12px}h1{font-size:21px}.card{padding:16px}.grid{grid-template-columns:1fr}.step{min-width:0;flex:1;font-size:11px}}
@@ -2899,6 +2904,10 @@ summary{cursor:pointer;color:#ffb36b;font-size:13px}
   <section class="card" id="pinCard">
     <h2>1. 设置后台 PIN</h2>
     <p>PIN 只保护后台管理页，不是小米账号密码。设置后再安装音乐中心并登录小米。</p>
+    <div class="phoneSetup">
+      <div class="qr">@@SETUP_QR@@</div>
+      <div><b>手机扫码，在手机上完成设置</b><div class="hint">手机需和面板在同一局域网。用手机扫码后会打开同一个首次设置向导，电脑上的进度会自动同步。</div></div>
+    </div>
     <div id="pinSetupBox" class="hidden">
       <input id="pin1" type="password" inputmode="numeric" placeholder="设置 4-20 位 PIN">
       <input id="pin2" type="password" inputmode="numeric" placeholder="再次输入 PIN">
@@ -5539,7 +5548,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, PANEL_HTML, "text/html; charset=utf-8")
         elif u.path in ("/setup", "/setup/"):
-            self._send(200, SETUP_HTML, "text/html; charset=utf-8")
+            host = (self.headers.get("Host") or "").strip()
+            hostname = host.rsplit(":", 1)[0].strip("[]").lower() if host else ""
+            if (not host) or hostname in ("127.0.0.1", "localhost", "::1"):
+                host = "%s:%d" % (LAN_IP, PORT)
+            elif PORT != 80 and ":" not in host:
+                host += ":%d" % PORT
+            setup_url = "http://%s/setup" % host
+            html = SETUP_HTML.replace("@@SETUP_QR@@", build_qr(setup_url))
+            self._send(200, html, "text/html; charset=utf-8")
         elif u.path.startswith("/custom/"):
             pid = urllib.parse.unquote(u.path[len("/custom/"):]).strip("/")
             html = _read_page_html(pid)

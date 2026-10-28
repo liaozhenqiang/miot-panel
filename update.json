@@ -1,8 +1,8 @@
 {
-  "version": "0.6.1",
+  "version": "0.6.2",
   "released": "2026-10-28",
-  "notes": "修复 Windows 摄像头 P2P 被防火墙拦截 UDP；摄像头页组件面板新增“修复防火墙”，为 go2rtc/ffmpeg 添加入站/出站规则（一次 UAC）。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.1-linux-universal.tar.gz",
-  "sha256": "55bfc9ec7087270df54078fd6083fac58f51c72183046e739597fccc1758b3d0",
-  "size": 2347803
+  "notes": "首次设置页支持手机扫码继续；后台概览移除重复的检查更新/查看日志按钮；完成 Windows、Linux、Docker 卸载重装回归。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.2-linux-universal.tar.gz",
+  "sha256": "0aab557c4e97aa9d69f20d60588b7fa1d6607c0dede0c254f85850fabd3dbb9a",
+  "size": 2348268
 }
