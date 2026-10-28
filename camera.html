@@ -54,7 +54,7 @@ iframe{display:block;width:100%;height:100%;border:0;background:#000;}
   a.btn,button.btn{font-size:15px;padding:9px 13px;}
   .homeFloat{font-size:16px;padding:11px 16px;right:12px;bottom:74px;}
 }
-@media (max-width:680px){
+@media (max-width:680px) and (orientation:portrait){
   body{overflow:auto;}
   .main{flex-direction:column;}
   .side{width:100%;flex:0 0 auto;max-height:36vh;border-right:0;border-bottom:1px solid var(--line);}
@@ -206,6 +206,22 @@ body.theme-pixel .hintBar{border:1px solid #1f7a1f;border-radius:0;background:rg
 .compBar .compProgress{height:100%;width:2%;background:var(--accent);transition:width .25s;}
 body.light .compBar{background:#fff3e6;border-bottom-color:#f0d6bd;}
 body.light .compBar .compProgressWrap{background:#f1e3d5;}
+
+/* 手机/平板横屏：保留左右分栏，压缩侧栏与按钮 */
+@media (max-height:480px){
+  .side{width:220px;flex-basis:220px;}
+  .sideHead{padding:10px 12px 2px;}
+  .title{font-size:17px;}
+  .hint{font-size:11px;}
+  a.btn,button.btn{font-size:13px;padding:7px 10px;}
+  .camName{font-size:15px;}
+  .camMeta,.camState{font-size:11px;margin-top:3px;}
+  .bar{padding:6px 10px;}
+  .homeFloat{font-size:14px;padding:9px 13px;bottom:12px;right:10px;}
+}
+@media (max-width:680px) and (max-height:480px){
+  .side{width:200px;flex-basis:200px;}
+}
 </style></head><body>
 <div class="bar">
   <div class="left">
