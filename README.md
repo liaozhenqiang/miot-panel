@@ -62,7 +62,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.6.5-docker-installer.run
+sudo bash miot-panel-v0.6.6-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -79,14 +79,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.5 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.6.6 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.6.5-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.5
+docker load -i miot-panel-v0.6.6-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.6
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -97,8 +97,8 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.6.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.6.5-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.6.5-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
+- `miot-panel-v0.6.6-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.6.6-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.6.5-linux-installer.run
+sudo bash miot-panel-v0.6.6-linux-installer.run
 ```
 
 手动源码安装：
@@ -498,6 +498,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.6.6（2026-10-28）**：修复 v0.6.5 升级后旧 `miot_sensor_specs.json` 缓存没有 `format` 字段、被误当成“已缓存空列表”导致传感器值不显示的问题；现在旧规格缓存会自动丢弃并重新拉取，拉取失败也不会把空结果写入缓存。传感器显示审计（value-list、单位、门磁/人体字符串）保持不变。
 - **v0.6.5（2026-10-28）**：全量传感器显示审计与修正。规格里的 `value-list` 现在会转成文字（如状态/故障/空气质量/档位），不再只显示数字；布尔门磁按 `0=打开/1=关闭`，字符串类型的 `motion-state`（motion/no_motion）也能正确显示；单位按 MIoT 规格映射（气压 Pa、时间分钟/秒、µg/m³ 等），补上 PM1、甲醛 hcho、VOC、UV、雨量、功率/电流、未关时长等属性；`isa.magnet.dw2hl` 光照档继续显示弱/强。已验证现有温湿度、门磁传感器值不变。
 - **v0.6.4（2026-10-28）**：修复 `isa.magnet.dw2hl` 门磁显示反了：按小米 Home 规格 `contact-state` 为 `0=open / 1=closed`，现在 `true→关闭、false→打开`；该型号的 `illumination` 是 1/2 档（弱/强）而非 lx，现在显示“弱/强”并不再标 lx。
 - **v0.6.3（2026-10-28）**：修复首次设置手机二维码不显示/只剩白色小条的问题：`build_qr` 生成的是内联 SVG，之前只给 `img` 设置尺寸；现为 `.qr svg` 设置 148/180px，二维码可正常显示并用手机解码。桌面/手机扫码均可打开 `/setup`。
