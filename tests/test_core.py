@@ -157,3 +157,18 @@ def test_device_cookie_invalidates_on_pin_change():
     finally:
         miot.CONFIG["admin_pin_salt"] = old_salt
         miot.CONFIG["admin_pin_hash"] = old_hash
+
+
+def test_sensor_semantics_and_units():
+    assert miot._sensor_display("contact", True) == "关闭"
+    assert miot._sensor_display("contact", False) == "打开"
+    assert miot._sensor_display("contact", "open") == "打开"
+    assert miot._sensor_display("motion", "motion") == "有人"
+    assert miot._sensor_display("motion", "no_motion") == "无人"
+    meta = {"value_list": [{"value": 0, "description": "open"},
+                           {"value": 1, "description": "closed"}]}
+    assert miot._sensor_display("contact", 0, meta) == "打开"
+    assert miot._sensor_display("contact", 1, meta) == "关闭"
+    assert miot._sensor_unit("minutes", "") == "分钟"
+    assert miot._sensor_unit("μg/m3", "").replace("μ", "µ") == "µg/m³"
+    assert miot._sensor_unit("pascal", "") == "Pa"

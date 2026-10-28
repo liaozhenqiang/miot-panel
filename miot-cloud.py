@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.4"
+APP_VERSION = "0.6.5"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -1498,7 +1498,18 @@ SENSOR_PROP_KEYS = {
     "tvoc-density": ("tvoc", "TVOC", "mg/m³"),
     "formaldehyde-density": ("formaldehyde", "甲醛", "mg/m³"),
     "illumination": ("illumination", "光照", "lx"),
-    "atmospheric-pressure": ("pressure", "气压", "hPa"),
+    "atmospheric-pressure": ("pressure", "气压", "Pa"),
+    "electric-power": ("power", "功率", "W"),
+    "electric-current": ("current", "电流", "A"),
+    "pm1": ("pm1", "PM1", "µg/m³"),
+    "air-quality": ("air_quality", "空气质量", ""),
+    "air-quality-index": ("aqi", "AQI", ""),
+    "uv-index": ("uv", "UV", ""),
+    "rain-status": ("rain", "降雨", ""),
+    "rainfall-value": ("rainfall", "雨量", "mm"),
+    "hcho-density": ("formaldehyde", "甲醛", "mg/m³"),
+    "voc-density": ("tvoc", "TVOC", "mg/m³"),
+    "not-closed-duration": ("open_duration", "未关时长", "分钟"),
     "contact-state": ("contact", "开合", ""),
     "motion-state": ("motion", "移动", ""),
     "occupancy-status": ("occupancy", "有人", ""),
@@ -1508,6 +1519,7 @@ SENSOR_PROP_KEYS = {
     "smoke-concentration": ("smoke_conc", "烟雾浓度", ""),
     "gas-concentration": ("gas_conc", "燃气浓度", ""),
     "gas-leak": ("gas", "燃气", ""),
+    "alarm": ("alarm", "报警", ""),
     "fault": ("fault", "故障", ""),
     "status": ("status", "状态", ""),
     "ph": ("ph", "pH", ""),
@@ -1524,6 +1536,8 @@ SENSOR_PROP_ORDER = {
     "water": 13, "smoke": 14, "gas": 15, "fault": 16, "status": 17,
     "smoke_conc": 18, "gas_conc": 19, "voltage": 20, "ph": 21, "tds": 22,
     "ec": 23, "salinity": 24, "orp": 25, "chlorine": 26,
+    "pm1": 3, "air_quality": 3, "aqi": 3, "uv": 3, "rain": 3,
+    "rainfall": 3, "power": 20, "current": 20, "open_duration": 3,
 }
 SENSOR_BOOL_TEXT = {
     "contact": ("关闭", "打开"),
@@ -1531,20 +1545,66 @@ SENSOR_BOOL_TEXT = {
     "occupancy": ("有人", "无人"),
     "water": ("漏水", "正常"),
     "fault": ("故障", "正常"),
+    "alarm": ("报警", "正常"),
     "gas": ("泄漏", "正常"),
     "smoke": ("报警", "正常"),
 }
+SENSOR_STATE_TEXT = {
+    "contact": {"open": "打开", "opened": "打开", "closed": "关闭", "close": "关闭"},
+    "motion": {"motion": "有人", "no_motion": "无人", "detected": "有人",
+               "none": "无人", "someone": "有人", "no_one": "无人",
+               "present": "有人", "absent": "无人"},
+    "occupancy": {"occupied": "有人", "unoccupied": "无人", "present": "有人",
+                  "absent": "无人", "someone": "有人", "no_one": "无人"},
+}
+_SENSOR_UNIT_MAP = {
+    "percentage": "%", "celsius": "°C", "lux": "lx", "pascal": "Pa",
+    "mg/m3": "mg/m³", "µg/m3": "µg/m³", "ug/m3": "µg/m³",
+    "ppm": "ppm", "mV": "mV", "watt": "W", "kelvin": "K",
+    "minutes": "分钟", "seconds": "秒", "hours": "小时", "days": "天",
+}
+_SENSOR_DESC_MAP = {
+    "weak": "弱", "strong": "强", "open": "打开", "opened": "打开",
+    "closed": "关闭", "close": "关闭", "motion": "有人",
+    "no_motion": "无人", "detected": "有人", "none": "无人",
+    "someone": "有人", "no_one": "无人", "present": "有人",
+    "absent": "无人", "occupied": "有人", "unoccupied": "无人",
+    "normal": "正常", "alarm": "报警", "leak": "漏水", "leaking": "漏水",
+    "fault": "故障", "idle": "待机", "running": "运行", "auto": "自动",
+    "manual": "手动", "on": "开启", "off": "关闭", "sleep": "睡眠",
+}
 
 
-def _sensor_display(key, value):
+def _sensor_unit(raw, fallback=""):
+    raw = str(raw or "").strip().replace("μ", "µ")
+    return _SENSOR_UNIT_MAP.get(raw, raw or fallback or "")
+
+
+def _sensor_desc(text):
+    text = str(text or "").strip()
+    return _SENSOR_DESC_MAP.get(text.lower(), text)
+
+
+def _sensor_display(key, value, meta=None):
+    meta = meta or {}
+    for item in meta.get("value_list") or []:
+        if str(item.get("value")) == str(value):
+            return _sensor_desc(item.get("description") or value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("true", "1", "on", "yes"):
+            value = True
+        elif text in ("false", "0", "off", "no"):
+            value = False
+        else:
+            state = SENSOR_STATE_TEXT.get(key) or {}
+            if text in state:
+                return state[text]
+            return _sensor_desc(value)
     pair = SENSOR_BOOL_TEXT.get(key)
     if not pair:
         return None
-    if isinstance(value, str):
-        truth = value.strip().lower() in ("1", "true", "on", "open", "yes")
-    else:
-        truth = bool(value)
-    return pair[0] if truth else pair[1]
+    return pair[0] if bool(value) else pair[1]
 
 
 def _load_sensor_models():
@@ -1574,7 +1634,8 @@ def _load_sensor_specs():
                 if isinstance(props, list):
                     clean = [p for p in props if isinstance(p, dict)
                              and isinstance(p.get("siid"), int)
-                             and isinstance(p.get("piid"), int)]
+                             and isinstance(p.get("piid"), int)
+                             and "format" in p]
                     SENSOR_SPECS[str(model)] = clean
     except FileNotFoundError:
         pass
@@ -1643,7 +1704,15 @@ def _sensor_props(model):
             if not isinstance(siid, int) or not isinstance(piid, int):
                 continue
             seen.add(meta[0])
-            props.append({"key": meta[0], "label": meta[1], "unit": meta[2],
+            value_list = []
+            for item in prop.get("value-list") or prop.get("value_list") or []:
+                if isinstance(item, dict):
+                    value_list.append({"value": item.get("value"),
+                                       "description": str(item.get("description") or "")})
+            props.append({"key": meta[0], "label": meta[1],
+                          "unit": _sensor_unit(prop.get("unit"), meta[2]),
+                          "format": str(prop.get("format") or ""),
+                          "value_list": value_list,
                           "siid": siid, "piid": piid})
     props.sort(key=lambda p: SENSOR_PROP_ORDER.get(p["key"], 99))
     with SENSOR_SPEC_LOCK:
@@ -5837,8 +5906,10 @@ class Handler(BaseHTTPRequestHandler):
                     if p["key"] not in values or values[p["key"]] is None:
                         continue
                     value = values[p["key"]]
-                    unit = p["unit"]
-                    display = _sensor_display(p["key"], value)
+                    unit = p.get("unit") or ""
+                    display = _sensor_display(p["key"], value, p)
+                    if p.get("value_list"):
+                        unit = ""
                     if d["model"] == "isa.magnet.dw2hl" and p["key"] == "illumination":
                         unit = ""
                         display = {1: "弱", 2: "强"}.get(value)

@@ -1,8 +1,8 @@
 {
-  "version": "0.6.4",
+  "version": "0.6.5",
   "released": "2026-10-28",
-  "notes": "修复 isa.magnet.dw2hl 门磁开合反了（1=关闭/0=打开），光照 1/2 显示弱/强。热更新包不覆盖只读 cacert.pem。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.4-update.tar.gz",
-  "sha256": "f20e2daed0304a1fa4780905e5757a266161e270feabf4a20af6759f87b954b2",
-  "size": 2218010
+  "notes": "传感器显示审计修复；热更新包不覆盖只读 cacert.pem。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.5-update.tar.gz",
+  "sha256": "b28bb1bc609b745e95205e7d54766a49abf55ab5918f25a358296fa74b967080",
+  "size": 2219080
 }

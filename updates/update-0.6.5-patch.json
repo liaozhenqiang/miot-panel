@@ -1,0 +1,8 @@
+{
+  "version": "0.6.5",
+  "released": "2026-10-28",
+  "notes": "传感器显示审计修复；热更新包不覆盖只读 cacert.pem。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.5-update.tar.gz",
+  "sha256": "b28bb1bc609b745e95205e7d54766a49abf55ab5918f25a358296fa74b967080",
+  "size": 2219080
+}
