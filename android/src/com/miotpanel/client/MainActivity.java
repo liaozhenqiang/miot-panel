@@ -61,6 +61,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            try {
+                ((android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE))
+                        .newKeyguardLock("diag").disableKeyguard();
+            } catch (Throwable ignored) {
+            }
+        }
         prefs = getSharedPreferences("miot_panel", MODE_PRIVATE);
         showConnectScreen(false);
         String saved = prefs.getString("server", "");
@@ -531,15 +539,22 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.BLACK);
+        if (Build.VERSION.SDK_INT >= 19
+                && (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setSupportZoom(false);
+        settings.setLoadWithOverviewMode(false);
+        settings.setSupportZoom(true);
         settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         if (Build.VERSION.SDK_INT >= 16) {
             settings.setAllowFileAccess(false);
         }

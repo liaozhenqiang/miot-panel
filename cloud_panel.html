@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><script src="/compat.js"></script>
 <meta name="google" content="notranslate">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b0e14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -560,10 +560,9 @@ body.theme-pixel .ctop,body.theme-pixel .metrics,body.theme-pixel .wmain,body.th
 body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-pixel .ebar{margin-left:0;}
 
 @media (max-width:1500px){
-  html,body{height:auto;overflow-x:hidden;overflow-y:auto;}
-  .app{height:auto;min-height:100vh;padding-bottom:24px;}
-  .viewport{overflow:visible;touch-action:pan-y;}
-  .track{height:auto;align-items:flex-start;}
+  .app{height:100vh;padding-bottom:12px;}
+  .viewport{overflow-x:hidden;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+  .track{height:auto;align-items:flex-start;padding-bottom:18px;}
   .page{height:auto;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,minmax(240px,1fr));}
   .editGrid{grid-template-columns:repeat(4,1fr);}
   .card{min-height:240px;}
@@ -654,8 +653,7 @@ body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-
 }
 /* Phone / narrow: stacked, compact, no horizontal page carousel */
 @media (max-width:860px){
-  html,body{height:auto;overflow-x:hidden;overflow-y:auto;}
-  .app{height:auto;min-height:100vh;max-width:none;padding:12px 12px 24px;}
+  .app{height:100vh;max-width:none;padding:12px 12px 0;}
   .head{display:block;margin-bottom:8px;}
   .clock{font-size:46px;}
   .date{font-size:14px;margin-top:4px;}
@@ -666,8 +664,8 @@ body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-
   .toolbtn{height:38px;padding:0 12px;font-size:14px;border-radius:11px;}
   .nav{display:none!important;}
   .dots{display:none!important;}
-  .viewport{overflow:visible!important;touch-action:pan-y;}
-  .track{display:block!important;height:auto!important;transform:none!important;transition:none!important;}
+  .viewport{overflow-x:hidden;overflow-y:auto!important;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+  .track{display:block!important;height:auto!important;transform:none!important;transition:none!important;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));}
   .page{display:block!important;width:100%!important;min-width:0!important;height:auto!important;margin:0 0 10px;}
   .card{width:100%;min-width:0;height:auto;min-height:0!important;padding:14px 15px;margin-bottom:10px;border-radius:16px;}
   .card.span2{grid-column:auto!important;}
@@ -1160,7 +1158,7 @@ function saveLayout(){
 }
 function render(){
   if(editing){renderEdit();return;}
-  var scrollY=window.scrollY||document.documentElement.scrollTop||0;
+  var scrollY=viewport.scrollTop||0;
   pages=buildPages(allCards());
   if(page>=pages.length)page=pages.length-1;
   if(page<0)page=0;
@@ -1172,9 +1170,7 @@ function render(){
   updateHeader();
   requestAnimationFrame(function(){
     move(false);
-    if(isMobileLayout()&&(window.scrollY||document.documentElement.scrollTop||0)!==scrollY){
-      window.scrollTo(0,scrollY);
-    }
+    if(viewport.scrollTop!==scrollY)viewport.scrollTop=scrollY;
   });
 }
 function go(delta){

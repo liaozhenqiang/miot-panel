@@ -1,0 +1,8 @@
+{
+  "version": "0.7.5",
+  "released": "2026-10-28",
+  "notes": "修复安卓客户端面板无法下滑/显示不完整：窄屏改为容器内滚动，摄像头页同步。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.5-update.tar.gz",
+  "sha256": "de77610d10b4baf5f9255a4fdfde6b6333fb55b84880de23b3457162c74d9811",
+  "size": 2354472
+}
