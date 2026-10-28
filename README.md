@@ -108,6 +108,11 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 - `miot-panel-v0.7.6-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
 - Windows ARM64 上即使跑的是 x86/x64 包，面板也会按 CPU 真实架构下载 ARM64 原生 go2rtc/ffmpeg 摄像头组件。
 
+> **ARM64 验证状态（如实说明）**：本机没有 ARM64 Windows 设备，ARM64 便携包与安装器里的 ARM64 运行时只做了**静态核验** —— 包内 74 个 PE / DLL / `.pyd` 全部为 ARM64（含剔除 python.org 官方 ARM64 嵌入式包里混进来的 x64 `vcruntime140_1.dll`），所有动态库依赖在包内或系统 DLL 中闭环，`go2rtc_win_arm64`、`ffmpeg_win_arm64` 同为 ARM64 且只依赖系统 DLL。**尚未在 ARM64 真机上运行过**。因此：
+> - Windows 11 on ARM 出问题时有兜底：安装器支持 `set MIOT_ARCH=x64` 强制安装 x64 运行时（走系统 x64 仿真），或直接用 x64 便携包；
+> - Windows 10 on ARM 只能用 ARM64 包；`start-panel.cmd` 会先自检内置 Python，失败时明确提示“架构不匹配 / 错误码 193/216”并指向 `start-debug.cmd`，不会静默闪退；
+> - 便携包内附 `selftest.cmd`，在 ARM64 机器上双击即可输出系统架构、Python 架构、`ssl/sqlite3/ctypes`、`pycryptodome/requests/segno/micloud`、`GetNativeSystemInfo` 判定和在 8123 端口真起一次面板的结果。
+
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
 
 1. 安装 Python 3.9+（安装时勾选“Add Python to PATH”）。
