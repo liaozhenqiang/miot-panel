@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.3"
+APP_VERSION = "0.7.4"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -4160,7 +4160,18 @@ def _stack_start_services(sport, gport, user, pwd):
         raise RuntimeError("Windows 音乐组件未安装，请重新安装 MIOT Panel")
     sl_running = bool((_port_json("http://127.0.0.1:%d/api/v1/version" % sport) or {}).get("version"))
     if sl_running and not _pid_alive(state.get("songloft_pid")):
-        raise RuntimeError("端口 %d 已被其他 Songloft 占用，请先关闭它" % sport)
+        adopted = False
+        if user and pwd:
+            try:
+                _stack_login("http://127.0.0.1:%d" % sport, user, pwd)
+                pids = _port_listening_pids(sport)
+                if pids:
+                    state["songloft_pid"] = int(sorted(pids)[0])
+                    adopted = True
+            except Exception:
+                adopted = False
+        if not adopted:
+            raise RuntimeError("端口 %d 已被其他 Songloft 占用，请先关闭它" % sport)
     if not sl_running:
         state["songloft_pid"] = _stack_popen(
             [sl_exe, "-username", user, "-password", pwd,
@@ -4173,7 +4184,11 @@ def _stack_start_services(sport, gport, user, pwd):
     gmd_creds = _stack_creds()
     gmd_running = bool(_wait_http("http://127.0.0.1:%d/music/" % gport, 2))
     if gmd_running and not _pid_alive(state.get("gmd_pid")):
-        raise RuntimeError("端口 %d 已被其他 go-music-dl 占用，请先关闭它" % gport)
+        pids = _port_listening_pids(gport)
+        if pids:
+            state["gmd_pid"] = int(sorted(pids)[0])
+        else:
+            raise RuntimeError("端口 %d 已被其他 go-music-dl 占用，请先关闭它" % gport)
     if not gmd_running:
         state["gmd_pid"] = _stack_popen(
             [gmd_exe, "web", "--no-browser", "--port", str(gport)],
