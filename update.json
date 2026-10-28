@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0",
+  "version": "0.6.1",
   "released": "2026-10-28",
-  "notes": "新增局域网设备 PIN 验证（记住 180 天、kiosk 免验证、所有控制和摄像头 API 受保护）；go2rtc 仅监听 localhost，摄像头页改走同 PIN 的 /go2rtc 反向代理；后台可锁定设备。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.0-linux-universal.tar.gz",
-  "sha256": "108ea0c8f01ec46cabc00bb7c31de300d28ef756c2660098f6ba8fa7c2be490c",
-  "size": 2347008
+  "notes": "修复 Windows 摄像头 P2P 被防火墙拦截 UDP；摄像头页组件面板新增“修复防火墙”，为 go2rtc/ffmpeg 添加入站/出站规则（一次 UAC）。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.1-linux-universal.tar.gz",
+  "sha256": "55bfc9ec7087270df54078fd6083fac58f51c72183046e739597fccc1758b3d0",
+  "size": 2347803
 }

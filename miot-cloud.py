@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -462,17 +462,38 @@ def _lan_candidates():
     return found
 
 
-def _add_firewall_rules(ports):
+def _camera_firewall_programs():
+    if os.name != "nt":
+        return []
+    paths = _camera_paths()
+    return [paths["go2rtc"], paths["ffmpeg"]] if (
+        os.path.isfile(paths["go2rtc"]) or os.path.isfile(paths["ffmpeg"])) else []
+
+
+def _add_firewall_rules(ports, programs=()):
     if os.name != "nt":
         return False, "仅 Windows 支持一键放行防火墙"
     ports = [str(p) for p in ports if str(p).isdigit()]
+    program_list = [str(p) for p in programs if p and os.path.isfile(str(p))]
     script = (
         "$ErrorActionPreference='SilentlyContinue'\n"
         "foreach($p in @(%s)){\n"
         "  Remove-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" | Out-Null\n"
         "  New-NetFirewallRule -DisplayName \"MIOT Panel TCP $p\" -Direction Inbound "
         "-Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null\n"
-        "}\n" % ",".join(ports)
+        "}\n"
+        "$progs=@(%s)\n"
+        "foreach($prog in $progs){\n"
+        "  if(Test-Path -LiteralPath $prog){\n"
+        "    $name=Split-Path -Leaf $prog\n"
+        "    Remove-NetFirewallRule -DisplayName \"MIOT Camera $name\" | Out-Null\n"
+        "    New-NetFirewallRule -DisplayName \"MIOT Camera $name\" -Direction Inbound "
+        "-Program $prog -Action Allow -Profile Any | Out-Null\n"
+        "    New-NetFirewallRule -DisplayName \"MIOT Camera $name Out\" -Direction Outbound "
+        "-Program $prog -Action Allow -Profile Any | Out-Null\n"
+        "  }\n"
+        "}\n" % (",".join(ports),
+                  ",".join("'%s'" % str(p).replace("'", "''") for p in program_list))
     )
     try:
         path = os.path.join(tempfile.gettempdir(), "miot-panel-firewall.ps1")
@@ -4224,7 +4245,7 @@ def _stack_install(progress=None):
                 paths["songloft_data"], "jsplugins_data", "miot", "data", "accounts"),
         })
         _clear_songloft_token()
-        _add_firewall_rules([PORT, sport, gport])
+        _add_firewall_rules([PORT, sport, gport], _camera_firewall_programs())
         progress("安装完成", 100)
         return {"ok": True, "songloft_url": sl_base, "go_music_dl_url": gmd_base,
                 "songloft_port": sport, "gmd_port": gport,
@@ -6870,8 +6891,10 @@ class Handler(BaseHTTPRequestHandler):
         for value in (PORT, _songloft_port(), _gmd_port()):
             if value not in ports:
                 ports.append(value)
-        ok, message = _add_firewall_rules(ports)
-        self._send(200, {"ok": ok, "message": message, "ports": ports})
+        programs = _camera_firewall_programs()
+        ok, message = _add_firewall_rules(ports, programs)
+        self._send(200, {"ok": ok, "message": message, "ports": ports,
+                         "camera_programs": len(programs)})
 
     def api_admin_music_state(self):
         if not self._admin_require():

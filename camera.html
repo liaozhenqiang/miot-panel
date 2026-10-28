@@ -215,6 +215,7 @@ body.light .compBar .compProgressWrap{background:#f1e3d5;}
   <div class="actions">
     <a class="btn" href="/">返回面板</a>
     <button class="btn" id="themeBtn" onclick="toggleTheme()" title="切换面板风格主题">主题</button>
+    <button class="btn" onclick="showComponents()">组件</button>
     <button class="btn" id="refreshBtn" onclick="refreshCams()">刷新</button>
   </div>
 </div>
@@ -228,6 +229,7 @@ body.light .compBar .compProgressWrap{background:#f1e3d5;}
     <button class="btn primary" id="compInstall" onclick="installComponents()">安装缺失组件</button>
     <button class="btn" onclick="checkComponents(true)">重新检测</button>
     <button class="btn" onclick="toggleGuide()">手动安装步骤</button>
+    <button class="btn" id="compFirewall" onclick="fixFirewall()" style="display:none">修复防火墙</button>
   </div>
   <div class="compGuide hidden" id="compGuide"></div>
 </div>
@@ -278,7 +280,8 @@ var compInstall = document.getElementById('compInstall');
 var compGuide = document.getElementById('compGuide');
 var compProgressWrap = document.getElementById('compProgressWrap');
 var compProgress = document.getElementById('compProgress');
-var compState = null, compTimer = null;
+var compFirewall = document.getElementById('compFirewall');
+var compState = null, compTimer = null, compOpen = false;
 function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function missingText(st){
   var names = {go2rtc:'go2rtc',ffmpeg:'ffmpeg'};
@@ -292,7 +295,7 @@ function renderComponents(){
   var st = compState;
   var j = st.job || {};
   var needs = (st.missing && st.missing.length) || st.update_available;
-  if(st.ready && !needs && !j.running && j.state!=='failed'){
+  if(st.ready && !needs && !j.running && j.state!=='failed' && !compOpen){
     compBar.classList.add('hidden');
     return;
   }
@@ -311,8 +314,13 @@ function renderComponents(){
   } else {
     compProgressWrap.classList.add('hidden');
   }
+  if(st.ready && !needs && !j.running){
+    compTitle.textContent = '摄像头组件运行中';
+    detail = 'go2rtc / ffmpeg 正常';
+  }
   compText.textContent = detail;
-  compInstall.style.display = (st.can_install ? '' : 'none');
+  compInstall.style.display = (st.can_install && (needs || !st.ready) ? '' : 'none');
+  compFirewall.style.display = (st.platform === 'windows' ? '' : 'none');
   compInstall.disabled = !!j.running;
   compInstall.textContent = st.admin_authed
     ? ((st.update_available && !(st.missing && st.missing.length)) ? '更新 go2rtc' : ((st.missing && st.missing.length) ? '安装缺失组件' : '启动摄像头组件'))
@@ -339,6 +347,20 @@ function renderGuide(){
     html += '<div class="compStep">Docker：请在宿主机安装 go2rtc/ffmpeg，并把容器环境变量 <code>MIOT_GO2RTC</code> 指向宿主机地址。</div>';
   }
   compGuide.innerHTML = html;
+}
+function showComponents(){
+  compOpen = true;
+  compBar.classList.remove('hidden');
+  if(compState) renderComponents(); else checkComponents(false);
+}
+function fixFirewall(){
+  if(!compState) return;
+  fetch('/api/admin/firewall', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json();})
+    .then(function(r){
+      compText.textContent = r.ok ? '已请求管理员权限，请在 Windows UAC 弹窗中允许；完成后点“刷新”。' : (r.message||r.error||'请求失败');
+    })
+    .catch(function(e){ compText.textContent = '请求失败：'+e; });
 }
 function toggleGuide(){
   compGuide.classList.toggle('hidden');
