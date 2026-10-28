@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.6"
+APP_VERSION = "0.6.7"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -1636,7 +1636,8 @@ def _load_sensor_specs():
                              and isinstance(p.get("siid"), int)
                              and isinstance(p.get("piid"), int)
                              and "format" in p]
-                    SENSOR_SPECS[str(model)] = clean
+                    if clean:
+                        SENSOR_SPECS[str(model)] = clean
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -1715,6 +1716,8 @@ def _sensor_props(model):
                           "value_list": value_list,
                           "siid": siid, "piid": piid})
     props.sort(key=lambda p: SENSOR_PROP_ORDER.get(p["key"], 99))
+    if not props:
+        return []
     with SENSOR_SPEC_LOCK:
         SENSOR_SPECS[model] = props
     _save_sensor_specs()

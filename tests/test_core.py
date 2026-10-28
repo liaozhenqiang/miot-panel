@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import tarfile
 import tempfile
@@ -172,3 +173,82 @@ def test_sensor_semantics_and_units():
     assert miot._sensor_unit("minutes", "") == "分钟"
     assert miot._sensor_unit("μg/m3", "").replace("μ", "µ") == "µg/m³"
     assert miot._sensor_unit("pascal", "") == "Pa"
+
+
+def test_sensor_spec_cache_skips_stale_and_empty_entries(tmp_path, monkeypatch):
+    cache = tmp_path / "miot_sensor_specs.json"
+    stale = {"key": "temperature", "label": "温度", "unit": "°C",
+             "siid": 2, "piid": 1}
+    fresh = {"key": "humidity", "label": "湿度", "unit": "%",
+             "format": "uint8", "siid": 2, "piid": 2}
+    cache.write_text(json.dumps({
+        "stale.sensor": [stale],
+        "empty.sensor": [],
+        "fresh.sensor": [fresh],
+    }), encoding="utf-8")
+    monkeypatch.setattr(miot, "SENSOR_SPEC_FILE", str(cache))
+    monkeypatch.setattr(miot, "SENSOR_SPECS", {})
+    miot._load_sensor_specs()
+    assert "stale.sensor" not in miot.SENSOR_SPECS
+    assert "empty.sensor" not in miot.SENSOR_SPECS
+    assert miot.SENSOR_SPECS["fresh.sensor"][0]["key"] == "humidity"
+
+
+def test_sensor_spec_empty_fetch_is_not_cached(tmp_path, monkeypatch):
+    cache = tmp_path / "miot_sensor_specs.json"
+    monkeypatch.setattr(miot, "SENSOR_SPEC_FILE", str(cache))
+    monkeypatch.setattr(miot, "SENSOR_SPECS", {})
+    monkeypatch.setattr(miot, "SENSOR_SPEC_TRY", {})
+    monkeypatch.setattr(miot, "SENSOR_MODEL_TYPES", {"test.sensor": "urn:test"})
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"services": []}'
+
+    monkeypatch.setattr(miot.urllib.request, "urlopen", lambda *a, **k: Resp())
+    assert miot._sensor_props("test.sensor") == []
+    assert "test.sensor" not in miot.SENSOR_SPECS
+    assert not cache.exists()
+
+
+def test_stale_sensor_cache_refetches_and_saves_props(tmp_path, monkeypatch):
+    cache = tmp_path / "miot_sensor_specs.json"
+    stale = {"key": "temperature", "label": "温度", "unit": "°C",
+             "siid": 2, "piid": 1}
+    cache.write_text(json.dumps({"test.sensor": [stale]}), encoding="utf-8")
+    monkeypatch.setattr(miot, "SENSOR_SPEC_FILE", str(cache))
+    monkeypatch.setattr(miot, "SENSOR_SPECS", {})
+    monkeypatch.setattr(miot, "SENSOR_SPEC_TRY", {})
+    monkeypatch.setattr(miot, "SENSOR_MODEL_TYPES", {"test.sensor": "urn:test"})
+    miot._load_sensor_specs()
+    assert "test.sensor" not in miot.SENSOR_SPECS
+
+    spec = {"services": [{"iid": 2, "properties": [{
+        "iid": 1,
+        "type": "urn:miot-spec-v2:property:temperature:00000020:test:1",
+        "format": "float",
+        "access": ["read"],
+        "unit": "celsius",
+    }]}]}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps(spec).encode("utf-8")
+
+    monkeypatch.setattr(miot.urllib.request, "urlopen", lambda *a, **k: Resp())
+    props = miot._sensor_props("test.sensor")
+    assert props and props[0]["key"] == "temp"
+    assert props[0]["unit"] == "°C"
+    assert json.loads(cache.read_text(encoding="utf-8"))["test.sensor"]
