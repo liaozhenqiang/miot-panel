@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.6.3"
+APP_VERSION = "0.6.4"
 APP_NAME = "miot-panel"
 CONFIG_FILE = os.path.join(ROOT, "cloud_config.json")
 try:
@@ -1526,7 +1526,7 @@ SENSOR_PROP_ORDER = {
     "ec": 23, "salinity": 24, "orp": 25, "chlorine": 26,
 }
 SENSOR_BOOL_TEXT = {
-    "contact": ("打开", "关闭"),
+    "contact": ("关闭", "打开"),
     "motion": ("有人", "无人"),
     "occupancy": ("有人", "无人"),
     "water": ("漏水", "正常"),
@@ -5832,13 +5832,19 @@ class Handler(BaseHTTPRequestHandler):
                     "metrics": st.get("metrics") or {}}
             if d["role"] == "sensor":
                 values = st.get("values") or {}
-                item["values"] = [
-                    {"key": p["key"], "label": p["label"], "unit": p["unit"],
-                     "value": values[p["key"]],
-                     "display": _sensor_display(p["key"], values[p["key"]])}
-                    for p in _sensor_props(d["model"])
-                    if p["key"] in values and values[p["key"]] is not None
-                ]
+                rows = []
+                for p in _sensor_props(d["model"]):
+                    if p["key"] not in values or values[p["key"]] is None:
+                        continue
+                    value = values[p["key"]]
+                    unit = p["unit"]
+                    display = _sensor_display(p["key"], value)
+                    if d["model"] == "isa.magnet.dw2hl" and p["key"] == "illumination":
+                        unit = ""
+                        display = {1: "弱", 2: "强"}.get(value)
+                    rows.append({"key": p["key"], "label": p["label"],
+                                 "unit": unit, "value": value, "display": display})
+                item["values"] = rows
                 for key in ("temp", "humidity", "battery"):
                     item[key] = values.get(key) if d["online"] else None
                 item["readonly"] = True

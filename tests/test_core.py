@@ -52,7 +52,8 @@ def test_coerce_range():
 
 
 def test_sensor_display():
-    assert miot._sensor_display("contact", 1) == "打开"
+    assert miot._sensor_display("contact", 1) == "关闭"
+    assert miot._sensor_display("contact", 0) == "打开"
     assert miot._sensor_display("water", 0) == "正常"
     assert miot._sensor_display("temp", 21.5) is None
 

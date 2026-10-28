@@ -1,8 +1,8 @@
 {
-  "version": "0.6.3",
+  "version": "0.6.4",
   "released": "2026-10-28",
-  "notes": "修复首次设置手机二维码内联 SVG 未设置尺寸；热更新包不覆盖只读 cacert.pem，兼容 Windows 安装目录权限。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.3-update.tar.gz",
-  "sha256": "278567a3366bbe9c45aa35fcb512a376af96071050931161c3bf7ff7415c6432",
-  "size": 2217805
+  "notes": "修复 isa.magnet.dw2hl 门磁开合反了（1=关闭/0=打开），光照 1/2 显示弱/强。热更新包不覆盖只读 cacert.pem。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.6.4-update.tar.gz",
+  "sha256": "f20e2daed0304a1fa4780905e5757a266161e270feabf4a20af6759f87b954b2",
+  "size": 2218010
 }
