@@ -1,8 +1,8 @@
 {
-  "version": "0.7.0",
+  "version": "0.7.1",
   "released": "2026-10-28",
-  "notes": "全平台摄像头组件自动安装、局域网发现与 Android 客户端。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.0-update.tar.gz",
-  "sha256": "b8920739dd0ede9872f0f6a4758bc3b5c39d5041f824540ef36a562f1479178c",
-  "size": 2224390
+  "notes": "修复 Windows 热更新端口未释放导致的回滚；v0.7.0 功能不变。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.1-update.tar.gz",
+  "sha256": "21d50d62eb5dc285081aff61c81bdf00075bd7b5fa5afd03bded151959bacff6",
+  "size": 2224305
 }

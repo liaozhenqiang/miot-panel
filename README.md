@@ -66,7 +66,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.0-docker-installer.run
+sudo bash miot-panel-v0.7.1-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -83,14 +83,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.0 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.1 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.0-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.0
+docker load -i miot-panel-v0.7.1-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.1
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -101,9 +101,9 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 
 **推荐**：从 Release 下载 Windows x64 一键安装包，内置 Python 和依赖，不需要安装 Python：
 
-- `miot-panel-v0.7.0-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
-- `miot-panel-v0.7.0-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
-- `miot-panel-v0.7.0-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
+- `miot-panel-v0.7.1-windows-x64-installer.exe`：双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器；
+- `miot-panel-v0.7.1-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
+- `miot-panel-v0.7.1-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
 - Windows ARM64 可直接运行 x64 安装包/便携包（Windows 11 的 x64 仿真），摄像头组件会自动选择 ARM64 版本（原生 ARM64 Python 时）。
 
 下面的源码安装脚本适合开发者，仍需要自己安装 Python。
@@ -138,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.7.0-linux-installer.run
+sudo bash miot-panel-v0.7.1-linux-installer.run
 ```
 
 手动源码安装：
@@ -507,6 +507,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.1（2026-10-28）**：修复 Windows 热更新偶发回滚：旧进程被杀后端口没有立即释放，新面板启动失败导致健康检查超时回滚（在 121 上复现）；更新器现在等待端口释放再启动新版本，admin/相机页等自重启路径同样生效。v0.7.0 的功能不变。
 - **v0.7.0（2026-10-28）**：摄像头组件与 Android 客户端更新。① 修复 go2rtc 自指配置：后台把 go2rtc 地址误设成本机局域网 IP 时，旧逻辑一直当作“远程未响应”，导致玩客云明明有 go2rtc 却显示缺少组件；现在自动识别本机地址、清理自指配置，并把 `/opt/go2rtc/go2rtc*` 纳入本地检测。② 组件自动安装扩展到 Windows x64/x86/ARM64、Linux x64/x86/arm/arm64、macOS 和 Docker（安装到数据卷）；新增 Windows x86/ARM64 隐藏控制台 go2rtc、Windows x86/ARM64 ffmpeg。③ 面板新增 UDP `37020` 局域网发现；后台“查看日志”移到“服务日志”卡片。④ 新增官方 Android 客户端 1.0.0（minSdk 14 / target 35）：自动发现、手动 IP、原生 PIN、WebView 兼容层；已在 Android 4.0.4 模拟器连接 v0.7.0 面板并成功加载设备接口。
 - **v0.6.7（2026-10-28）**：真正修复传感器规格缓存问题。v0.6.5/v0.6.6 升级后读到缺少 `format` 的旧 `miot_sensor_specs.json` 条目时会生成空列表并长期缓存，导致门磁、温湿度等传感器卡片全部不显示数值；现在旧缓存的不完整条目会被丢弃并自动重新拉取，规格接口返回空结果时也不会写回缓存，网络短暂异常后会自动恢复。新增 3 个缓存回归测试。
 - **v0.6.6（2026-10-28）**：传感器缓存兼容性修正（构建包内代码未实际包含该修复，请使用 v0.6.7）；热更新包不覆盖只读 `cacert.pem`。

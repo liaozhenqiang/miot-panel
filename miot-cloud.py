@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -3573,6 +3573,31 @@ def _spawn_app(app_dir, port):
         return False
 
 
+def _windows_pid_alive(pid):
+    try:
+        out = subprocess.run(["tasklist", "/FI", "PID eq %d" % int(pid),
+                              "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=10)
+        return ("%d" % int(pid)) in (out.stdout or "")
+    except Exception:
+        return False
+
+
+def _wait_pid_gone(pid, timeout=15):
+    deadline = time.time() + max(1, timeout)
+    while time.time() < deadline:
+        if not _windows_pid_alive(pid):
+            return True
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, check=False)
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return not _windows_pid_alive(pid)
+
+
 def _signal_restart(parent_pid, app_dir, port):
     if os.name == "nt":
         try:
@@ -3581,7 +3606,8 @@ def _signal_restart(parent_pid, app_dir, port):
                            timeout=10, check=False)
         except Exception:
             pass
-        time.sleep(1)
+        _wait_pid_gone(parent_pid, 15)
+        time.sleep(0.5)
         _spawn_app(app_dir, port)
     else:
         try:
@@ -7767,7 +7793,8 @@ def main():
                            timeout=10, check=False)
         except Exception:
             pass
-        time.sleep(1.2)
+        _wait_pid_gone(parent_pid, 15)
+        time.sleep(0.5)
         _spawn_app(app_dir, port)
         return
     if "--update-worker" in sys.argv:

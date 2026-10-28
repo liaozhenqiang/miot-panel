@@ -121,6 +121,12 @@ def test_go2rtc_self_url_is_not_external(monkeypatch):
     assert miot._go2rtc_base() == "http://127.0.0.1:1984"
 
 
+def test_windows_pid_alive():
+    import os as _os
+    assert not miot._windows_pid_alive(999999999)
+    assert miot._windows_pid_alive(_os.getpid())
+
+
 def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
     class Resp:
         status_code = 200

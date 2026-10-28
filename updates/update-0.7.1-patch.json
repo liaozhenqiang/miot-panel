@@ -1,0 +1,8 @@
+{
+  "version": "0.7.1",
+  "released": "2026-10-28",
+  "notes": "修复 Windows 热更新端口未释放导致的回滚；v0.7.0 功能不变。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.1-update.tar.gz",
+  "sha256": "21d50d62eb5dc285081aff61c81bdf00075bd7b5fa5afd03bded151959bacff6",
+  "size": 2224305
+}
