@@ -3576,25 +3576,18 @@ def _update_status_read():
     return {"state": "idle"}
 
 
-def _fetch_update_manifest(force=False):
-    now = time.time()
-    with UPDATE_CACHE_LOCK:
-        if not force and UPDATE_CACHE["data"] and now - UPDATE_CACHE["ts"] < 120:
-            return dict(UPDATE_CACHE["data"])
-    source = _update_source()
-    if not source:
-        raise RuntimeError("未配置更新源")
+def _manifest_from_url(url):
     req = urllib.request.Request(
-        source, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+        url, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
     with urllib.request.urlopen(req, timeout=12) as resp:
         raw = resp.read(512 * 1024)
     data = json.loads(raw.decode("utf-8", "replace") or "{}")
     if not isinstance(data, dict):
         raise RuntimeError("更新清单格式不正确")
     version = str(data.get("version") or "").strip().lstrip("vV")
-    url = str(data.get("url") or "").strip()
+    pkg = str(data.get("url") or "").strip()
     digest = str(data.get("sha256") or "").strip().lower()
-    if not version or not url.startswith(("http://", "https://")):
+    if not version or not pkg.startswith(("http://", "https://")):
         raise RuntimeError("更新清单缺少 version/url")
     if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
         raise RuntimeError("更新清单的 sha256 无效")
@@ -3604,15 +3597,41 @@ def _fetch_update_manifest(force=False):
         size = 0
     if size > UPDATE_MAX_BYTES:
         raise RuntimeError("更新包超过大小限制")
-    result = {
-        "version": version, "url": url, "sha256": digest, "size": size,
-        "notes": str(data.get("notes") or "")[:4000],
-        "released": str(data.get("released") or "")[:40],
-    }
+    return {"version": version, "url": pkg, "sha256": digest, "size": size,
+            "notes": str(data.get("notes") or "")[:4000],
+            "released": str(data.get("released") or "")[:40]}
+
+
+def _fetch_update_manifest(force=False):
+    now = time.time()
+    with UPDATE_CACHE_LOCK:
+        if not force and UPDATE_CACHE["data"] and now - UPDATE_CACHE["ts"] < 120:
+            return dict(UPDATE_CACHE["data"])
+    source = _update_source()
+    if not source:
+        raise RuntimeError("未配置更新源")
+    current = _version_tuple(APP_VERSION)
+    errors = []
+    best = None
+    for candidate in _mirror_candidates(source):
+        try:
+            data = _manifest_from_url(candidate)
+        except Exception as exc:
+            errors.append("%s: %s" % (urllib.parse.urlsplit(candidate).netloc or candidate,
+                                      str(exc)[:80]))
+            continue
+        if best is None or _version_tuple(data["version"]) > _version_tuple(best["version"]):
+            best = data
+        # 拿到比当前新的清单就够了；只有"看起来没更新"时才多问几家镜像——
+        # raw.githubusercontent.com 的 CDN 可能缓存旧清单，导致永远提示"已是最新"
+        if _version_tuple(data["version"]) > current:
+            break
+    if best is None:
+        raise RuntimeError("；".join(errors)[:300] or "无法获取更新清单")
     with UPDATE_CACHE_LOCK:
         UPDATE_CACHE["ts"] = now
-        UPDATE_CACHE["data"] = result
-    return dict(result)
+        UPDATE_CACHE["data"] = best
+    return dict(best)
 
 
 def _file_version(path):
@@ -4422,7 +4441,12 @@ def _sha256_file(path):
 
 def _mirror_candidates(url):
     if url.startswith(("https://github.com/", "https://raw.githubusercontent.com/")):
-        return [url, "https://gh-proxy.com/" + url, "https://ghproxy.net/" + url]
+        out = [url, "https://gh-proxy.com/" + url, "https://ghproxy.net/" + url]
+        if url.startswith("https://raw.githubusercontent.com/"):
+            parts = url[len("https://raw.githubusercontent.com/"):].split("/", 3)
+            if len(parts) == 4 and all(parts):
+                out.append("https://cdn.jsdelivr.net/gh/%s/%s@%s/%s" % tuple(parts))
+        return out
     return [url]
 
 
