@@ -1055,7 +1055,8 @@ function energyCard(){
   return '<div class="card widget energy"><div class="ctop"><div><div class="nm">家庭用电</div><div class="md">'+esc(main?main.name:'电源总闸')+'</div></div><span class="badge">计量</span></div>'
     +'<div class="emain"><div class="ewatt">'+watt+'<small>W</small></div><div class="edesc">当前功率</div></div>'
     +'<div class="ebar"><span style="width:'+ratio+'%"></span></div>'
-    +'<div class="emeta"><span>电压 '+voltage+' V</span><span>电流 '+current+' A</span><span>累计 '+energy+' kWh</span></div></div>';
+    +'<div class="emeta"><span>电压 '+voltage+' V</span><span>电流 '+current+' A</span><span>累计 '+energy+' kWh</span></div>'
+    +'</div>';
 }
 function cardHTML(d,wide){
   if(d.type==='speaker'){

@@ -9,7 +9,9 @@ body{font-family:'PingFang SC','Noto Sans CJK SC',sans-serif;background:var(--bg
 .wrap{max-width:1180px;margin:0 auto;}
 header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
 h1{font-size:24px;font-weight:700;}
-header .links{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+header .links{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+header .links .headBtn{display:inline-flex;align-items:center;gap:4px;padding:8px 13px;border-radius:10px;background:#e8edf5;color:#25324a;font-size:13px;font-weight:650;}
+header .links .headBtn:hover{background:rgba(255,106,0,.12);color:var(--accent);}
 a{color:var(--accent);text-decoration:none;font-weight:600;}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 5px 18px rgba(21,35,58,.04);}
 .card h2{font-size:17px;font-weight:700;margin-bottom:14px;}
@@ -120,7 +122,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 @media (max-width:900px){.grid,.grid.two,.twoCols{grid-template-columns:1fr;} body{padding:12px;} .musicFrame{height:70vh;min-height:500px;} .deviceCtl input[type=range]{width:100%;} .qrBox img{width:180px;height:180px;} .lanGrid{grid-template-columns:1fr;} .adminNav{top:0;}}
 </style></head><body>
 <div class="wrap">
-  <header><h1>米家面板 · 后台</h1><div class="links"><a href="/setup">首次设置向导</a><a href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
+  <header><h1>米家面板 · 后台</h1><div class="links"><a class="headBtn" href="/setup">首次设置向导</a><a class="headBtn" href="/">打开面板</a><button id="adminLogout" class="small hidden" onclick="adminLogout()">退出后台</button></div></header>
   <div class="toast" id="toast"></div>
 
   <section class="card hidden" id="setupView">
@@ -146,7 +148,8 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <a href="#secMusic">音乐与音箱</a>
       <a href="#secAppearance">外观</a>
       <a href="#secFamily">家庭与设备</a>
-      <a href="#secSystem">安全与维护</a>
+      <a href="#secCamera">摄像头</a>
+      <a href="#secSecurity">安全与维护</a>
       <a href="#secUpdate">更新</a>
       <a href="#secLogs">日志</a>
     </nav>
@@ -427,7 +430,54 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设备设置</button></div>
     </section>
 
-    <div class="twoCols">
+    <section class="card" id="secCamera">
+      <h2>摄像头</h2>
+      <div class="sub">本机 go2rtc、远程 go2rtc 和异地摄像头 P2P 桥接都在这里管理；播放与组件安装请到摄像头页。</div>
+      <div class="row" id="cameraStackRow"><span class="hint" id="cameraStackState">正在读取摄像头组件状态…</span></div>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" onclick="location.href='/camera'">打开摄像头页</button>
+        <button onclick="openGo2rtcPage('local')">打开本机 go2rtc</button>
+        <button id="go2rtcRemoteBtn" class="hidden" onclick="openGo2rtcPage('remote')">打开远程 go2rtc</button>
+        <button onclick="loadCameraSection()">刷新状态</button>
+      </div>
+      <div class="hint" id="cameraStackHint"></div>
+      <div class="sep"></div>
+        <div class="sep"></div>
+        <label>远程摄像头服务（go2rtc 地址，可选）</label>
+        <div class="row">
+          <input id="go2rtcUrl" placeholder="http://192.168.1.10:1984" style="max-width:360px">
+          <button onclick="saveGo2rtc()">保存并检测</button>
+          <button onclick="suggestGo2rtc()">使用音乐中心主机</button>
+        </div>
+        <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc（仅监听 127.0.0.1，由面板代理播放）。远程 go2rtc 需自行限制来源/认证。</div>
+        <div class="msg" id="go2rtcMsg"></div>
+      <div class="sep"></div>
+      <h3 style="margin:18px 0 6px;font-size:16px">异地摄像头：电脑版 P2P 桥接</h3>
+      <div class="sub">仅 Windows。加载本机「Xiaomi Camera Viewer」官方组件，用<b>官方 P2P 直连</b>查看异地摄像头，不再依赖远程 go2rtc。组件只在播放时启动，不随面板分发；请使用自己的账号和设备。</div>
+      <div class="row" id="bridgeStatus" style="margin-bottom:8px"><span class="hint">正在检测…</span></div>
+      <div class="row">
+        <input id="bridgeDir" placeholder="官方电脑版目录（含 libmiss.dll，例如 C:\Program Files\Xiaomi\Xiaomi Camera Viewer）" style="max-width:620px">
+        <button onclick="importBridge()">检测并导入</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="file" id="bridgeFile" accept=".exe" style="max-width:420px">
+        <button onclick="importBridgePackage()">上传官方安装包并导入</button>
+      </div>
+      <div class="hint">没有安装官方客户端也可以：选择 XiaomiCameraViewerInstaller.exe，面板会在本机解出 9 个组件（约 2.1MB），文件只在本机处理。内置解包器 innoextract 1.9（zlib 许可）。</div>
+      <div class="row" style="margin-top:10px">
+        <select id="bridgeMode" style="max-width:380px">
+          <option value="auto">自动：局域网直连，异地向 P2P 桥接</option>
+          <option value="always">始终使用 P2P 桥接（含本地摄像头）</option>
+          <option value="off">关闭桥接（只用 go2rtc）</option>
+        </select>
+        <button class="primary" onclick="saveBridge()">保存桥接设置</button>
+        <button onclick="loadBridge()">重新检测</button>
+      </div>
+      <div class="msg" id="bridgeMsg"></div>
+      <div class="hint" id="bridgeHint"></div>
+    </section>
+
+    <div class="twoCols" id="secSecurity">
       <section class="card" id="secAccount">
         <h2>账号与安全</h2>
         <div class="sub" id="accountInfo"></div>
@@ -444,17 +494,10 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
         <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
         <div class="hint"><a href="/setup" style="color:var(--accent)">打开首次设置向导</a>，可重新检查 PIN、音乐中心和小米登录状态。</div>
-        <div class="sep"></div>
-        <label>远程摄像头服务（go2rtc 地址，可选）</label>
-        <div class="row">
-          <input id="go2rtcUrl" placeholder="http://192.168.1.10:1984" style="max-width:360px">
-          <button onclick="saveGo2rtc()">保存并检测</button>
-          <button onclick="suggestGo2rtc()">使用音乐中心主机</button>
-        </div>
-        <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc（仅监听 127.0.0.1，由面板代理播放）。远程 go2rtc 需自行限制来源/认证。</div>
-        <div class="msg" id="go2rtcMsg"></div>
       </section>
     </div>
+
+
 
     <section class="card" id="secUpdate">
       <h2>系统更新</h2>
@@ -1377,16 +1420,96 @@ async function uploadPackage(){
     pollUpdate();
   }catch(e){ $('uploadMsg').textContent='上传失败：'+e; }
 }
-async function saveAdminTheme(){
-  var t=$('adminTheme').value||'dark';
-  var r=await api('/api/theme',{theme:t});
-  if(r.data&&r.data.ok){
-    state.theme=t;
-    renderThemeSwatches();
-    setMusicMsg($('themeAdminMsg'),'已应用 '+(THEME_DEFS.find(function(x){return x.id===t;})||{}).label+'，前台会在下次刷新时生效。');
-  }else setMusicMsg($('themeAdminMsg'),(r.data&&r.data.msg)||'主题保存失败',true);
+async function loadCameraSection(){
+  try{
+    var r=await fetch('/api/camera/setup_state',{cache:'no-store'});
+    if(!r.ok)return;
+    var st=await r.json();
+    var pills=[];
+    pills.push('<span class="pill '+(st.go2rtc_ok?'ok':'off')+'">go2rtc</span>');
+    pills.push('<span class="pill '+(st.rtsp_ok?'ok':'off')+'">RTSP 8554</span>');
+    pills.push('<span class="pill '+(st.ffmpeg_ok?'ok':'off')+'">ffmpeg</span>');
+    pills.push('<span class="pill '+(st.ready?'ok':'off')+'">'+(st.ready?'组件就绪':'组件未就绪')+'</span>');
+    if($('cameraStackState'))$('cameraStackState').innerHTML=pills.join(' ');
+    var remote=(state&&state.config&&state.config.go2rtc_url)||'';
+    if($('go2rtcRemoteBtn'))$('go2rtcRemoteBtn').classList.toggle('hidden',!remote);
+    if($('cameraStackHint'))$('cameraStackHint').textContent=st.remote?('当前使用远程 go2rtc：'+(st.go2rtc_page_url||remote)):(st.rtsp_ok?'本机 go2rtc 正常':(st.reason||'本机 go2rtc 未就绪，可到摄像头页安装或重启组件'));
+  }catch(e){}
 }
-function pickTheme(id){$('adminTheme').value=id;saveAdminTheme();}
+function openGo2rtcPage(kind){
+  var remote=(state&&state.config&&state.config.go2rtc_url)||'';
+  if(kind==='remote'&&remote){window.open(remote,'_blank');return;}
+  window.open('/go2rtc/','_blank');
+}
+async function loadBridge(){
+  try{
+    var r=await api('/api/admin/p2p_bridge/status');
+    if(r.status!==200||!r.data)return;
+    var d=r.data||{};
+    var el=$('bridgeStatus');
+    if(el){
+      el.innerHTML='<span class="pill '+(d.platform_ok?'ok':'off')+'">'+(d.platform_ok?'Windows':'非 Windows')+'</span>'
+        +'<span class="pill '+(d.helper_ok?'ok':'off')+'">桥接程序</span>'
+        +'<span class="pill '+(d.dll_ok?'ok':'off')+'">官方组件</span>'
+        +'<span class="pill '+(d.ffmpeg_ok?'ok':'off')+'">ffmpeg</span>';
+    }
+    if($('bridgeMode'))$('bridgeMode').value=d.mode||'auto';
+    if($('bridgeDir')&&!$('bridgeDir').value)$('bridgeDir').value=d.viewer_dir||'';
+    if($('bridgeMsg')){
+      $('bridgeMsg').textContent=d.available?'已就绪：异地摄像头将走官方电脑版 P2P 直连。':('未就绪：'+(d.reasons||[]).join('；'));
+    }
+    if(d.job&&d.job.running){
+      if($('bridgeMsg'))$('bridgeMsg').textContent=d.job.message||'正在导入…';
+      pollBridgeJob();
+    }
+    if($('bridgeHint'))$('bridgeHint').textContent=d.platform_ok?'首次使用可安装官方电脑版后选目录导入，也可以直接上传官方安装包；导入的组件复制到面板数据目录，仅在您本机使用。':'该功能仅支持 Windows；Linux/玩客云请继续使用远程 go2rtc。';
+  }catch(e){}
+}
+var bridgePoll=null;
+function pollBridgeJob(){
+  if(bridgePoll)return;
+  bridgePoll=setInterval(async function(){
+    try{
+      var r=await api('/api/admin/p2p_bridge/status');
+      if(r.status!==200||!r.data)return;
+      var j=r.data.job||{};
+      if($('bridgeMsg')&&j.message)$('bridgeMsg').textContent=j.message;
+      if(j.running)return;
+      clearInterval(bridgePoll);bridgePoll=null;
+      loadBridge();
+  loadCameraSection();
+      if(j.state==='failed')toast(j.message||'导入失败',true);
+      else if(j.state==='done')toast('组件导入完成');
+    }catch(e){}
+  },1500);
+}
+async function importBridge(){
+  var dir=($('bridgeDir').value||'').trim();
+  if(!dir){toast('请先填写官方电脑版目录',true);return;}
+  var r=await api('/api/admin/p2p_bridge/import',{dir:dir});
+  if(r.status===202){toast('正在导入组件');pollBridgeJob();return;}
+  toast((r.data&&r.data.msg)||'导入失败',true);
+}
+function importBridgePackage(){
+  var el=$('bridgeFile'),f=el&&el.files&&el.files[0];
+  if(!f){toast('请选择官方安装包',true);return;}
+  if(f.size>220*1024*1024){toast('安装包超过 220MB',true);return;}
+  if($('bridgeMsg'))$('bridgeMsg').textContent='正在上传安装包（'+Math.round(f.size/1048576)+'MB），请稍候…';
+  fetch('/api/admin/p2p_bridge/upload',{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/octet-stream'},body:f})
+    .then(function(r){return r.json().then(function(j){return {status:r.status,data:j};});})
+    .then(function(r){
+      if(r.status===202){toast('安装包已上传，正在解包');pollBridgeJob();return;}
+      toast((r.data&&r.data.msg)||'上传失败',true);
+    })
+    .catch(function(e){toast('上传失败：'+e,true);});
+}
+async function saveBridge(){
+  var mode=$('bridgeMode').value||'auto';
+  var r=await api('/api/admin/p2p_bridge/save',{mode:mode});
+  if(r.status!==200||!r.data||!r.data.ok){toast((r.data&&r.data.msg)||'保存失败',true);return;}
+  toast('桥接设置已保存');loadBridge();
+}
 async function loadCustomPages(){
   var r=await api('/api/admin/pages');
   if(r.status!==200||!r.data||!r.data.ok){
@@ -1481,6 +1604,8 @@ function render(){
   if($('go2rtcUrl'))$('go2rtcUrl').value=c.go2rtc_url||'';
   renderOverview();renderMusicConnection();loadLanInfo();loadMusicStackStatus();
   loadUpdateStatus();
+  loadBridge();
+  loadCameraSection();
   if(!pagesLoaded)loadCustomPages();
 }
 function renderDevices(){

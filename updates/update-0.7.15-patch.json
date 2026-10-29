@@ -1,0 +1,8 @@
+{
+  "version": "0.7.15",
+  "released": "2026-10-29",
+  "notes": "后台新增“摄像头”板块：本机/远程 go2rtc 与异地电脑版 P2P 桥接集中管理，新增本机 go2rtc 跳转；后台排版整理；Windows 桌面/开始菜单/安装器、PWA 与安卓客户端统一使用新图标。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.15-update.tar.gz",
+  "sha256": "230ca6c07b133dba8073fbf19088160942d872ba483b9bdc1c409599c3f74f30",
+  "size": 2955744
+}

@@ -34,6 +34,8 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 - 首页音箱助手（可选）：已绑定小爱音箱以独立卡片显示，点开可文字提问，或点“语音提问”对音箱说“小爱同学，请问……”；后台可开关、按音箱显隐、设默认音箱和“播报/仅面板”回答方式
 - 7 套主题与自定义首页：经典黑夜/白天 + 5 套结构级风格主题（苹果风/魅族风/赛博霓虹/莫兰迪/像素终端），摄像头页同步主题；后台可创建、编辑、预览、启用完整 HTML 自定义页面，内置面板始终保留在 `/panel`
 - 摄像头组件全平台一键安装：Windows x64/x86/ARM64、Linux x64/x86/arm/arm64、macOS 和 Docker 自动检测 go2rtc/ffmpeg，下载并 SHA256 校验后启动；Windows 使用隐藏控制台构建
+- 后台「摄像头」板块：本机/远程 go2rtc、RTSP/ffmpeg 状态、本机 go2rtc 跳转和异地桥接集中在一处
+- 异地摄像头（Windows）：可选用官方「Xiaomi Camera Viewer」电脑版组件做 P2P 直连，后台可从已安装目录导入或上传官方安装包本地解出组件；官方组件不随本仓库/安装包分发
 - 局域网自动发现：面板监听 UDP `37020`，官方 Android 客户端可自动找到并连接，也可手动输入 IP
 - 官方 Android 客户端：自动发现/手动 IP、原生 PIN 解锁、WebView 打开面板；minSdk 14（Android 4.0）到最新 Android，旧 WebView 自动加载兼容层
 - 日志清理：后台可一键清理系统 journal 历史日志（含其他服务，不可恢复）
@@ -532,6 +534,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.15（2026-10-29）后台摄像头板块与图标统一**：后台新增「摄像头」板块，把本机 go2rtc、远程 go2rtc 和异地电脑版 P2P 桥接集中管理，并增加「打开本机 go2rtc」跳转；设备/家庭/安全/更新等卡片统一排版；Windows 桌面与开始菜单快捷方式、安装器、PWA 与安卓客户端统一使用新的 MI 图标。
 - **v0.7.13（2026-10-29）修摄像头流 "RTSP 404" / 画面不出来**：用户反馈摄像头页显示 `method DESCRIBE failed: 404 Not Found` + `Error opening input file rtsp://127.0.0.1:8554/cam_xxx`。根因：go2rtc 的流是**运行时注册**的（配置里只有 api/rtsp/webrtc），go2rtc 一重启或注册失败，流就没了；而面板的摄像头列表缓存 10 分钟（`CAM_TTL=600`）还会继续发旧流名，页面就去播一个不存在的流，go2rtc 把 ffmpeg 的原始报错直接糊在播放区。修法：
   1. 新增 `/api/camera/ensure?src=` —— 播放前先查 go2rtc 现有流，不在就**重新注册**（自愈）；
   2. 摄像头页改为「先确认流就绪再挂播放器」，8 秒没画面自动再自愈一次并重挂，30 秒仍无声才提示；

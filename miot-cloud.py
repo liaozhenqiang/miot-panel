@@ -33,6 +33,7 @@ BLE/Zigbee 子设备和传感器通常无法通过云端 RPC 读写，面板会�
 import os
 import sys
 import json
+import re
 import gzip
 import time
 import socket
@@ -56,6 +57,8 @@ import subprocess
 import tarfile
 import tempfile
 import ssl
+import struct
+import html as html_lib
 import zipfile
 from pathlib import Path
 
@@ -198,7 +201,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.14"
+APP_VERSION = "0.7.15"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -261,6 +264,20 @@ CAM_LOCK = threading.Lock()
 CAM_CACHE = {"ts": 0, "items": []}
 CAM_META = {"ts": 0, "items": []}
 CAM_META_TTL = 300
+CAM_START_RETRY = {"ts": 0}
+BRIDGE_DIR = os.path.join(ROOT, "camera-stack", "xiaomi-viewer")
+BRIDGE_BUNDLED = os.path.join(APP_DIR, "tools", "xiaomi-viewer")
+BRIDGE_HOST = os.path.join(ROOT, "camera-stack", "xiaomi-miss-host.exe")
+BRIDGE_DLLS = (
+    "libmiss.dll", "PPCS_API.dll", "IOTCAPIs.dll", "AVAPIs.dll", "RDTAPIs.dll",
+    "libsodium.dll", "vcruntime140.dll", "libwinpthread-1.dll", "libgcc_s_dw2-1.dll",
+)
+BRIDGE_TOKEN = ""
+BRIDGE_TOKEN_LOCK = threading.Lock()
+BRIDGE_JOB = {"running": False, "state": "idle", "message": "", "percent": 0, "ts": 0}
+BRIDGE_JOB_LOCK = threading.Lock()
+CAM_REACH = {}
+CAM_REACH_LOCK = threading.Lock()
 SPK_CACHE = {"ts": 0, "payload": None}
 SPK_BY_ID = {}
 SPK_LOCK = threading.Lock()
@@ -279,6 +296,8 @@ DEFAULT_CONFIG = {
     "hidden_devices": [],
     "renames": {},
     "hide_cursor": "auto",
+    "p2p_bridge": "auto",
+    "xiaomi_viewer_dir": "",
     "speaker_panel_enabled": True,
     "speaker_text_enabled": True,
     "speaker_voice_enabled": True,
@@ -327,6 +346,9 @@ def _normalize_config(data):
                       if str(v).strip()}
     cursor = str(src.get("hide_cursor") or "auto")
     out["hide_cursor"] = cursor if cursor in ("auto", "always", "never") else "auto"
+    bridge = str(src.get("p2p_bridge") or "auto").lower()
+    out["p2p_bridge"] = bridge if bridge in ("auto", "always", "off") else "auto"
+    out["xiaomi_viewer_dir"] = str(src.get("xiaomi_viewer_dir") or "").strip()[:500]
     for key in ("speaker_panel_enabled", "speaker_text_enabled",
                 "speaker_voice_enabled"):
         out[key] = src.get(key, DEFAULT_CONFIG[key]) is not False
@@ -2454,6 +2476,19 @@ def _camera_p2p_url(c, did, model, ip):
         q["uid"] = (vendor.get("vendor_params") or {}).get("p2p_id") or ""
     return "xiaomi://%s?%s" % (ip, urllib.parse.urlencode(q))
 
+def _route_local_ip(target):
+    """本机去往 target 时会用哪个源地址（UDP connect 不发包），比全局 LAN_IP 准。"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect((str(target), 9))
+            return sock.getsockname()[0] or ""
+        finally:
+            sock.close()
+    except Exception:
+        return ""
+
+
 def _same_lan_subnet(ip1, ip2):
     try:
         a = ipaddress.ip_network(str(ip1).strip() + "/24", strict=False)
@@ -2468,6 +2503,12 @@ def ensure_cameras(force=False):
     ffmpeg_bin = _camera_ffmpeg_bin()
     transcode = bool(ffmpeg_bin) or remote
     local_ip = str(CONFIG.get("lan_ip") or LAN_IP)
+    bridge = _bridge_prepare()
+    bridge_mode = CONFIG.get("p2p_bridge") or "auto"
+    rtsp_broken = ""
+    if not remote and _camera_go2rtc_ok() and not _camera_rtsp_ok():
+        rtsp_broken = ("本机 go2rtc 未监听 RTSP 8554（端口可能被占用），"
+                       "若画面打不开请重启摄像头组件")
     with CAM_LOCK:
         if (force and CAM_CACHE["items"]
                 and time.time() - CAM_CACHE["ts"] < 30):
@@ -2496,15 +2537,66 @@ def ensure_cameras(force=False):
                 continue
             item = {"did": did, "name": dev.get("name") or "摄像头",
                     "model": model, "online": bool(dev.get("isOnline")),
-                    "ip": ip, "stream": "", "error": ""}
+                    "ip": ip, "stream": "", "error": "", "note": "", "source": ""}
+            blocked = False
+            use_bridge = False
             if not item["online"]:
                 item["error"] = "设备离线"
-            elif not ip:
+                blocked = True
+            elif not ip and not bridge:
                 item["error"] = "没有局域网地址"
-            elif not remote and local_ip and ip and not _same_lan_subnet(local_ip, ip):
-                item["error"] = "当前电脑与摄像头不在同一网段，请在后台填写远程 go2rtc（如玩客云）"
-                item["network_hint"] = True
-            else:
+                blocked = True
+            elif not ip and not remote:
+                item["note"] = "没有局域网地址，将尝试电脑版 P2P 桥接"
+            if bridge and not blocked and (
+                    bridge_mode == "always"
+                    or (not remote and (not ip or not _lan_reachable(ip)))):
+                use_bridge = True
+            if not blocked and not use_bridge and not remote and ip:
+                route_ip = _route_local_ip(ip) or local_ip
+                if route_ip and not _same_lan_subnet(route_ip, ip):
+                    # 多网卡/VPN 环境下网段判断容易误判：本机 go2rtc 在跑就先让它试，
+                    # 真拉不到流时播放页会给出真实错误，而不是被这里一刀切拦住
+                    if _camera_go2rtc_ok():
+                        item["note"] = ("本机 %s 与摄像头 %s 不同网段，已按本机 go2rtc 尝试；"
+                                        "播不了请到后台填远程 go2rtc" % (route_ip, ip))
+                    else:
+                        item["error"] = ("当前电脑（%s）与摄像头（%s）不在同一网段，"
+                                         "请在后台填写远程 go2rtc（如玩客云）" % (route_ip, ip))
+                        item["network_hint"] = True
+                        blocked = True
+            if use_bridge:
+                try:
+                    src = _bridge_src(bridge, did, model)
+                    ok, err = _go2rtc_put("cam_" + did, src)
+                    if ok:
+                        if transcode:
+                            tsrc = ("ffmpeg:cam_%s#video=h264#width=640#height=360"
+                                    "#bitrate=600k" % did)
+                            ok2, err2 = _go2rtc_put("cam_%s_h264" % did, tsrc)
+                            if ok2:
+                                item["stream"] = "cam_%s_h264" % did
+                                item["source"] = "bridge"
+                                item["note"] = "电脑版 P2P 桥接（可异地）"
+                                item["error"] = ""
+                                items.append(item)
+                                continue
+                            item["error"] = "转码流注册失败"
+                        else:
+                            item["error"] = "未安装 ffmpeg，无法转码播放"
+                    else:
+                        item["error"] = "P2P 桥接注册失败"
+                        LOG.warning("camera %s bridge register failed: %s", did, err)
+                except Exception as e:
+                    item["error"] = str(e)[:120]
+                    LOG.warning("camera %s bridge failed: %s", did, e)
+                if not ip:
+                    blocked = True
+                else:
+                    item["error"] = ""  # 桥接失败时回退到局域网/远程 go2rtc
+            if not blocked and rtsp_broken and not item["note"] and not use_bridge:
+                item["note"] = rtsp_broken
+            if not blocked and ip:
                 try:
                     src = _camera_p2p_url(c, did, model, ip)
                     ok, err = _go2rtc_put("cam_" + did, src)
@@ -3837,17 +3929,66 @@ def _wait_pid_gone(pid, timeout=15):
 
 def _port_listening_pids(port):
     pids = set()
+    suffix = ":%d" % int(port)
     try:
-        out = subprocess.run(["netstat", "-ano", "-p", "tcp"],
-                             capture_output=True, text=True, timeout=15)
+        cmd = (["netstat", "-ano", "-p", "tcp"] if os.name == "nt"
+               else ["netstat", "-tlnp"])
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         for line in (out.stdout or "").splitlines():
             parts = line.split()
-            if (len(parts) >= 5 and parts[1].endswith(":%d" % int(port))
-                    and parts[3] == "LISTENING" and parts[4].isdigit()):
-                pids.add(parts[4])
+            if not parts or not any(p.endswith(suffix) for p in parts):
+                continue
+            if os.name == "nt":
+                if (len(parts) >= 5 and parts[1].endswith(suffix)
+                        and parts[3] == "LISTENING" and parts[4].isdigit()):
+                    pids.add(parts[4])
+            elif "LISTEN" in parts:
+                pid = parts[-1].split("/")[0]
+                if pid.isdigit():
+                    pids.add(pid)
     except Exception:
         pass
     return pids
+
+
+def _process_name(pid):
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return ""
+    try:
+        if os.name == "nt":
+            out = subprocess.run(["tasklist", "/FI", "PID eq %d" % pid,
+                                  "/FO", "CSV", "/NH"],
+                                 capture_output=True, text=True, timeout=10).stdout or ""
+            for line in out.splitlines():
+                if line.startswith('"'):
+                    return line.split('","')[0].strip('"')
+        else:
+            with open("/proc/%d/comm" % pid, "r", encoding="utf-8") as f:
+                name = f.read().strip()
+            if name:
+                return name
+    except Exception:
+        pass
+    return ""
+
+
+def _port_owner_text(port):
+    names = []
+    for pid in sorted(_port_listening_pids(port),
+                      key=lambda p: int(p) if p.isdigit() else 0):
+        name = _process_name(pid)
+        names.append("%s（PID %s）" % (name, pid) if name else "PID %s" % pid)
+    return "、".join(names)
+
+
+def _tcp_open(host, port, timeout=0.6):
+    try:
+        with socket.create_connection((str(host), int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 def _kill_port_owners(port, exclude=()):
@@ -5004,6 +5145,277 @@ def _camera_go2rtc_ok():
     return bool(isinstance(data, dict) and (data.get("revision") or data.get("config_path")))
 
 
+def _camera_rtsp_ok():
+    """本机 go2rtc 的 RTSP 端口是否真的在监听；API 通不代表 RTSP 起来了。"""
+    if _camera_external_go2rtc():
+        return True
+    return _tcp_open("127.0.0.1", 8554)
+
+
+def _bridge_token():
+    global BRIDGE_TOKEN
+    with BRIDGE_TOKEN_LOCK:
+        if not BRIDGE_TOKEN:
+            BRIDGE_TOKEN = secrets.token_hex(20)
+        return BRIDGE_TOKEN
+
+
+def _bridge_dll_candidates():
+    cfg = str(CONFIG.get("xiaomi_viewer_dir") or "").strip()
+    out = []
+    if cfg:
+        out.extend([cfg, os.path.join(cfg, "app")])
+    out.append(BRIDGE_DIR)
+    out.append(BRIDGE_BUNDLED)
+    for env in ("ProgramFiles", "ProgramFiles(x86)"):
+        base = os.environ.get(env)
+        if base:
+            out.append(os.path.join(base, "Xiaomi", "Xiaomi Camera Viewer", "app"))
+            out.append(os.path.join(base, "Xiaomi", "Xiaomi Camera Viewer"))
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        out.append(os.path.join(local, "Programs", "Xiaomi Camera Viewer", "app"))
+        out.append(os.path.join(local, "Programs", "Xiaomi Camera Viewer"))
+    return out
+
+
+def _bridge_dll_dir():
+    for folder in _bridge_dll_candidates():
+        try:
+            if folder and all(os.path.isfile(os.path.join(folder, n)) for n in BRIDGE_DLLS):
+                return folder
+        except Exception:
+            continue
+    return ""
+
+
+def _bridge_ensure_host():
+    src = os.path.join(APP_DIR, "tools", "xiaomi-miss-host.exe")
+    if not os.path.isfile(src):
+        return ""
+    try:
+        need = True
+        if os.path.isfile(BRIDGE_HOST):
+            same = (os.path.getsize(src) == os.path.getsize(BRIDGE_HOST)
+                    and int(os.path.getmtime(src)) <= int(os.path.getmtime(BRIDGE_HOST)))
+            need = not same
+        if need:
+            os.makedirs(os.path.dirname(BRIDGE_HOST), exist_ok=True)
+            tmp = BRIDGE_HOST + ".tmp"
+            shutil.copyfile(src, tmp)
+            try:
+                os.replace(tmp, BRIDGE_HOST)
+            except OSError:
+                # 正在播流时 helper 可能被占用，下轮刷新再替换
+                try:
+                    os.remove(BRIDGE_HOST)
+                    os.replace(tmp, BRIDGE_HOST)
+                except OSError:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise
+    except Exception as exc:
+        LOG.warning("bridge host copy failed: %s", exc)
+    return BRIDGE_HOST if os.path.isfile(BRIDGE_HOST) else ""
+
+
+def _bridge_token_file():
+    os.makedirs(BRIDGE_DIR, exist_ok=True)
+    path = os.path.join(BRIDGE_DIR, "bridge.token")
+    token = _bridge_token()
+    try:
+        with open(path, "w", encoding="ascii") as f:
+            f.write(token)
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+    except Exception as exc:
+        LOG.warning("bridge token write failed: %s", exc)
+        return ""
+    return path
+
+
+def _bridge_status():
+    platform_ok = os.name == "nt"
+    host = _bridge_ensure_host() if platform_ok else ""
+    dll_dir = _bridge_dll_dir() if platform_ok else ""
+    ffmpeg = _camera_ffmpeg_bin() if platform_ok else ""
+    reasons = []
+    if not platform_ok:
+        reasons.append("仅支持 Windows")
+    if not host:
+        reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）")
+    if not dll_dir:
+        reasons.append("未找到官方电脑版组件，可在下方选择安装目录导入")
+    if not ffmpeg:
+        reasons.append("未找到 ffmpeg，请先在摄像头组件里安装")
+    return {
+        "ok": True,
+        "platform_ok": platform_ok,
+        "helper_ok": bool(host),
+        "dll_ok": bool(dll_dir),
+        "ffmpeg_ok": bool(ffmpeg),
+        "available": not reasons,
+        "reasons": reasons,
+        "mode": CONFIG.get("p2p_bridge") or "auto",
+        "viewer_dir": CONFIG.get("xiaomi_viewer_dir") or "",
+        "dll_dir": dll_dir,
+        "helper": host,
+        "ffmpeg": ffmpeg,
+        "token_file": os.path.join(BRIDGE_DIR, "bridge.token"),
+        "dlls": list(BRIDGE_DLLS),
+        "job": dict(BRIDGE_JOB),
+        "innoextract": bool(os.path.isfile(os.path.join(APP_DIR, "tools", "innoextract.exe"))),
+    }
+
+
+def _bridge_job_set(state, message, percent=None):
+    with BRIDGE_JOB_LOCK:
+        running = state in ("starting", "extracting", "copying")
+        BRIDGE_JOB.update(running=running, state=state, message=str(message)[:300],
+                          percent=int(percent if percent is not None
+                                      else BRIDGE_JOB.get("percent") or 0),
+                          ts=time.time())
+
+
+def _bridge_copy_components(src_dir):
+    os.makedirs(BRIDGE_DIR, exist_ok=True)
+    for name in BRIDGE_DLLS:
+        src = os.path.join(src_dir, name)
+        if not os.path.isfile(src):
+            raise RuntimeError("缺少 " + name)
+        tmp = os.path.join(BRIDGE_DIR, name + ".tmp")
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, os.path.join(BRIDGE_DIR, name))
+
+
+def _bridge_import_job(src, is_exe, cleanup=None):
+    tmpdir = os.path.join(ROOT, "camera-stack", "bridge-import-tmp")
+    try:
+        _bridge_job_set("starting", "正在准备导入", 3)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        if is_exe:
+            tool = os.path.join(APP_DIR, "tools", "innoextract.exe")
+            if not os.path.isfile(tool):
+                raise RuntimeError("缺少解包器 innoextract.exe")
+            os.makedirs(tmpdir, exist_ok=True)
+            _bridge_job_set("extracting", "正在从官方安装包解出组件（约 5-30 秒）", 20)
+            args = [tool, "-e", "-d", tmpdir]
+            for name in BRIDGE_DLLS:
+                args += ["-I", "app\\" + name]
+            args.append(src)
+            flags = 0x08000000 if os.name == "nt" else 0
+            res = subprocess.run(args, capture_output=True, text=True,
+                                 timeout=180, creationflags=flags)
+            if res.returncode != 0:
+                detail = (res.stderr or res.stdout or "").strip().replace("\r", " ")
+                raise RuntimeError("解包失败：" + (detail[-200:] or ("exit %d" % res.returncode)))
+            src_dir = os.path.join(tmpdir, "app")
+        else:
+            src_dir = src
+        _bridge_job_set("copying", "正在安装组件", 80)
+        _bridge_copy_components(src_dir)
+        save_config({"xiaomi_viewer_dir": BRIDGE_DIR})
+        _bridge_job_set("done", "组件已导入，可以播放异地摄像头", 100)
+        LOG.info("bridge components imported (%s)", "installer" if is_exe else src)
+    except Exception as exc:
+        LOG.warning("bridge import failed: %s", exc)
+        _bridge_job_set("failed", str(exc)[:240], 100)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        if cleanup:
+            try:
+                os.remove(cleanup)
+            except OSError:
+                pass
+
+
+def _bridge_job_start(src, is_exe=False, cleanup=None):
+    with BRIDGE_JOB_LOCK:
+        if BRIDGE_JOB.get("running"):
+            return False
+        BRIDGE_JOB.update(running=True, state="starting",
+                          message="正在准备导入", percent=2, ts=time.time())
+    threading.Thread(target=_bridge_import_job, args=(src, is_exe, cleanup),
+                     daemon=True).start()
+    return True
+
+
+def _bridge_prepare():
+    if os.name != "nt":
+        return None
+    if (CONFIG.get("p2p_bridge") or "auto") == "off":
+        return None
+    host = _bridge_ensure_host()
+    dll_dir = _bridge_dll_dir()
+    ffmpeg = _camera_ffmpeg_bin()
+    token_file = _bridge_token_file() if (host and dll_dir and ffmpeg) else ""
+    if not (host and dll_dir and ffmpeg and token_file):
+        return None
+    logs = os.path.join(BRIDGE_DIR, "logs")
+    os.makedirs(logs, exist_ok=True)
+    return {"host": host, "dll_dir": dll_dir, "ffmpeg": ffmpeg,
+            "token_file": token_file, "logs": logs}
+
+
+def _bridge_sig(did, model):
+    key = _bridge_token().encode("ascii")
+    msg = ("%s|%s" % (str(did), str(model))).encode("utf-8")
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
+
+
+def _bridge_src(bridge, did, model):
+    q = urllib.parse.urlencode({"did": did, "model": model,
+                                "sig": _bridge_sig(did, model)})
+    return "http://127.0.0.1:%d/api/camera/bridge_stream?%s" % (PORT, q)
+
+
+def _bridge_host_args(bridge, did, model):
+    log = _bridge_log_path(bridge, did)
+    return [bridge["host"],
+            "--did", str(did), "--model", str(model),
+            "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
+            "--token-file", bridge["token_file"],
+            "--dll-dir", bridge["dll_dir"],
+            "--ffmpeg", bridge["ffmpeg"],
+            "--log", log,
+            "--parent", str(os.getpid())]
+
+
+def _bridge_log_path(bridge, did):
+    safe = re.sub(r"[^0-9A-Za-z._-]", "", str(did)) or "camera"
+    return os.path.join(bridge["logs"], "%s.log" % safe)
+
+
+def _lan_reachable(ip):
+    try:
+        ipaddress.ip_address(ip)
+    except Exception:
+        return False
+    now = time.time()
+    with CAM_REACH_LOCK:
+        hit = CAM_REACH.get(ip)
+        if hit and now - hit[0] < 300:
+            return hit[1]
+    ok = False
+    try:
+        if os.name == "nt":
+            cmd = ["ping", "-n", "1", "-w", "700", ip]
+        else:
+            cmd = ["ping", "-c", "1", "-W", "1", ip]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, timeout=3)
+        ok = res.returncode == 0
+    except Exception:
+        ok = False
+    with CAM_REACH_LOCK:
+        CAM_REACH[ip] = (now, ok)
+    return ok
+
+
 def _camera_go2rtc_bin():
     paths = _camera_paths()
     if os.path.isfile(paths["go2rtc"]):
@@ -5125,6 +5537,7 @@ def _camera_setup_payload():
     external = _camera_external_go2rtc()
     docker = _camera_is_docker()
     outdated = _camera_go2rtc_outdated()
+    rtsp_ok = bool(go_ok and _camera_rtsp_ok())
     missing = []
     if (not go_ok and not go_bin) or outdated:
         missing.append("go2rtc")
@@ -5143,6 +5556,10 @@ def _camera_setup_payload():
         reason = ""
     if not go_ok and go_bin and not missing:
         reason = "go2rtc 未运行，点击按钮即可启动"
+    if go_ok and not rtsp_ok and not external:
+        reason = (reason + "；" if reason else "") + (
+            "go2rtc 正在运行，但 RTSP 端口 8554 未监听（可能被其它程序占用），"
+            "点“启动摄像头组件”会重启 go2rtc")
     if outdated and not external:
         reason = (reason + "；" if reason else "") + "可更新 go2rtc 以隐藏命令行窗口"
     if (ff_bin or external) and go_ok and not missing and not outdated:
@@ -5171,6 +5588,7 @@ def _camera_setup_payload():
         "go2rtc_page_url": _go2rtc_base() if external else "",
         "docker": docker,
         "go2rtc_ok": go_ok,
+        "rtsp_ok": rtsp_ok,
         "go2rtc_path": go_bin,
         "ffmpeg_ok": bool(ff_bin or external),
         "ffmpeg_path": ff_bin,
@@ -5193,14 +5611,30 @@ def _camera_start():
             return True
         raise RuntimeError("远程 go2rtc 未响应，请检查后台填写的地址")
     if _camera_go2rtc_ok():
-        _camera_ffmpeg_bin()
-        return True
+        if _camera_rtsp_ok():
+            _camera_ffmpeg_bin()
+            return True
+        # API 在、RTSP 没起来：多半是 8554 被别的程序占着（安卓模拟器 gRPC 默认就用 8554）
+        LOG.warning("go2rtc api ok but rtsp 8554 closed, restarting")
+        _camera_stop()
+        deadline = time.time() + 8
+        while not _port_free(8554) and time.time() < deadline:
+            time.sleep(0.3)
+        if not _port_free(8554):
+            raise RuntimeError("端口 8554 被 %s 占用，go2rtc 无法提供摄像头画面，"
+                               "请关闭该程序后重试"
+                               % (_port_owner_text(8554) or "其它程序"))
     paths = _camera_paths()
     go_bin = _camera_go2rtc_bin()
     if not go_bin:
         raise RuntimeError("未安装 go2rtc")
     if not _port_free(1984):
-        raise RuntimeError("端口 1984 已被占用，请先关闭占用程序")
+        raise RuntimeError("端口 1984 被 %s 占用，请先关闭占用程序"
+                           % (_port_owner_text(1984) or "其它程序"))
+    for port in (8554, 8555):
+        if not _port_free(port):
+            raise RuntimeError("端口 %d 被 %s 占用，go2rtc 无法启动"
+                               % (port, _port_owner_text(port) or "其它程序"))
     ff_bin = _camera_ffmpeg_bin()
     os.makedirs(paths["root"], exist_ok=True)
     config = ('api:\n  listen: "127.0.0.1:1984"\n'
@@ -5217,23 +5651,51 @@ def _camera_start():
     _camera_state_write(state)
     if _wait_http(_go2rtc_base() + "/api", 25) is None:
         raise RuntimeError("go2rtc 启动超时，请查看 camera-stack/go2rtc.log")
+    deadline = time.time() + 6
+    while not _camera_rtsp_ok() and time.time() < deadline:
+        time.sleep(0.3)
+    if not _camera_rtsp_ok():
+        owner = _port_owner_text(8554)
+        raise RuntimeError("go2rtc 已启动但 RTSP 8554 未监听%s，请查看 camera-stack/go2rtc.log"
+                           % (("（端口被 %s 占用）" % owner) if owner else ""))
     _camera_ffmpeg_bin()
     return True
 
 
 def _camera_stop():
     state = _camera_state_read()
+    pids = set()
     pid = state.get("go2rtc_pid")
     if pid:
         try:
+            pids.add(int(pid))
+        except (TypeError, ValueError):
+            pass
+    try:
+        if _camera_go2rtc_ok():
+            pids |= {int(p) for p in _port_listening_pids(1984) if p.isdigit()}
+    except Exception:
+        pass
+    pids.discard(os.getpid())
+    for item in pids:
+        try:
             if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                subprocess.run(["taskkill", "/PID", str(item), "/T", "/F"],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                timeout=10, check=False)
             else:
-                os.kill(int(pid), signal.SIGTERM)
+                os.kill(item, signal.SIGTERM)
         except Exception:
             pass
+    for item in pids:
+        deadline = time.time() + 6
+        while time.time() < deadline and _pid_alive(item):
+            time.sleep(0.2)
+        if os.name != "nt" and _pid_alive(item):
+            try:
+                os.kill(item, signal.SIGKILL)
+            except Exception:
+                pass
     state.pop("go2rtc_pid", None)
     _camera_state_write(state)
 
@@ -6092,7 +6554,8 @@ class Handler(BaseHTTPRequestHandler):
         if not _device_authed(self):
             public = (u.path in ("/setup", "/admin", "/api/setup_state",
                                  "/manifest.webmanifest", "/sw.js", "/favicon.ico",
-                                 "/compat.js", "/api/android", "/android.apk")
+                                 "/compat.js", "/api/android", "/android.apk",
+                                 "/api/camera/bridge_stream")
                       or u.path.startswith("/icons/")
                       or u.path.startswith(("/api/admin/", "/api/auth/")))
             if not public:
@@ -6212,6 +6675,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_camera_ensure(u)
         elif u.path == "/api/camera_state":
             self.api_camera_state(u)
+        elif u.path == "/api/camera/bridge_stream":
+            self.api_camera_bridge_stream(u)
         elif u.path == "/api/camera/setup_state":
             self.api_camera_setup_state()
         elif u.path == "/api/admin/status":
@@ -6234,6 +6699,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_devices()
         elif u.path == "/api/admin/music/web_sso":
             self.api_admin_music_web_sso()
+        elif u.path == "/api/admin/p2p_bridge/status":
+            self.api_admin_p2p_bridge_status()
         elif u.path == "/api/admin/update/status":
             self.api_admin_update_status()
         elif u.path == "/api/speaker_assist":
@@ -6252,6 +6719,9 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             self._send(400, {"ok": False, "error": "Content-Length 无效"})
             return
+        if u.path == "/api/admin/p2p_bridge/upload":
+            self.api_admin_p2p_bridge_upload(length)
+            return
         if length < 0 or length > self.max_body:
             self._send(413, {"ok": False, "error": "请求体超过 1MB"})
             return
@@ -6263,12 +6733,15 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/device_unlock":
             self.api_device_unlock(body)
             return
-        if not (u.path.startswith(("/api/admin/", "/api/auth/"))):
+        if not (u.path.startswith(("/api/admin/", "/api/auth/"))
+                or u.path == "/api/camera/miss_rpc"):
             if not _device_authed(self):
                 self._send(401, {"ok": False, "unlock": True,
                                  "error": "此设备需要先输入 PIN"})
                 return
-        if u.path == "/api/device_lock":
+        if u.path == "/api/camera/miss_rpc":
+            self.api_camera_miss_rpc(body)
+        elif u.path == "/api/device_lock":
             self.api_device_lock()
         elif u.path == "/api/login":
             self.api_login(body)
@@ -6362,6 +6835,10 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_update_apply(body)
         elif u.path == "/api/admin/update/upload":
             self.api_admin_update_upload()
+        elif u.path == "/api/admin/p2p_bridge/import":
+            self.api_admin_p2p_bridge_import(body)
+        elif u.path == "/api/admin/p2p_bridge/save":
+            self.api_admin_p2p_bridge_save(body)
         elif u.path == "/api/speaker/chat":
             self.api_speaker_chat(body)
         else:
@@ -6573,12 +7050,121 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(200, data)
 
+    def api_camera_miss_rpc(self, body):
+        """本地桥接进程专用：用面板登录态代发小米云端 RPC，只允许回环 + 临时 token。"""
+        try:
+            host = self.client_address[0]
+        except Exception:
+            host = ""
+        if host not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            self._send(403, {"ok": False, "error": "forbidden"})
+            return
+        token = self.headers.get("X-Miss-Token") or ""
+        expected = _bridge_token()
+        if not token or not hmac.compare_digest(token, expected):
+            self._send(401, {"ok": False, "error": "bad token"})
+            return
+        try:
+            path = str((body or {}).get("path") or "")
+            data = str((body or {}).get("body") or "")
+        except Exception:
+            path, data = "", ""
+        if not path.startswith("/v2/device/miss_") or len(data) > 32768:
+            self._send(400, {"ok": False, "error": "bad request"})
+            return
+        c = get_cloud()
+        if not c:
+            self._send(503, {"ok": False, "error": "未登录小米账号"})
+            return
+        try:
+            url = c._get_api_url(CONFIG.get("country") or "cn") + path
+            with CLOUD_LOCK:
+                raw = c.request(url, {"data": data})
+            env = json.loads(raw)
+            code = int(env.get("code") or 0)
+            if code != 0:
+                LOG.warning("bridge rpc %s cloud code=%s", path, code)
+                self._send(502, {"ok": False, "error": "cloud code %s" % code})
+                return
+            payload = json.dumps(env.get("result") or {}, ensure_ascii=False,
+                                 separators=(",", ":"))
+            LOG.info("bridge rpc %s ok %d bytes", path, len(payload))
+            self._send(200, payload, ctype="text/plain; charset=utf-8")
+        except Exception as exc:
+            LOG.warning("bridge rpc %s failed: %s", path, str(exc)[:160])
+            self._send(502, {"ok": False, "error": str(exc)[:160]})
+
+    def api_camera_bridge_stream(self, u):
+        """go2rtc 的本地 HTTP 源：按需启动 32 位 helper，把 MPEG-TS 直接转给 go2rtc。"""
+        if self.client_address[0] not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            self._send(403, {"ok": False, "error": "forbidden"})
+            return
+        q = urllib.parse.parse_qs(u.query)
+        did = (q.get("did") or [""])[0]
+        model = (q.get("model") or [""])[0]
+        sig = (q.get("sig") or [""])[0]
+        expected = _bridge_sig(did, model) if (did and model) else ""
+        if not expected or not hmac.compare_digest(sig, expected):
+            self._send(403, {"ok": False, "error": "forbidden"})
+            return
+        bridge = _bridge_prepare()
+        if not bridge:
+            self._send(503, {"ok": False, "error": "桥接未就绪"})
+            return
+        args = _bridge_host_args(bridge, did, model)
+        flags = 0x08000000 if os.name == "nt" else 0
+        try:
+            proc = subprocess.Popen(args, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL,
+                                    creationflags=flags)
+        except Exception as exc:
+            LOG.warning("bridge spawn failed: %s", exc)
+            self._send(500, {"ok": False, "error": "桥接启动失败"})
+            return
+        LOG.info("bridge stream start did=%s pid=%s", did, proc.pid)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            fd = proc.stdout.fileno()
+            while True:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except Exception as exc:
+            LOG.debug("bridge stream write end: %s", exc)
+        finally:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+            LOG.info("bridge stream end did=%s rc=%s", did, proc.returncode)
+
     def api_camera_ensure(self, u=None):
         """页面播放前调用：流不在 go2rtc 里就重新注册（go2rtc 重启后运行时流会丢）。"""
         name = (urllib.parse.parse_qs(u.query).get("src") or [""])[0] if u else ""
         if not name.startswith("cam_"):
             self._send(400, {"ok": False, "ready": False, "error": "流名不合法"})
             return
+        if not _camera_external_go2rtc() and not _camera_rtsp_ok():
+            state = _camera_state_read()
+            if state.get("installed") and not state.get("disabled"):
+                if time.time() - CAM_START_RETRY["ts"] > 60:
+                    CAM_START_RETRY["ts"] = time.time()
+                    try:
+                        _camera_start()
+                    except Exception as exc:
+                        LOG.warning("camera ensure start failed: %s", str(exc)[:160])
         ready, names = _go2rtc_stream_names()
         if ready and name in names:
             self._send(200, {"ok": True, "ready": True})
@@ -6974,6 +7560,91 @@ class Handler(BaseHTTPRequestHandler):
             UPDATE_RUNNING["active"] = False
             self._send(200, {"ok": False, "error": str(exc)[:240]})
 
+    def api_admin_p2p_bridge_status(self):
+        if not self._admin_require():
+            return
+        self._send(200, _bridge_status())
+
+    def api_admin_p2p_bridge_import(self, body):
+        if not self._admin_require():
+            return
+        if os.name != "nt":
+            self._send(400, {"ok": False, "msg": "电脑版 P2P 桥接仅支持 Windows"})
+            return
+        src = str((body or {}).get("dir") or "").strip()
+        if not src or not os.path.isdir(src):
+            self._send(400, {"ok": False, "msg": "目录不存在"})
+            return
+        found = ""
+        for cand in (src, os.path.join(src, "app")):
+            try:
+                if all(os.path.isfile(os.path.join(cand, n)) for n in BRIDGE_DLLS):
+                    found = cand
+                    break
+            except Exception:
+                continue
+        if not found:
+            missing = [n for n in BRIDGE_DLLS
+                       if not os.path.isfile(os.path.join(src, n))]
+            self._send(400, {"ok": False,
+                             "msg": "目录里缺少官方组件：" + "、".join(missing[:4])})
+            return
+        if not _bridge_job_start(found):
+            self._send(409, {"ok": False, "msg": "已有导入任务在进行"})
+            return
+        self._send(202, {"ok": True, "job": dict(BRIDGE_JOB)})
+
+    def api_admin_p2p_bridge_upload(self, length):
+        if not self._admin_require():
+            return
+        if os.name != "nt":
+            self._send(400, {"ok": False, "msg": "电脑版 P2P 桥接仅支持 Windows"})
+            return
+        if length <= 0 or length > 220 * 1024 * 1024:
+            self._send(413, {"ok": False, "msg": "安装包大小应在 220MB 以内"})
+            return
+        with BRIDGE_JOB_LOCK:
+            if BRIDGE_JOB.get("running"):
+                self._send(409, {"ok": False, "msg": "已有导入任务在进行"})
+                return
+        tmp = os.path.join(ROOT, "camera-stack", "bridge-import-upload.exe")
+        os.makedirs(os.path.dirname(tmp), exist_ok=True)
+        try:
+            remaining = length
+            with open(tmp, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        raise RuntimeError("上传中断")
+                    f.write(chunk)
+                    remaining -= len(chunk)
+        except Exception as exc:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            self._send(400, {"ok": False, "msg": "上传失败：%s" % str(exc)[:120]})
+            return
+        if not _bridge_job_start(tmp, True, cleanup=tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            self._send(409, {"ok": False, "msg": "已有导入任务在进行"})
+            return
+        self._send(202, {"ok": True, "job": dict(BRIDGE_JOB)})
+
+    def api_admin_p2p_bridge_save(self, body):
+        if not self._admin_require():
+            return
+        mode = str((body or {}).get("mode") or "auto").lower()
+        if mode not in ("auto", "always", "off"):
+            self._send(400, {"ok": False, "msg": "模式不合法"})
+            return
+        save_config({"p2p_bridge": mode})
+        CAM_CACHE.update(ts=0, items=[])
+        self._send(200, _bridge_status())
+
     def api_admin_update_upload(self):
         if not self._admin_require():
             return
@@ -7138,6 +7809,12 @@ class Handler(BaseHTTPRequestHandler):
             value = str(body.get("hide_cursor") or "auto")
             if value in ("auto", "always", "never"):
                 updates["hide_cursor"] = value
+        if "p2p_bridge" in body:
+            value = str(body.get("p2p_bridge") or "auto").lower()
+            if value in ("auto", "always", "off"):
+                updates["p2p_bridge"] = value
+        if "xiaomi_viewer_dir" in body and isinstance(body.get("xiaomi_viewer_dir"), str):
+            updates["xiaomi_viewer_dir"] = body["xiaomi_viewer_dir"].strip()[:500]
         for key in ("speaker_panel_enabled", "speaker_text_enabled",
                     "speaker_voice_enabled"):
             if key in body:
