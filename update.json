@@ -1,8 +1,8 @@
 {
-  "version": "0.7.12",
+  "version": "0.7.13",
   "released": "2026-10-29",
-  "notes": "Linux 包按架构拆分（armv7 / arm64 / amd64，各带预编译 wheels，玩客云不再现场编译 pycryptodome）；install.sh 优先离线轮子、失败回落 PyPI、再自动装编译工具；每种架构都有对应 -installer.run。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.12-update.tar.gz",
-  "sha256": "6882fdd69447b33621eb5ceb6d7fd389c6999b81c2e8bd78236101fe4610e0ef",
-  "size": 2399324
+  "notes": "修摄像头流 RTSP 404/画面不出来：播放前查 go2rtc 有没有该流、没有就自动重新注册；8 秒无画面再自愈一次，30 秒才提示；播放器在确认有数据前保持隐藏，不再显示 ffmpeg 原始报错。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.13-update.tar.gz",
+  "sha256": "d12c3b733f02f4a2e5ca79b5e81ce08dc422bd5817a1bce8c094406e35078b1e",
+  "size": 2400910
 }

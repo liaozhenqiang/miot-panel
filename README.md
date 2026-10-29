@@ -532,6 +532,12 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.13（2026-10-29）修摄像头流 "RTSP 404" / 画面不出来**：用户反馈摄像头页显示 `method DESCRIBE failed: 404 Not Found` + `Error opening input file rtsp://127.0.0.1:8554/cam_xxx`。根因：go2rtc 的流是**运行时注册**的（配置里只有 api/rtsp/webrtc），go2rtc 一重启或注册失败，流就没了；而面板的摄像头列表缓存 10 分钟（`CAM_TTL=600`）还会继续发旧流名，页面就去播一个不存在的流，go2rtc 把 ffmpeg 的原始报错直接糊在播放区。修法：
+  1. 新增 `/api/camera/ensure?src=` —— 播放前先查 go2rtc 现有流，不在就**重新注册**（自愈）；
+  2. 摄像头页改为「先确认流就绪再挂播放器」，8 秒没画面自动再自愈一次并重挂，30 秒仍无声才提示；
+  3. **播放器在确认有数据前保持隐藏**，不再让 go2rtc 的 ffmpeg 原始报错出现在界面上，失败时显示的是可读提示 + 重试；
+  4. 注册失败时把该摄像头具体的错误（离线 / 不在同一网段 / 转码流注册失败）带回页面。
+
 - **v0.7.12（2026-10-29）Linux 包按架构拆分 + 内置预编译轮子**：之前只有 `linux-universal` 一个源码包，依赖全靠 pip 现场装 —— 而 `pycryptodome` **没有 armv7 轮子**，玩客云上其实是拿 gcc 现场编译的（几分钟，没装 gcc 的机器直接失败）。现在拆成 `linux-armv7` / `linux-arm64` / `linux-amd64` 三个包，各带 `wheels/` 预编译轮子（armv7 的 pycryptodome 是在玩客云上原生编译的 `cp39-abi3-linux_armv7l`，Python 3.9~3.13 通用），`install.sh` 优先离线安装、失败才回落到 PyPI 或自动装编译工具；每种架构都有对应的 `-installer.run` 自解压安装器。`linux-universal` 保留给其它架构。
 
 - **v0.7.11（2026-10-29）云端调用健壮性**（参考同类项目 MiHome-Windows 的 net_guard / 串行队列思路后自查发现）：

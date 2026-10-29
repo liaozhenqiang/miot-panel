@@ -490,11 +490,17 @@ function stopPlay() {
   pollTimer = null; failTimer = null;
   try { player.src = 'about:blank'; } catch (e) {}
 }
+function ensureStream(cam) {
+  return fetch('/api/camera_ensure?src=' + encodeURIComponent(cam.stream), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { return !!(d && d.ok && d.ready); })
+    .catch(function () { return false; });
+}
 function watchStream(cam) {
   clearInterval(pollTimer); clearTimeout(failTimer);
-  var started = Date.now(), checking = false;
+  var started = Date.now(), checking = false, retried = false, alive = false;
   pollTimer = setInterval(function () {
-    if (current !== cam || checking) return;
+    if (current !== cam || checking || alive) return;
     checking = true;
     fetch('/api/camera_state?name=' + encodeURIComponent(cam.stream), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
@@ -502,25 +508,34 @@ function watchStream(cam) {
         checking = false;
         if (current !== cam) return;
         if (data && data.active) {
+          alive = true;
           clearInterval(pollTimer); clearTimeout(failTimer);
+          pollTimer = null; failTimer = null;
           setLoading('');
           hideError();
+          player.style.visibility = 'visible';   // 确认有数据才显示，避免看到 go2rtc 自己糊的 ffmpeg 报错
           barHint.textContent = cam.name + ' · 实时画面';
-        } else if (Date.now() - started > 30000) {
-          clearInterval(pollTimer);
+          return;
+        }
+        var waited = Date.now() - started;
+        if (!retried && waited > 8000) {
+          // go2rtc 可能刚重启（流是运行时注册的），再注册一次并重挂播放器
+          retried = true;
+          ensureStream(cam).then(function (ok) {
+            if (!ok || current !== cam || alive) return;
+            player.src = PLAY_BASE + encodeURIComponent(cam.stream) + '&mode=mse,hls';
+          });
+        } else if (waited > 30000) {
+          clearInterval(pollTimer); clearTimeout(failTimer);
+          pollTimer = null; failTimer = null;
           setLoading('');
-          barHint.textContent = cam.name + ' · 仍在连接';
+          player.style.visibility = 'hidden';
+          showError('画面没有出来', '摄像头在线但视频流拉不到：可能被别的设备占用通道，或网络/转码组件异常。点“重试”或右上角“刷新”。');
+          barHint.textContent = cam.name + ' · 无画面';
         }
       })
       .catch(function () { checking = false; });
   }, 1500);
-  failTimer = setTimeout(function () {
-    clearInterval(pollTimer);
-    if (current === cam) {
-      setLoading('');
-      barHint.textContent = cam.name + ' · 仍在连接';
-    }
-  }, 30000);
 }
 function playCamera(cam) {
   current = cam;
@@ -535,8 +550,18 @@ function playCamera(cam) {
   }
   setLoading('正在连接「' + cam.name + '」…');
   barHint.textContent = cam.name + ' · 连接中';
-  player.src = PLAY_BASE + encodeURIComponent(cam.stream) + '&mode=mse,hls';
-  watchStream(cam);
+  player.style.visibility = 'hidden';
+  ensureStream(cam).then(function (ok) {
+    if (current !== cam) return;
+    if (!ok) {
+      setLoading('');
+      showError('摄像头流没有就绪', '已尝试重新注册但没有成功。请确认摄像头在线、与面板在同一网段，或点右上角“刷新”重试。');
+      barHint.textContent = cam.name + ' · 流未就绪';
+      return;
+    }
+    player.src = PLAY_BASE + encodeURIComponent(cam.stream) + '&mode=mse,hls';
+    watchStream(cam);
+  });
 }
 function renderList() {
   listEl.innerHTML = '';

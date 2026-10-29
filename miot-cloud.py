@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.12"
+APP_VERSION = "0.7.13"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -2372,6 +2372,19 @@ def _go2rtc_base():
     if env_url and not _go2rtc_host_is_local(env_url):
         return env_url.rstrip("/")
     return "http://127.0.0.1:1984"
+
+
+def _go2rtc_stream_names():
+    """返回 (go2rtc 是否在线, 已注册的流名集合)。"""
+    try:
+        req = urllib.request.Request(_go2rtc_base() + "/api/streams")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read() or b"{}")
+        if isinstance(data, dict):
+            return True, {str(k) for k in data.keys()}
+        return False, set()
+    except Exception:
+        return False, set()
 
 
 def _go2rtc_put(name, src):
@@ -6129,6 +6142,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_caps(u)
         elif u.path == "/api/cameras":
             self.api_cameras(u)
+        elif u.path == "/api/camera_ensure":
+            self.api_camera_ensure(u)
         elif u.path == "/api/camera_state":
             self.api_camera_state(u)
         elif u.path == "/api/camera/setup_state":
@@ -6488,6 +6503,35 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": False, "error": str(e)[:160]})
             return
         self._send(200, data)
+
+    def api_camera_ensure(self, u=None):
+        """页面播放前调用：流不在 go2rtc 里就重新注册（go2rtc 重启后运行时流会丢）。"""
+        name = (urllib.parse.parse_qs(u.query).get("src") or [""])[0] if u else ""
+        if not name.startswith("cam_"):
+            self._send(400, {"ok": False, "ready": False, "error": "流名不合法"})
+            return
+        ready, names = _go2rtc_stream_names()
+        if ready and name in names:
+            self._send(200, {"ok": True, "ready": True})
+            return
+        did = name[len("cam_"):]
+        if did.endswith("_h264"):
+            did = did[:-len("_h264")]
+        reason = ""
+        try:
+            res = ensure_cameras(force=True) or {}
+            for item in res.get("cameras") or []:
+                if str(item.get("did") or "") == did:
+                    reason = str(item.get("error") or "")
+                    break
+        except Exception as exc:
+            reason = str(exc)[:160]
+        ready, names = _go2rtc_stream_names()
+        if ready and name in names:
+            self._send(200, {"ok": True, "ready": True, "recovered": True})
+            return
+        self._send(200, {"ok": False, "ready": False,
+                         "error": reason or "摄像头流未就绪，请点“刷新”重试"})
 
     def api_camera_state(self, u=None):
         name = (urllib.parse.parse_qs(u.query).get("name") or [""])[0] if u else ""
