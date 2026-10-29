@@ -201,7 +201,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.15"
+APP_VERSION = "0.7.16"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -5249,7 +5249,7 @@ def _bridge_status():
     if not host:
         reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）")
     if not dll_dir:
-        reasons.append("未找到官方电脑版组件，可在下方选择安装目录导入")
+        reasons.append("桥接组件未就绪，请更新到完整安装包")
     if not ffmpeg:
         reasons.append("未找到 ffmpeg，请先在摄像头组件里安装")
     return {
