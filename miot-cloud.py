@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.9"
+APP_VERSION = "0.7.10"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -346,6 +346,8 @@ def _normalize_config(data):
     out["update_url"] = update_url if update_url.startswith(("http://", "https://")) else ""
     out["admin_pin_salt"] = str(src.get("admin_pin_salt") or "")
     out["admin_pin_hash"] = str(src.get("admin_pin_hash") or "")
+    secret = str(src.get("device_secret") or "")
+    out["device_secret"] = secret if len(secret) >= 64 else ""
     return out
 
 def load_config():
@@ -939,11 +941,23 @@ def verify_finish(bind_id, code):
 def _save_auth(auth):
     global AUTH
     AUTH = auth
+    tmp = AUTH_FILE + ".tmp"
     try:
-        json.dump(auth, open(AUTH_FILE, "w"), ensure_ascii=False)
-        os.chmod(AUTH_FILE, 0o600)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(auth, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, AUTH_FILE)
     except Exception as e:
         LOG.warning("save auth failed: %s", e)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 def _read_auth_file():
     try:
@@ -1981,13 +1995,36 @@ def save_layout(order):
         pass
     return order
 
-def load_settings():
+_JSON_CACHE = {}
+_JSON_CACHE_LOCK = threading.Lock()
+
+
+def _read_json_cached(path):
+    """按 mtime 缓存解析结果，避免每次 /api/status 都读盘。返回值只读，改动请先复制。"""
     try:
-        with open(SETTINGS_FILE, encoding="utf-8") as f:
+        stamp = os.stat(path).st_mtime_ns
+    except OSError:
+        return {}
+    with _JSON_CACHE_LOCK:
+        hit = _JSON_CACHE.get(path)
+        if hit and hit[0] == stamp:
+            return hit[1]
+    try:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+    if not isinstance(data, dict):
+        return {}
+    with _JSON_CACHE_LOCK:
+        if len(_JSON_CACHE) > 32:
+            _JSON_CACHE.clear()
+        _JSON_CACHE[path] = (stamp, data)
+    return data
+
+
+def load_settings():
+    return dict(_read_json_cached(SETTINGS_FILE))
 
 def save_settings(data):
     tmp = SETTINGS_FILE + ".tmp"
@@ -2000,11 +2037,7 @@ def save_settings(data):
         pass
 
 def _load_pages_meta():
-    try:
-        with open(PAGES_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = {}
+    data = dict(_read_json_cached(PAGES_FILE))
     if not isinstance(data, dict):
         data = {}
     items = data.get("items")
@@ -3279,8 +3312,32 @@ def admin_pin_set():
 def _needs_onboarding():
     return (not admin_pin_set()) or (not bool(_load_auth()))
 
+PIN_ITERATIONS = 200000
+
+
 def _pin_hash(pin, salt):
-    return hashlib.sha256((salt + pin).encode("utf-8")).hexdigest()
+    digest = hashlib.pbkdf2_hmac("sha256", (pin or "").encode("utf-8"),
+                                 (salt or "").encode("utf-8"), PIN_ITERATIONS)
+    return "pbkdf2$%d$%s" % (PIN_ITERATIONS, digest.hex())
+
+
+def _pin_matches(pin, salt, expected):
+    """校验 PIN；旧版单次 SHA256 命中时返回 need_upgrade，由调用方重新哈希。"""
+    expected = expected or ""
+    if not expected:
+        return False, False
+    if expected.startswith("pbkdf2$"):
+        try:
+            _, iters, hexdigest = expected.split("$", 2)
+            digest = hashlib.pbkdf2_hmac("sha256", (pin or "").encode("utf-8"),
+                                         (salt or "").encode("utf-8"), int(iters))
+        except (TypeError, ValueError):
+            return False, False
+        return hmac.compare_digest(digest.hex(), hexdigest), False
+    legacy = hashlib.sha256(((salt or "") + (pin or "")).encode("utf-8")).hexdigest()
+    if hmac.compare_digest(legacy, expected):
+        return True, True
+    return False, False
 
 def _cookie_value(handler, name):
     raw = handler.headers.get("Cookie", "") or ""
@@ -3300,9 +3357,16 @@ def _is_loopback(handler):
 
 
 def _device_key():
-    return ("%s|%s|miot-device-v1" % (
-        CONFIG.get("admin_pin_salt") or "",
-        CONFIG.get("admin_pin_hash") or "")).encode("utf-8")
+    """设备 cookie 的 HMAC 密钥：独立随机值，不能从 PIN 推出（否则拿到一个 cookie 就能离线爆破 PIN）。"""
+    secret = str(CONFIG.get("device_secret") or "")
+    if len(secret) < 32:
+        secret = secrets.token_hex(32)
+        try:
+            save_config({"device_secret": secret})
+            LOG.info("device cookie secret initialized")
+        except Exception as e:
+            LOG.warning("persist device secret failed: %s", e)
+    return secret.encode("utf-8")
 
 
 def _device_cookie_header():
@@ -5705,7 +5769,6 @@ class Handler(BaseHTTPRequestHandler):
             body = body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         for k, v in (headers or {}).items():
             if isinstance(v, (list, tuple)):
@@ -6619,6 +6682,8 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def api_admin_update_status(self):
+        if not self._admin_require():
+            return
         data = _update_status_read()
         payload = {k: data.get(k) for k in
                    ("state", "message", "percent", "ts", "current", "target")}
@@ -6687,7 +6752,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "msg": "PIN 长度需为 4-20 位"})
             return
         salt = secrets.token_hex(8)
-        save_config({"admin_pin_salt": salt, "admin_pin_hash": _pin_hash(pin, salt)})
+        save_config({"admin_pin_salt": salt, "admin_pin_hash": _pin_hash(pin, salt),
+                     "device_secret": secrets.token_hex(32)})
         token = _new_admin_session()
         LOG.info("admin PIN initialized")
         self._send(200, {"ok": True},
@@ -6706,7 +6772,14 @@ class Handler(BaseHTTPRequestHandler):
         pin = str(body.get("pin") or "").strip()
         salt = CONFIG.get("admin_pin_salt") or ""
         expected = CONFIG.get("admin_pin_hash") or ""
-        if not pin or not secrets.compare_digest(_pin_hash(pin, salt), expected):
+        ok, upgrade = _pin_matches(pin, salt, expected) if pin else (False, False)
+        if upgrade:
+            try:
+                save_config({"admin_pin_hash": _pin_hash(pin, salt)})
+                LOG.info("admin PIN hash upgraded to PBKDF2")
+            except Exception as e:
+                LOG.warning("upgrade PIN hash failed: %s", e)
+        if not ok:
             time.sleep(0.4)
             LOG.warning("audit admin_login ip=%s result=fail", ip)
             self._send(401, {"ok": False, "msg": "PIN 不正确"})
@@ -6737,7 +6810,14 @@ class Handler(BaseHTTPRequestHandler):
         pin = str(body.get("pin") or "").strip()
         salt = CONFIG.get("admin_pin_salt") or ""
         expected = CONFIG.get("admin_pin_hash") or ""
-        if not pin or not secrets.compare_digest(_pin_hash(pin, salt), expected):
+        ok, upgrade = _pin_matches(pin, salt, expected) if pin else (False, False)
+        if upgrade:
+            try:
+                save_config({"admin_pin_hash": _pin_hash(pin, salt)})
+                LOG.info("admin PIN hash upgraded to PBKDF2")
+            except Exception as e:
+                LOG.warning("upgrade PIN hash failed: %s", e)
+        if not ok:
             time.sleep(0.4)
             LOG.warning("audit device_unlock ip=%s result=fail", ip)
             self._send(401, {"ok": False, "msg": "PIN 不正确"})
@@ -6838,7 +6918,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "msg": "PIN 长度需为 4-20 位"})
             return
         salt = secrets.token_hex(8)
-        save_config({"admin_pin_salt": salt, "admin_pin_hash": _pin_hash(pin, salt)})
+        save_config({"admin_pin_salt": salt, "admin_pin_hash": _pin_hash(pin, salt),
+                     "device_secret": secrets.token_hex(32)})
         self._send(200, {"ok": True})
 
     def api_admin_reset(self, body):
@@ -6858,7 +6939,8 @@ class Handler(BaseHTTPRequestHandler):
             save_settings(settings)
         if what in ("settings", "factory"):
             if what == "settings":
-                keep = ("admin_pin_salt", "admin_pin_hash", "update_url", "lan_ip",
+                keep = ("admin_pin_salt", "admin_pin_hash", "device_secret",
+                        "update_url", "lan_ip",
                         "songloft_url", "songloft_user", "songloft_pass",
                         "go_music_dl_url", "go2rtc_url", "plugin_account_file", "country")
                 base = dict(DEFAULT_CONFIG)

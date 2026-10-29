@@ -900,6 +900,7 @@ if(navigator.maxTouchPoints>0||'ontouchstart' in window)document.body.classList.
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
 document.addEventListener('contextmenu',function(e){e.preventDefault();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){var a=document.getElementById('assistant');if(a&&!a.classList.contains('hidden'))closeAssistant();var c=document.getElementById('caps');if(c&&!c.classList.contains('hidden'))closeCaps();}});
+var lastRenderKey='';
 var devices=[], camCards=[], speakerCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='dark', statusData=null;
 var speakerCfg={enabled:false,text_enabled:false,voice_enabled:false,answer_mode:'speak',max_chars:200,speakers:[]};
 var assistantSpeaker=null, assistantChatTimer=null, assistantVoiceTimer=null, assistantVoiceSince=0, assistantVoiceHeard=false, assistantVoiceBaseline='', assistantTaskId='', assistantLastAnswer='', voiceLastAnswer='', assistantVoiceStarted=0;
@@ -1262,11 +1263,11 @@ function toggleEdit(){
   if(editing)return;
   editOrder=orderedCards(allCards()).map(function(d){return d._key;});
   editing=true;document.body.classList.add('editing');
-  render();
+  lastRenderKey='';render();
 }
 function cancelLayout(){
   editing=false;document.body.classList.remove('editing');editOrder=[];page=0;
-  render();
+  lastRenderKey='';render();
 }
 function saveLayout(){
   fetch(API+'/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1274,7 +1275,7 @@ function saveLayout(){
     if(!r.ok){toast(r.msg||'保存失败',true);return;}
     layoutOrder=r.order||editOrder.slice();
     editing=false;document.body.classList.remove('editing');page=0;
-    render();toast('排版已保存');
+    lastRenderKey='';render();toast('排版已保存');
   }).catch(function(e){toast('保存失败：'+e,true);});
 }
 function render(){
@@ -1286,9 +1287,11 @@ function render(){
   var html=pages.map(function(p){
     return '<div class="page">'+(p.length?p.map(function(d,i){return cardHTML(d,i>=8&&p.length===10);}).join(''):'<div class="empty"><div>暂无设备</div><div style="font-size:13px">正在等待云端数据</div></div>')+'</div>';
   }).join('');
-  track.innerHTML=html;
   updateNav();
   updateHeader();
+  if(html===lastRenderKey)return;   // 15 秒轮询时数据没变就不重建 DOM，避免闪烁和丢状态
+  lastRenderKey=html;
+  track.innerHTML=html;
   requestAnimationFrame(function(){
     move(false);
     if(viewport.scrollTop!==scrollY)viewport.scrollTop=scrollY;
