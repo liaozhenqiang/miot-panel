@@ -515,6 +515,11 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.11（2026-10-29）云端调用健壮性**（参考同类项目 MiHome-Windows 的 net_guard / 串行队列思路后自查发现）：
+  1. **补上 HTTP 默认超时**：`micloud` 内部 `session.post` 没有任何 timeout，网络卡住（Wi-Fi 抖动、DNS 卡住、小米接口抽风）时轮询线程会**永久阻塞**，现象是"面板还能点、数据不再刷新，重启就好"。现在统一注入连接 10s / 读取 30s，只对**没显式传 timeout** 的调用生效（扫码轮询、组件下载等自带 timeout 的不受影响）。
+  2. **复用云端客户端 + 串行化**：原来每次云调用都 `get_cloud()` 新建 `MiCloud`，而 `micloud` 又会在每次请求前 `_init_session(reset=True)` 重建 `requests.Session` —— 等于**每次云调用都重新握手**。现在缓存一个客户端、用 `CLOUD_LOCK` 串行化请求、并关闭每请求重建，连接池得以复用；凭据轮换（service token 刷新）会自动重建，请求失败会丢弃缓存下次重建。
+  3. **可观测性**：`poll ok` 日志带上耗时；单次云调用超过 5s 记一条 warning，方便判断"慢"是云端还是本地。
+
 - **v0.7.10（2026-10-29）安全与性能收尾**（代码审计后修复）：
   1. **PIN 哈希升级为 PBKDF2-SHA256（20 万次迭代）**，登录成功时检测到旧格式会自动升级，不需要重设 PIN；
   2. **设备 cookie 改用独立随机密钥**（`device_secret`，64 位十六进制）。原来 cookie 的 HMAC 密钥是从 PIN 哈希派生的，拿到任一个 cookie 就能离线爆破 4~6 位 PIN；现在不行了。⚠️ **升级后各设备需重新输入一次 PIN**（旧 cookie 作废），修改 PIN 也会让其他设备的 cookie 失效；

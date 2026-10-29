@@ -1,8 +1,8 @@
 {
-  "version": "0.7.10",
+  "version": "0.7.11",
   "released": "2026-10-29",
-  "notes": "安全与性能修复：PIN 改用 PBKDF2 哈希（旧哈希自动升级）、设备 cookie 换独立随机密钥（升级后各设备需重输一次 PIN）、登录态原子写入、后台更新状态接口加门禁、移除全站 CORS 通配、设置/页面元数据按 mtime 缓存、面板轮询不再重建 DOM。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.10-update.tar.gz",
-  "sha256": "d4bdc4caf4c55cb372b7cae16b9c19fced15d6622e3d333df8ebe3bdbda0cc58",
-  "size": 2396154
+  "notes": "云端调用健壮性：给 micloud 内部请求补默认超时（连接 10s/读取 30s），避免网络卡住时轮询线程永久阻塞（表现为面板能点但数据不刷新）；复用云端客户端并串行化请求、关闭每请求重建 Session，省掉每次云调用重新握手；poll 日志带耗时、单次调用超 5s 记 warning。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.11-update.tar.gz",
+  "sha256": "49a0f711fe3785f717622398e4c0ccadae9f1a9febcdc609dd7d3e39ad1395af",
+  "size": 2397695
 }

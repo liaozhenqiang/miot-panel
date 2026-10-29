@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.10"
+APP_VERSION = "0.7.11"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -1434,19 +1434,88 @@ def _auth_source():
     return (auth or {}).get("source") or "panel"
 
 
+CLOUD_LOCK = threading.RLock()
+_CLOUD_CLIENT = None
+_CLOUD_KEY = None
+
+
+def _install_http_defaults():
+    """micloud 内部的 session.post 没有 timeout：网络卡住时轮询线程会永久阻塞，
+    表现为"面板还能点、数据不再刷新"。只补调用方没显式传 timeout 的情况，
+    扫码长轮询、组件下载等自己有 timeout 的调用不受影响。"""
+    try:
+        from requests.sessions import Session
+    except Exception:
+        return
+    if getattr(Session, "_miot_defaults", False):
+        return
+    original = Session.request
+
+    def request(self, method, url, **kwargs):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = (10.0, 30.0)
+        return original(self, method, url, **kwargs)
+
+    Session.request = request
+    Session._miot_defaults = True
+    LOG.info("http default timeout installed (connect 10s / read 30s)")
+
+
+def _install_cloud_pooling():
+    """micloud 每次请求都 _init_session(reset=True) 重建 requests.Session，连接池白丢，
+    等于每次云调用都重新握手。加锁串行化之后可以安全地只建一次。"""
+    cls = getattr(MiCloud, "__mro__", ())
+    target = MiCloud if MiCloud is not None else None
+    if target is None or not hasattr(target, "_init_session"):
+        return
+    if getattr(target, "_miot_pooling", False):
+        return
+    original = target._init_session
+
+    def _init_session(self, reset=False):
+        return original(self, False)
+
+    target._init_session = _init_session
+    target._miot_pooling = True
+    LOG.info("micloud session pooling enabled (%s)", target.__name__)
+
+
+def _cloud_key(auth):
+    return (str(auth.get("user_id") or ""), str(auth.get("service_token") or ""),
+            str(auth.get("ssecurity") or ""), str(auth.get("pass_token") or ""))
+
+
+def _drop_cloud():
+    global _CLOUD_CLIENT, _CLOUD_KEY
+    with CLOUD_LOCK:
+        _CLOUD_CLIENT = None
+        _CLOUD_KEY = None
+
+
 def get_cloud():
+    global _CLOUD_CLIENT, _CLOUD_KEY
     auth = _ensure_auth_fresh()
     if not auth or MiCloud is None:
         return None
-    c = MiCloud(auth.get("username", ""), "")
-    c.user_id = auth["user_id"]
-    c.ssecurity = auth["ssecurity"]
-    c.cuser_id = auth.get("cuser_id")
-    c.pass_token = auth.get("pass_token")
-    c.service_token = auth["service_token"]
-    c.locale = "zh_CN"
-    c.timezone = "GMT+08:00"
-    return c
+    key = _cloud_key(auth)
+    with CLOUD_LOCK:
+        if _CLOUD_CLIENT is not None and _CLOUD_KEY == key:
+            return _CLOUD_CLIENT
+        c = MiCloud(auth.get("username", ""), "")
+        c.user_id = auth["user_id"]
+        c.ssecurity = auth["ssecurity"]
+        c.cuser_id = auth.get("cuser_id")
+        c.pass_token = auth.get("pass_token")
+        c.service_token = auth["service_token"]
+        c.locale = "zh_CN"
+        c.timezone = "GMT+08:00"
+        _CLOUD_CLIENT = c
+        _CLOUD_KEY = key
+        return c
+
+
+_install_http_defaults()
+_install_cloud_pooling()
 
 def suggest_role(model, name):
     m = (model or "").lower()
@@ -2321,7 +2390,8 @@ def _camera_p2p_url(c, did, model, ip):
     payload = json.dumps({"app_pubkey": pub, "did": did,
                           "support_vendors": "TUTK_CS2_MTP"}, separators=(",", ":"))
     api = c._get_api_url(CONFIG.get("country") or "cn") + "/v2/device/miss_get_vendor"
-    raw = c.request(api, {"data": payload})
+    with CLOUD_LOCK:
+        raw = c.request(api, {"data": payload})
     if not raw:
         raise RuntimeError("云端没有返回摄像头授权")
     jr = json.loads(raw)
@@ -2451,15 +2521,29 @@ def _rpc(c, did, method, payload):
     url = c._get_api_url(CONFIG.get("country") or "cn") + "/home/rpc/" + str(did)
     params = {"data": json.dumps({"method": method, "params": payload})}
     try:
-        resp = c.request(url, params)
+        with CLOUD_LOCK:
+            resp = c.request(url, params)
+    except Exception as e:
+        _drop_cloud()
+        raise RuntimeError("云端请求失败：%s" % e)
+    try:
         return json.loads(resp)
     except Exception as e:
-        raise RuntimeError("云端请求失败：%s" % e)
+        raise RuntimeError("云端返回无法解析：%s" % e)
 
 def _miotspec(c, path, payload):
     """官方 v2 miotspec 接口；旧 /home/rpc 对部分设备返回空结果（code=0 但没有数据）。"""
     url = c._get_api_url(CONFIG.get("country") or "cn") + path
-    resp = c.request(url, {"data": json.dumps(payload)})
+    started = time.time()
+    try:
+        with CLOUD_LOCK:
+            resp = c.request(url, {"data": json.dumps(payload)})
+    except Exception:
+        _drop_cloud()
+        raise
+    cost = time.time() - started
+    if cost > 5:
+        LOG.warning("slow cloud call %.1fs: %s", cost, path)
     return json.loads(resp)
 
 def _miotspec_values(c, did, specs):
@@ -2782,6 +2866,7 @@ def _load_caches():
 def poll_once():
     global DEVICES, DEV_TS, POLL_NO
     POLL_NO += 1
+    started = time.time()
     try:
         devs, err = fetch_devices()
         if devs is None:
@@ -2852,7 +2937,8 @@ def poll_once():
         with STATE_LOCK:
             supported = sum(1 for d in devs
                             if STATE.get(d["did"], {}).get("supported"))
-        LOG.info("poll ok: %d controllable / %d cloud-readable", len(devs), supported)
+        LOG.info("poll ok: %d controllable / %d cloud-readable in %.1fs",
+                 len(devs), supported, time.time() - started)
     except Exception as e:
         LOG.warning("poll error: %s", e)
 
