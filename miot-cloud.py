@@ -3356,17 +3356,24 @@ def _is_loopback(handler):
         return False
 
 
+_DEVICE_KEY_FALLBACK = ""
+
+
 def _device_key():
     """设备 cookie 的 HMAC 密钥：独立随机值，不能从 PIN 推出（否则拿到一个 cookie 就能离线爆破 PIN）。"""
+    global _DEVICE_KEY_FALLBACK
     secret = str(CONFIG.get("device_secret") or "")
-    if len(secret) < 32:
-        secret = secrets.token_hex(32)
-        try:
-            save_config({"device_secret": secret})
-            LOG.info("device cookie secret initialized")
-        except Exception as e:
-            LOG.warning("persist device secret failed: %s", e)
-    return secret.encode("utf-8")
+    if len(secret) >= 32:
+        return secret.encode("utf-8")
+    if len(_DEVICE_KEY_FALLBACK) < 32:
+        _DEVICE_KEY_FALLBACK = secrets.token_hex(32)
+    try:
+        save_config({"device_secret": _DEVICE_KEY_FALLBACK})
+        LOG.info("device cookie secret initialized")
+    except Exception as e:
+        # 配置不可写时仍用进程内密钥，至少不会每次请求都换密钥导致登录后立刻掉线
+        LOG.warning("persist device secret failed: %s", e)
+    return _DEVICE_KEY_FALLBACK.encode("utf-8")
 
 
 def _device_cookie_header():
