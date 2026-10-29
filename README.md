@@ -100,14 +100,17 @@ docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.
 
 ### Windows 10/11
 
-**推荐**：从 Release 下载 Windows 一键安装包，内置 Python 和依赖，不需要安装 Python：
+从 Release 下载，内置 Python 和依赖，不需要自己装 Python。文件名统一是 `miot-panel-v<版本>-…`：
 
-- `miot-panel-v0.7.6-windows-installer.exe`：**通用一键安装包**，一个 EXE 内置 x64 / ARM64 / x86 三套运行时，安装时按 CPU 真实架构自动选择（Surface Pro X 等 ARM64 机器装原生 ARM64 运行时）；双击安装，自动创建快捷方式，可选开机自启/全屏 kiosk，带卸载器，数据在卸载时保留；
-- `miot-panel-v0.7.6-windows-x64-portable.zip`：便携包，带 start/kiosk/stop 脚本；
-- `miot-panel-v0.7.6-windows-arm64-portable.zip`：Windows ARM64 原生便携包（内置 ARM64 Python 3.12，免安装、不走仿真），解压后双击 `launch-panel.vbs`；Windows 10 on ARM（不支持 x64 应用）用这个；
-- `miot-panel-v0.7.6-windows-x86-portable.zip`：Windows 32 位便携包（内置 32 位 Python）；
-- `miot-panel-android-1.0.2.apk`：安卓客户端；面板包里也内置了同一份 APK，手机连上面板后点顶部「更新」即可看到版本号和下载地址（**不申请任何权限**，用浏览器下载后覆盖安装，配置不丢）；
-- Windows ARM64 上即使跑的是 x86/x64 包，面板也会按 CPU 真实架构下载 ARM64 原生 go2rtc/ffmpeg 摄像头组件。
+| 包 | 适用 / 说明 |
+|---|---|
+| `windows-installer.exe` | **推荐**。一个 EXE 内置 x64 / ARM64 / x86 三套运行时，安装时按 CPU 真实架构自动选择；双击安装，桌面/开始菜单快捷方式、可选开机自启与全屏 kiosk、带卸载器，数据卸载时保留 |
+| `windows-x64-portable.zip` | 普通 64 位 Windows，解压即用（`launch-panel.vbs`） |
+| `windows-arm64-portable.zip` | **Windows ARM64 原生**（Surface Pro X、骁龙本）。Windows 10 on ARM 只能用它（该版本不支持 x64 应用） |
+| `windows-x86-portable.zip` | 32 位 Windows |
+| `android-x.y.z.apk` | 安卓客户端；面板包里也内置同一份 APK，手机连上面板点顶部「更新」即可拿到下载地址（不申请任何权限） |
+
+> Windows ARM64 上即使跑的是 x86/x64 包，面板也会按 CPU 真实架构下载 ARM64 原生 go2rtc/ffmpeg 摄像头组件。
 
 > **ARM64 验证状态（如实说明）**：本机没有 ARM64 Windows 设备，ARM64 便携包与安装器里的 ARM64 运行时只做了**静态核验** —— 包内 74 个 PE / DLL / `.pyd` 全部为 ARM64（含剔除 python.org 官方 ARM64 嵌入式包里混进来的 x64 `vcruntime140_1.dll`），所有动态库依赖在包内或系统 DLL 中闭环，`go2rtc_win_arm64`、`ffmpeg_win_arm64` 同为 ARM64 且只依赖系统 DLL。**尚未在 ARM64 真机上运行过**。因此：
 > - Windows 11 on ARM 出问题时有兜底：安装器支持 `set MIOT_ARCH=x64` 强制安装 x64 运行时（走系统 x64 仿真），或直接用 x64 便携包；
@@ -143,10 +146,24 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\miot-panel\
 
 ### Linux 一键安装
 
-Release 提供自解压安装器，会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
+**Linux 包按 CPU 架构区分**，文件名是 `miot-panel-v<版本>-linux-<arch>.tar.gz` / `-linux-<arch>-installer.run`：
+
+| arch | 适用设备 | 依赖情况 |
+|---|---|---|
+| `armv7` | 玩客云、树莓派 2/3（32 位）、老电视盒子 | 包内带 **armv7 预编译轮子**（pycryptodome 等），**不需要 gcc、不现场编译** |
+| `arm64` | 树莓派 4/5（64 位）、N1、ARM 服务器 | 包内带 aarch64 轮子 |
+| `amd64` | 普通 x86_64 PC / NAS / 虚拟机 | 包内带 x86_64 轮子 |
+| `universal` | 其它架构（riscv64 / loongarch 等）或想自己管依赖 | **不含轮子**，需要能编译 pycryptodome（装 `gcc python3-dev`） |
+
+> 先看自己机器的架构：`uname -m` → `armv7l` 用 armv7、`aarch64` 用 arm64、`x86_64` 用 amd64。
+> 依赖安装顺序：**先用包内 `wheels/` 离线安装（不编译）** → 不匹配再走 PyPI → 仍失败则自动 `apt install gcc python3-dev` 后重试，全程有明确提示。
+
+自解压安装器会自动安装缺失的 Python/pip、部署服务并设置 systemd 开机自启：
 
 ```bash
-sudo bash miot-panel-v0.7.4-linux-installer.run
+sudo bash miot-panel-v<版本>-linux-armv7-installer.run    # 玩客云
+sudo bash miot-panel-v<版本>-linux-arm64-installer.run    # 树莓派 4/5 64 位
+sudo bash miot-panel-v<版本>-linux-amd64-installer.run    # 普通 PC / NAS
 ```
 
 手动源码安装：
@@ -515,6 +532,8 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.12（2026-10-29）Linux 包按架构拆分 + 内置预编译轮子**：之前只有 `linux-universal` 一个源码包，依赖全靠 pip 现场装 —— 而 `pycryptodome` **没有 armv7 轮子**，玩客云上其实是拿 gcc 现场编译的（几分钟，没装 gcc 的机器直接失败）。现在拆成 `linux-armv7` / `linux-arm64` / `linux-amd64` 三个包，各带 `wheels/` 预编译轮子（armv7 的 pycryptodome 是在玩客云上原生编译的 `cp39-abi3-linux_armv7l`，Python 3.9~3.13 通用），`install.sh` 优先离线安装、失败才回落到 PyPI 或自动装编译工具；每种架构都有对应的 `-installer.run` 自解压安装器。`linux-universal` 保留给其它架构。
+
 - **v0.7.11（2026-10-29）云端调用健壮性**（参考同类项目 MiHome-Windows 的 net_guard / 串行队列思路后自查发现）：
   1. **补上 HTTP 默认超时**：`micloud` 内部 `session.post` 没有任何 timeout，网络卡住（Wi-Fi 抖动、DNS 卡住、小米接口抽风）时轮询线程会**永久阻塞**，现象是"面板还能点、数据不再刷新，重启就好"。现在统一注入连接 10s / 读取 30s，只对**没显式传 timeout** 的调用生效（扫码轮询、组件下载等自带 timeout 的不受影响）。
   2. **复用云端客户端 + 串行化**：原来每次云调用都 `get_cloud()` 新建 `MiCloud`，而 `micloud` 又会在每次请求前 `_init_session(reset=True)` 重建 `requests.Session` —— 等于**每次云调用都重新握手**。现在缓存一个客户端、用 `CLOUD_LOCK` 串行化请求、并关闭每请求重建，连接池得以复用；凭据轮换（service token 刷新）会自动重建，请求失败会丢弃缓存下次重建。

@@ -1,0 +1,8 @@
+{
+  "version": "0.7.12",
+  "released": "2026-10-29",
+  "notes": "Linux 包按架构拆分（armv7 / arm64 / amd64，各带预编译 wheels，玩客云不再现场编译 pycryptodome）；install.sh 优先离线轮子、失败回落 PyPI、再自动装编译工具；每种架构都有对应 -installer.run。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.12-update.tar.gz",
+  "sha256": "6882fdd69447b33621eb5ceb6d7fd389c6999b81c2e8bd78236101fe4610e0ef",
+  "size": 2399324
+}

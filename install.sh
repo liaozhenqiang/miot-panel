@@ -36,11 +36,40 @@ PYTHON_BIN="$(command -v python3)"
 echo "== 安装目录: $DIR"
 echo "== 监听端口: $PORT"
 
-if ! python3 -c "import micloud, segno" >/dev/null 2>&1; then
-  echo "== 安装 Python 依赖 micloud / segno"
-  python3 -m pip install --break-system-packages -q micloud segno \
-    || python3 -m pip install -q micloud segno \
-    || { echo "依赖安装失败，请先执行：apt install -y python3-pip && pip3 install micloud segno"; exit 1; }
+pip_install() {
+  # Debian 12+/Ubuntu 23+ 需要 --break-system-packages；老系统不认这个参数，所以两层回退
+  python3 -m pip install --break-system-packages -q "$@" \
+    || python3 -m pip install -q "$@"
+}
+
+WHEELS_DIR="$SRC/wheels"
+deps_ok() {
+  python3 -c "import micloud, segno, Crypto, requests" >/dev/null 2>&1
+}
+
+if ! deps_ok; then
+  if [ -d "$WHEELS_DIR" ] && ls "$WHEELS_DIR"/*.whl >/dev/null 2>&1; then
+    echo "== 安装依赖（离线轮子，无需编译）: $(ls "$WHEELS_DIR"/*.whl | wc -l) 个"
+    pip_install --no-index --find-links "$WHEELS_DIR" micloud==0.6 segno==1.6.6 \
+      || echo "   离线轮子不适用于当前 Python/glibc，改用 PyPI"
+  fi
+  if ! deps_ok; then
+    echo "== 离线轮子装上了但 import 失败（多为 glibc 版本不匹配），卸载后改用 PyPI 重装"
+    python3 -m pip uninstall -y -q pycryptodome micloud >/dev/null 2>&1 || true
+    echo "== 安装依赖（PyPI；armv7 这类没有预编译轮子的平台会现场编译 pycryptodome）"
+    pip_install micloud==0.6 segno==1.6.6 && deps_ok
+  fi
+  if ! deps_ok; then
+    echo "== 仍缺依赖，尝试安装编译工具后重试"
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -q gcc python3-dev libffi-dev >/dev/null 2>&1 || true
+    fi
+    pip_install micloud==0.6 segno==1.6.6 && deps_ok
+  fi
+  if ! deps_ok; then
+    echo "依赖安装失败。可手动执行：apt install -y python3-pip gcc python3-dev && pip3 install micloud segno"
+    exit 1
+  fi
 fi
 
 mkdir -p "$DIR"
