@@ -198,7 +198,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.13"
+APP_VERSION = "0.7.14"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -278,6 +278,7 @@ DEFAULT_CONFIG = {
     "page_size": 10,
     "hidden_devices": [],
     "renames": {},
+    "hide_cursor": "auto",
     "speaker_panel_enabled": True,
     "speaker_text_enabled": True,
     "speaker_voice_enabled": True,
@@ -324,6 +325,8 @@ def _normalize_config(data):
     renames = src.get("renames") if isinstance(src.get("renames"), dict) else {}
     out["renames"] = {str(k): str(v)[:40] for k, v in list(renames.items())[:500]
                       if str(v).strip()}
+    cursor = str(src.get("hide_cursor") or "auto")
+    out["hide_cursor"] = cursor if cursor in ("auto", "always", "never") else "auto"
     for key in ("speaker_panel_enabled", "speaker_text_enabled",
                 "speaker_voice_enabled"):
         out[key] = src.get(key, DEFAULT_CONFIG[key]) is not False
@@ -1529,6 +1532,11 @@ def suggest_role(model, name):
     if ("aircondition" in m or "airc." in m or "acpartner" in m
             or "air-condition" in m or "空调" in n or "新风" in n):
         return "ac"
+    if any(k in m + n for k in ["waterheater", "water-heater", "water_heater",
+                                "热水器", "小厨宝", "电热水"]):
+        return "waterheater"
+    if any(k in m + n for k in ["gateway", "网关", "hub", "多模"]):
+        return "gateway"
     if any(k in m + n for k in ["fan", "风扇", "塔扇"]):
         return "fan"
     if any(k in m + n for k in ["plug", "socket", "插座", "switch", "开关"]):
@@ -1538,11 +1546,18 @@ def suggest_role(model, name):
     return "other"
 
 ROLE_ICON = {"light": "灯", "curtain": "窗", "ac": "空", "plug": "插",
-             "fan": "风", "sensor": "感", "other": "设"}
+             "fan": "风", "sensor": "感", "waterheater": "热", "gateway": "网",
+             "other": "设"}
 
 # 面板只展示真正可控制的设备，避免把摄像头/手机/传感器当开关
-CONTROL_ROLES = {"light", "plug", "ac", "curtain", "fan"}
+CONTROL_ROLES = {"light", "plug", "ac", "curtain", "fan", "waterheater", "gateway"}
 DEFAULT_PROFILE = {"power": (2, 1)}
+# 电热水器：多数型号电源 2/1、目标温度 2/5、保温/加热模式 2/3；对不上时用“更多”里的通用属性控制
+ROLE_PROFILES = {
+    "waterheater": {"power": (2, 1), "temp": (2, 5), "mode": (2, 3),
+                    "temp_range": (35, 75),
+                    "modes": [(0, "关闭"), (1, "加热"), (2, "保温")]},
+}
 
 # 空调类设备的 MIOT 属性映射（来自 miot-spec）
 MODEL_PROFILES = {
@@ -2041,8 +2056,13 @@ MODEL_METRICS = {
     "xiaomi.airc.h09h00": [{"watt": (20, 1, 1, "W")}],
 }
 
-def profile_for(model):
-    return MODEL_PROFILES.get(model or "", DEFAULT_PROFILE)
+def profile_for(model, role=None):
+    prof = MODEL_PROFILES.get(model or "")
+    if prof:
+        return prof
+    if role and role in ROLE_PROFILES:
+        return ROLE_PROFILES[role]
+    return DEFAULT_PROFILE
 
 def load_layout():
     try:
@@ -2374,6 +2394,15 @@ def _go2rtc_base():
     return "http://127.0.0.1:1984"
 
 
+def _camera_cache_expire():
+    """清掉摄像头列表的防抖时间戳，强制下一次 ensure_cameras 真的重新注册。"""
+    with CAM_LOCK:
+        try:
+            CAM_CACHE["ts"] = 0
+        except Exception:
+            pass
+
+
 def _go2rtc_stream_names():
     """返回 (go2rtc 是否在线, 已注册的流名集合)。"""
     try:
@@ -2578,11 +2607,11 @@ def _prop_values(jr):
                 out[(it.get("siid"), it.get("piid"))] = it.get("value")
     return out
 
-def cloud_set_prop(did, model, cmd, value):
+def cloud_set_prop(did, model, cmd, value, role=None):
     c = get_cloud()
     if not c:
         return False, "未登录"
-    prof = profile_for(model)
+    prof = profile_for(model, role)
     if cmd not in ("power", "temp", "mode") or cmd not in prof:
         return False, "该设备不支持 %s" % cmd
     siid, piid = prof[cmd]
@@ -2779,7 +2808,7 @@ def cloud_get_states(devs):
             props = _sensor_props(d["model"])
             specs = [(p["siid"], p["piid"]) for p in props]
         else:
-            prof = profile_for(d["model"])
+            prof = profile_for(d["model"], d.get("role"))
             specs = [prof["power"]]
             for k in ("temp", "mode"):
                 if k in prof:
@@ -2809,7 +2838,7 @@ def cloud_get_states(devs):
             if new:
                 states[str(d["did"])] = {"values": new}
             continue
-        prof = profile_for(d["model"])
+        prof = profile_for(d["model"], d.get("role"))
         power = vals.get((str(d["did"]), prof["power"][0], prof["power"][1]))
         if power is None:
             continue
@@ -2992,8 +3021,8 @@ PWA_ICONS = {
 }
 
 ANDROID_APK_NAME = "miot-panel-android.apk"
-ANDROID_VERSION_NAME = "1.0.3"
-ANDROID_VERSION_CODE = 4
+ANDROID_VERSION_NAME = "1.0.4"
+ANDROID_VERSION_CODE = 5
 ANDROID_RELEASE_URL = "https://github.com/liaozhenqiang/miot-panel/releases/latest"
 
 
@@ -3906,69 +3935,89 @@ def _cleanup_update_packages():
     shutil.rmtree(os.path.join(UPDATE_DIR, "stage"), ignore_errors=True)
 
 
+def _update_download(manifest, tar_path, part_path):
+    """按镜像逐个尝试下载，超时/断流自动换下一个镜像重试。"""
+    target = manifest["version"]
+    errors = []
+    for candidate in _mirror_candidates(manifest["url"]):
+        host = urllib.parse.urlsplit(candidate).netloc or candidate
+        for attempt in (1, 2):
+            try:
+                req = urllib.request.Request(
+                    candidate,
+                    headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+                _update_status_write("downloading", "正在下载 v%s（%s）" % (target, host),
+                                     0, target)
+                with urllib.request.urlopen(req, timeout=45) as resp,                         open(part_path, "wb") as out:
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    got = 0
+                    last = 0
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        got += len(chunk)
+                        if got > UPDATE_MAX_BYTES:
+                            raise RuntimeError("更新包超过大小限制")
+                        out.write(chunk)
+                        if got - last >= 512 * 1024:
+                            pct = int(got * 100 / total) if total else 0
+                            _update_status_write(
+                                "downloading", "已下载 %.1f MB" % (got / 1048576.0),
+                                pct, target)
+                            last = got
+                os.replace(part_path, tar_path)
+                digest = hashlib.sha256()
+                with open(tar_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if digest.hexdigest().lower() != manifest["sha256"]:
+                    raise RuntimeError("SHA256 校验失败")
+                return
+            except Exception as exc:
+                errors.append("%s#%d: %s" % (host, attempt, str(exc)[:70]))
+                LOG.warning("update download failed on %s (try %d): %s", host, attempt, exc)
+                try:
+                    os.remove(part_path)
+                except OSError:
+                    pass
+    raise RuntimeError("下载失败：%s" % "；".join(errors[-3:]))
+
+
+def _update_install_local(tar_path, target):
+    """校验并安装本地的更新包（下载完成或用户手动上传）。"""
+    stage = os.path.join(UPDATE_DIR, "stage")
+    shutil.rmtree(stage, ignore_errors=True)
+    os.makedirs(stage, exist_ok=True)
+    src_dir = _extract_update_package(tar_path, stage)
+    if not src_dir:
+        raise RuntimeError("更新包中未找到程序文件")
+    for required in ("miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html"):
+        if not os.path.isfile(os.path.join(src_dir, required)):
+            raise RuntimeError("更新包缺少 %s" % required)
+    got = _file_version(os.path.join(src_dir, "miot-cloud.py"))
+    if target and got != target:
+        raise RuntimeError("更新包版本（%s）与清单（%s）不一致" % (got or "?", target))
+    if not got:
+        raise RuntimeError("更新包里读不到版本号，已拒绝安装")
+    _update_status_write("installing", "正在安装 v%s" % got, 100, got)
+    backup_dir = os.path.join(UPDATE_DIR, "backup-%s-%s" % (APP_VERSION, got))
+    shutil.rmtree(backup_dir, ignore_errors=True)
+    _backup_app_files(APP_DIR, backup_dir)
+    _spawn_update_worker(src_dir, got, backup_dir)
+    return got
+
+
 def _update_prepare(manifest):
     target = manifest["version"]
     tar_path = os.path.join(UPDATE_DIR, "download.tar.gz")
     part_path = tar_path + ".part"
-    stage = os.path.join(UPDATE_DIR, "stage")
     try:
         os.makedirs(UPDATE_DIR, mode=0o700, exist_ok=True)
         _update_status_write("downloading", "开始下载 v%s" % target, 0, target)
-        req = urllib.request.Request(
-            manifest["url"],
-            headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
-        try:
-            resp = urllib.request.urlopen(req, timeout=30)
-        except urllib.error.URLError as exc:
-            reason = str(getattr(exc, "reason", exc))
-            if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason:
-                LOG.warning("update TLS chain untrusted; retrying with SHA256-anchored download")
-                resp = urllib.request.urlopen(
-                    req, timeout=30, context=ssl._create_unverified_context())
-            else:
-                raise
-        with resp, open(part_path, "wb") as out:
-            total = int(resp.headers.get("Content-Length") or 0)
-            got = 0
-            last = 0
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                got += len(chunk)
-                if got > UPDATE_MAX_BYTES:
-                    raise RuntimeError("更新包超过大小限制")
-                out.write(chunk)
-                if got - last >= 512 * 1024:
-                    pct = int(got * 100 / total) if total else 0
-                    _update_status_write(
-                        "downloading", "已下载 %.1f MB" % (got / 1048576.0),
-                        pct, target)
-                    last = got
-        os.replace(part_path, tar_path)
+        _update_download(manifest, tar_path, part_path)
         _update_status_write("verifying", "校验更新包", 100, target)
-        digest = hashlib.sha256()
-        with open(tar_path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                digest.update(chunk)
-        if digest.hexdigest().lower() != manifest["sha256"]:
-            raise RuntimeError("SHA256 校验失败，已拒绝安装")
-        shutil.rmtree(stage, ignore_errors=True)
-        os.makedirs(stage, exist_ok=True)
-        src_dir = _extract_update_package(tar_path, stage)
-        if not src_dir:
-            raise RuntimeError("更新包中未找到程序文件")
-        for required in ("miot-cloud.py", "cloud_panel.html", "admin.html", "camera.html"):
-            if not os.path.isfile(os.path.join(src_dir, required)):
-                raise RuntimeError("更新包缺少 %s" % required)
-        if _file_version(os.path.join(src_dir, "miot-cloud.py")) != target:
-            raise RuntimeError("更新包版本与清单不一致")
-        _update_status_write("installing", "正在安装 v%s" % target, 100, target)
-        backup_dir = os.path.join(
-            UPDATE_DIR, "backup-%s-%s" % (APP_VERSION, target))
-        shutil.rmtree(backup_dir, ignore_errors=True)
-        _backup_app_files(APP_DIR, backup_dir)
-        _spawn_update_worker(src_dir, target, backup_dir)
+        _update_install_local(tar_path, target)
     except Exception as exc:
         LOG.exception("update prepare failed")
         _update_status_write("failed", str(exc)[:400], None, target)
@@ -3977,6 +4026,23 @@ def _update_prepare(manifest):
                 os.remove(path)
             except OSError:
                 pass
+    finally:
+        UPDATE_RUNNING["active"] = False
+
+
+def _update_install_upload(tar_path):
+    target = ""
+    try:
+        os.makedirs(UPDATE_DIR, mode=0o700, exist_ok=True)
+        _update_status_write("verifying", "校验上传的更新包", 100)
+        target = _update_install_local(tar_path, "")
+    except Exception as exc:
+        LOG.exception("update upload failed")
+        _update_status_write("failed", str(exc)[:400], None, target)
+        try:
+            os.remove(tar_path)
+        except OSError:
+            pass
     finally:
         UPDATE_RUNNING["active"] = False
 
@@ -6294,6 +6360,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_update_check(body)
         elif u.path == "/api/admin/update/apply":
             self.api_admin_update_apply(body)
+        elif u.path == "/api/admin/update/upload":
+            self.api_admin_update_upload()
         elif u.path == "/api/speaker/chat":
             self.api_speaker_chat(body)
         else:
@@ -6341,6 +6409,7 @@ class Handler(BaseHTTPRequestHandler):
                          "controllable_count": supported - sensors,
                          "sensor_count": sensors, "blind_count": blind,
                          "weather": weather or None, "theme": theme,
+                         "hide_cursor": CONFIG.get("hide_cursor") or "auto",
                          "active_page": ({"id": page["active"], "name": page["name"],
                                           "version": page["version"]}
                                          if page.get("active") else None)})
@@ -6363,7 +6432,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "icon": ROLE_ICON.get(d["role"], "🔧"),
                                  "power": None, "blind": True})
                 continue
-            prof = profile_for(d["model"])
+            prof = profile_for(d["model"], d.get("role"))
             item = {"did": d["did"], "name": d["name"], "model": d["model"],
                     "online": d["online"], "role": d["role"],
                     "icon": ROLE_ICON.get(d["role"], "🔧"),
@@ -6519,6 +6588,7 @@ class Handler(BaseHTTPRequestHandler):
             did = did[:-len("_h264")]
         reason = ""
         try:
+            _camera_cache_expire()
             res = ensure_cameras(force=True) or {}
             for item in res.get("cameras") or []:
                 if str(item.get("did") or "") == did:
@@ -6713,7 +6783,7 @@ class Handler(BaseHTTPRequestHandler):
         if not d.get("online"):
             self._send(200, {"ok": False, "msg": "设备离线"})
             return
-        ok, err = cloud_set_prop(did, d["model"], cmd, value)
+        ok, err = cloud_set_prop(did, d["model"], cmd, value, d.get("role"))
         LOG.info("audit control ip=%s did=%s cmd=%s=%s -> %s", ip, did, cmd, value,
                  "OK" if ok else (err or "fail"))
         if not ok:
@@ -6904,6 +6974,50 @@ class Handler(BaseHTTPRequestHandler):
             UPDATE_RUNNING["active"] = False
             self._send(200, {"ok": False, "error": str(exc)[:240]})
 
+    def api_admin_update_upload(self):
+        if not self._admin_require():
+            return
+        if os.path.exists("/.dockerenv") or os.environ.get("MIOT_DOCKER") == "1":
+            self._send(409, {"ok": False, "error": "Docker 容器内不支持热更新，请重建镜像"})
+            return
+        if UPDATE_RUNNING["active"]:
+            self._send(409, {"ok": False, "error": "已有更新正在进行"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0:
+            self._send(400, {"ok": False, "error": "没有收到文件内容"})
+            return
+        if length > UPDATE_MAX_BYTES:
+            self._send(413, {"ok": False, "error": "更新包超过大小限制"})
+            return
+        os.makedirs(UPDATE_DIR, mode=0o700, exist_ok=True)
+        tar_path = os.path.join(UPDATE_DIR, "upload.tar.gz")
+        part_path = tar_path + ".part"
+        try:
+            remaining = length
+            with open(part_path, "wb") as out:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        raise RuntimeError("上传中断")
+                    out.write(chunk)
+                    remaining -= len(chunk)
+            os.replace(part_path, tar_path)
+        except Exception as exc:
+            try:
+                os.remove(part_path)
+            except OSError:
+                pass
+            self._send(200, {"ok": False, "error": str(exc)[:200]})
+            return
+        UPDATE_RUNNING["active"] = True
+        threading.Thread(target=_update_install_upload, args=(tar_path,), daemon=True).start()
+        self._send(202, {"ok": True, "state": "verifying",
+                         "message": "已收到更新包，正在校验并安装"})
+
     def api_admin_setup(self, body):
         if admin_pin_set():
             self._send(400, {"ok": False, "msg": "管理员 PIN 已设置"})
@@ -7020,6 +7134,10 @@ class Handler(BaseHTTPRequestHandler):
             updates["renames"] = {str(k): str(v)[:40]
                                   for k, v in list(body["renames"].items())[:500]
                                   if str(v).strip()}
+        if "hide_cursor" in body:
+            value = str(body.get("hide_cursor") or "auto")
+            if value in ("auto", "always", "never"):
+                updates["hide_cursor"] = value
         for key in ("speaker_panel_enabled", "speaker_text_enabled",
                     "speaker_voice_enabled"):
             if key in body:

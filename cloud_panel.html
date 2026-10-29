@@ -202,6 +202,8 @@ body.editing .viewport{touch-action:pan-y;}
 .btn,.sw,.step,.toolbtn,.arrow{transition:transform .08s ease,filter .08s ease,background .15s ease,color .15s ease;}
 .btn:active,.sw:active,.step:active,.toolbtn:active,.arrow:active{transform:scale(.94);filter:brightness(.9);}
 body{user-select:none;-webkit-user-select:none;overscroll-behavior:none;}
+body.nocursor,body.nocursor *{cursor:none!important;}
+body.showcursor,body.showcursor *{cursor:auto!important;}
 *::-webkit-scrollbar{width:0;height:0;}
 @media (pointer:coarse){*,*::before,*::after{cursor:none!important;}}
 body.touch *{cursor:none!important;}
@@ -919,6 +921,10 @@ function tick(){
 tick();setInterval(tick,1000);
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function applyCursor(mode){
+  document.body.classList.toggle('nocursor',mode==='always');
+  document.body.classList.toggle('showcursor',mode==='never');
+}
 function isOn(v){return v===true||v==='true'||v===1||v==='1'||v==='on';}
 function toast(msg,err){
   var el=document.getElementById('msg');if(!el)return;
@@ -1317,6 +1323,7 @@ function load(){
     weatherLabel=s.weather_label||weatherLabel;
     if(s.page_size)PAGE=Number(s.page_size)||PAGE;
     applyTheme(s.theme||theme);
+    applyCursor(s.hide_cursor);
     if(location.pathname==='/'&&s.active_page&&s.active_page.id){location.href='/';return null;}
     if(!s.logged_in){location.href=API+'/login';return null;}
     return fetch(API+'/api/devices').then(function(r){return r.json();});

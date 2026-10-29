@@ -385,6 +385,12 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       </select><button class="primary" onclick="saveAdminTheme()">应用主题</button><span class="hint" id="themeAdminMsg"></span></div>
       <div class="themeSwatches" id="themeSwatches"></div>
       <div class="sep"></div>
+      <div class="row" style="margin-top:4px"><select id="cursorMode" style="max-width:280px">
+        <option value="auto">光标：自动（触屏隐藏，鼠标显示）</option>
+        <option value="always">光标：始终隐藏（墙屏/触摸）</option>
+        <option value="never">光标：始终显示（鼠标）</option>
+      </select><button onclick="saveCursorMode()">保存光标设置</button><span class="hint" id="cursorMsg"></span></div>
+      <div class="sep"></div>
       <div class="row"><button onclick="newCustomPage()">新建自定义页面</button><button onclick="useBuiltinPage()">使用内置面板</button><span class="hint" id="activePageInfo"></span></div>
       <div class="pageList" id="customPages">正在读取自定义页面…</div>
       <div class="pageEditor hidden" id="pageEditor">
@@ -462,6 +468,11 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <button onclick="saveUpdateUrl()">保存更新源</button>
         <button onclick="checkUpdate(true)">检查更新</button>
         <button class="primary" id="updateApplyBtn" onclick="applyUpdate()" disabled>下载并更新</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="file" id="uploadPkg" accept=".gz,.tgz,.tar.gz" style="max-width:320px">
+        <button onclick="uploadPackage()">上传安装包</button>
+        <span class="hint" id="uploadMsg">国内网络拉不到 GitHub 时用这个：下载 `linux-universal` / `all-in-one` 包里的 tar.gz 直接上传</span>
       </div>
       <div class="msg" id="updateMsg"></div>
       <div class="upBar hidden" id="updateBarWrap"><i id="updateBar"></i></div>
@@ -1337,6 +1348,35 @@ function renderThemeSwatches(){
     return '<div class="themeSwatch '+t.id+(t.id===cur?' sel':'')+'" style="background:'+t.bg+'" onclick="pickTheme(\''+t.id+'\')"><span style="color:'+t.fg+'">'+esc(t.label)+'</span></div>';
   }).join('');
 }
+function renderCursorMode(){
+  var el=$('cursorMode'); if(!el) return;
+  el.value = (state && state.config && state.config.hide_cursor) || 'auto';
+}
+async function saveCursorMode(){
+  var v=$('cursorMode').value||'auto';
+  var r=await api('/api/admin/save',{hide_cursor:v});
+  if(r.data&&r.data.ok){
+    if(state&&state.config)state.config.hide_cursor=v;
+    $('cursorMsg').textContent='已保存，前台刷新后生效';
+  }else $('cursorMsg').textContent=(r.data&&(r.data.error||r.data.msg))||'保存失败';
+}
+async function uploadPackage(){
+  var input=$('uploadPkg'), file=input&&input.files&&input.files[0];
+  if(!file){ $('uploadMsg').textContent='先选择 .tar.gz 更新包'; return; }
+  $('uploadMsg').textContent='正在上传 '+(file.size/1048576).toFixed(1)+' MB…';
+  try{
+    var resp=await fetch(API+'/api/admin/update/upload',{method:'POST',body:file,
+      headers:{'Content-Type':'application/octet-stream'}});
+    var data=await resp.json().catch(function(){return {};});
+    if(!resp.ok||!data.ok){ $('uploadMsg').textContent='上传失败：'+(data.error||resp.status); return; }
+    $('uploadMsg').textContent='已收到，正在校验并安装，面板会短暂离线…';
+    $('updateBarWrap').classList.remove('hidden');
+    $('updateBar').style.width='5%';
+    if(updateTimer)clearInterval(updateTimer);
+    updateTimer=setInterval(pollUpdate,1500);
+    pollUpdate();
+  }catch(e){ $('uploadMsg').textContent='上传失败：'+e; }
+}
 async function saveAdminTheme(){
   var t=$('adminTheme').value||'dark';
   var r=await api('/api/theme',{theme:t});
@@ -1435,6 +1475,7 @@ function render(){
   renderSpeakerPanelSettings();
   $('adminTheme').value=state.theme||'dark';
   renderThemeSwatches();
+  if($('cursorMode'))$('cursorMode').value=c.hide_cursor||'auto';
   $('updateCurrent').value='v'+(state.version||'');
   $('updateUrl').value=c.update_url||'';
   if($('go2rtcUrl'))$('go2rtcUrl').value=c.go2rtc_url||'';

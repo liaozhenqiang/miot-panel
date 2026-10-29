@@ -1,8 +1,8 @@
 {
   "version": "0.7.13",
   "released": "2026-10-29",
-  "notes": "修摄像头流 RTSP 404/画面不出来：播放前查 go2rtc 有没有该流、没有就自动重新注册；8 秒无画面再自愈一次，30 秒才提示；播放器在确认有数据前保持隐藏，不再显示 ffmpeg 原始报错。",
+  "notes": "安卓客户端新增“检查更新”：面板内置客户端 APK，手机点更新即拿到下载地址（不需要任何权限）。",
   "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.13-update.tar.gz",
-  "sha256": "d12c3b733f02f4a2e5ca79b5e81ce08dc422bd5817a1bce8c094406e35078b1e",
-  "size": 2400910
+  "sha256": "c0fb0d50915f380f4bb4f21ec201a94937d590bc51babc753904654a4650daa4",
+  "size": 2401025
 }
