@@ -31,7 +31,8 @@ body{background:
 .pageno{font-size:17px;color:var(--muted);min-width:60px;text-align:center;white-space:nowrap;}
 .viewport{flex:1;min-height:0;overflow:hidden;position:relative;touch-action:none;}
 .track{display:flex;height:100%;transition:transform .35s cubic-bezier(.22,.61,.36,1);}
-.page{min-width:100%;height:100%;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);gap:12px;}
+.page{min-width:100%;height:100%;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);gap:12px;justify-content:center;}
+html.customGrid .page{grid-template-columns:repeat(var(--grid-cols,4),minmax(0,460px));grid-template-rows:repeat(var(--grid-rows,3),minmax(0,1fr));}
 .card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:14px 16px;display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.12);}
 .card:before{content:'';position:absolute;left:0;top:18px;bottom:18px;width:4px;border-radius:4px;background:var(--accent);opacity:.9;}
 .card.on{background:linear-gradient(160deg,rgba(255,122,24,.13),rgba(255,255,255,.055));border-color:rgba(255,122,24,.28);}
@@ -151,7 +152,13 @@ body.assistantOpen{overflow:hidden;}
 .ebar span{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#43d17d,#ffd166);}
 .emeta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:16px;color:#aeb8c6;padding-left:12px;margin-top:10px;}
 .editView{width:100%;height:100%;overflow:auto;padding-right:2px;}
-.editGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-content:start;}
+.editGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-content:start;max-width:1500px;margin:0 auto;}
+html.customGrid .editGrid{grid-template-columns:repeat(var(--grid-cols,4),minmax(0,1fr));}
+.editBar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:1500px;margin:0 auto 12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:var(--card);}
+.editBar label{display:flex;align-items:center;gap:8px;font-size:16px;color:var(--muted);}
+.editBar select{height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:inherit;font-size:17px;padding:0 10px;font-family:inherit;}
+.editBar .gridInfo{font-size:16px;color:var(--muted);}
+.editBar .gridReset{height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:inherit;font-size:16px;cursor:pointer;}
 .editCard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;min-height:92px;display:flex;align-items:center;gap:12px;cursor:grab;user-select:none;touch-action:none;transition:.15s;}
 .editCard.dragging{opacity:.4;}
 .editHandle{font-size:20px;color:var(--muted);letter-spacing:-3px;padding-right:2px;}
@@ -554,12 +561,74 @@ body.theme-pixel .aMsg.user{background:#0a1a0a;color:var(--accent);border:1px so
 body.theme-pixel .aMsg.ai{background:#071007;color:#b7ffb7;border:1px solid #1f7a1f;}
 body.theme-pixel .aMsg.err{background:#160808;color:#ff7b7b;border:1px solid #7a1f1f;}
 
+/* —— 米家：扁平浅灰底、纯白小圆角卡、无侧边色条、橙色胶囊按钮（默认主题）—— */
+body.theme-mijia{
+  --bg:#f2f3f5;--card:#ffffff;--line:#ececef;--txt:#1c1c1e;--muted:#8a8f99;
+  --accent:#ff6a00;--accent-2:#4a90e2;--accent-soft:rgba(255,106,0,.10);--accent-line:rgba(255,106,0,.28);
+  --on-accent:#ffffff;--green:#22b573;--red:#f0413e;
+  font-family:'MiSans','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  background:#f2f3f5;
+}
+body.theme-mijia .clock{background:none;color:#1c1c1e;-webkit-text-fill-color:#1c1c1e;font-weight:300;letter-spacing:-2px;font-size:96px;}
+body.theme-mijia .date{font-size:18px;color:#8a8f99;font-weight:400;}
+body.theme-mijia .home{color:#1c1c1e;border-color:#ececef;background:#fff;border-radius:8px;font-weight:500;}
+body.theme-mijia .count{color:#8a8f99;}
+body.theme-mijia .toolbtn,body.theme-mijia .arrow{background:#fff;border:1px solid #ececef;color:#1c1c1e;border-radius:999px;box-shadow:none;font-weight:500;}
+body.theme-mijia .toolbtn.primary{background:#ff6a00;border-color:#ff6a00;color:#fff;}
+body.theme-mijia .pageno{color:#8a8f99;}
+body.theme-mijia .dot{background:#d7d9de;}
+body.theme-mijia .dot.on{background:#22b573;}
+body.theme-mijia .dot.off{background:#d7d9de;}
+body.theme-mijia .page{gap:10px;}
+body.theme-mijia .card{background:#fff;border:1px solid #ececef;border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px rgba(28,28,30,.04);}
+body.theme-mijia .card:before{display:none;}
+body.theme-mijia .card.on{background:#fff;border-color:rgba(255,106,0,.35);box-shadow:0 2px 10px rgba(255,106,0,.10);}
+body.theme-mijia .card.offline{opacity:.5;}
+body.theme-mijia .card.blind{border-style:solid;border-color:#ececef;}
+body.theme-mijia .nm{font-size:19px;font-weight:500;}
+body.theme-mijia .ico{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin-right:9px;border-radius:9px;background:#f6f7f9;font-size:18px;vertical-align:middle;}
+body.theme-mijia .badge{background:#f6f7f9;color:#8a8f99;border-radius:6px;font-weight:500;}
+body.theme-mijia .badge.blind{background:rgba(240,65,62,.08);color:#f0413e;}
+body.theme-mijia .btn{border-radius:999px;background:#f2f3f5;color:#1c1c1e;font-weight:500;}
+body.theme-mijia .btn.on{background:#ff6a00;color:#fff;box-shadow:none;}
+body.theme-mijia .btn.ghost{background:#fff;border-color:#ececef;}
+body.theme-mijia .step{border-radius:999px;background:#f2f3f5;border-color:#f2f3f5;color:#1c1c1e;}
+body.theme-mijia .mode{border-radius:8px;background:#f2f3f5;border-color:#f2f3f5;color:#8a8f99;font-weight:500;}
+body.theme-mijia .mode.on{background:rgba(255,106,0,.10);color:#ff6a00;}
+body.theme-mijia .temp{font-weight:350;}
+body.theme-mijia .card.camera{background:#fff;border-color:#ececef;}
+body.theme-mijia .card.camera .viewBtn{background:#4a90e2;border-radius:999px;box-shadow:none;font-weight:500;}
+body.theme-mijia .card.speaker{background:#fff;border-color:#ececef;}
+body.theme-mijia .card.speaker .spkBtn{background:#7c5cff;border-radius:999px;box-shadow:none;font-weight:500;}
+body.theme-mijia .card.sensor{background:#fff;border-color:#ececef;}
+body.theme-mijia .card.sensor .sensorTemp{font-weight:350;letter-spacing:-1px;}
+body.theme-mijia .widget{background:#fff;border-color:#ececef;}
+body.theme-mijia .wtemp{font-weight:350;}
+body.theme-mijia .fcDay{background:#f6f7f9;border-color:#f6f7f9;border-radius:8px;}
+body.theme-mijia .calDay{border-radius:8px;}
+body.theme-mijia .calDay.today{background:#ff6a00;color:#fff;box-shadow:none;}
+body.theme-mijia .ebar{background:#f2f3f5;border-radius:999px;}
+body.theme-mijia .ebar span{background:linear-gradient(90deg,#ff9d4d,#ff6a00);}
+body.theme-mijia .ewatt{font-weight:350;}
+body.theme-mijia .editCard{background:#fff;border-color:#ececef;border-radius:12px;}
+body.theme-mijia .editBar{background:#fff;border-color:#ececef;border-radius:12px;}
+body.theme-mijia .editBar select,body.theme-mijia .editBar .gridReset{background:#f2f3f5;border-color:#f2f3f5;color:#1c1c1e;border-radius:8px;}
+body.theme-mijia .msg{background:rgba(28,28,30,.92);border-radius:8px;}
+body.theme-mijia .assistant{background:rgba(28,28,30,.28);}
+body.theme-mijia .assistantSheet{background:#fff;border-color:#ececef;border-radius:16px;box-shadow:0 20px 60px rgba(28,28,30,.18);}
+body.theme-mijia .assistantSend{background:#ff6a00;border-radius:999px;}
+body.theme-mijia .assistantInput textarea{border-radius:12px;background:#f6f7f9;border-color:#f6f7f9;color:#1c1c1e;}
+body.theme-mijia .assistantTools button{border-radius:10px;background:#f6f7f9;border-color:#f6f7f9;color:#1c1c1e;}
+body.theme-mijia .aMsg.user{background:#ff6a00;color:#fff;border-radius:12px 12px 4px 12px;}
+body.theme-mijia .empty{color:#8a8f99;}
+
 /* 侧边色条被替换/隐藏后，回收内容缩进，保证左右对齐 */
+body.theme-mijia .ctop,body.theme-mijia .metrics,body.theme-mijia .wmain,body.theme-mijia .wmeta,body.theme-mijia .forecast,body.theme-mijia .calHead,body.theme-mijia .calGrid,body.theme-mijia .emain,body.theme-mijia .emeta,body.theme-mijia .acrow,body.theme-mijia .modeWrap,body.theme-mijia .actions,body.theme-mijia .blindHint,
 body.theme-apple .ctop,body.theme-apple .metrics,body.theme-apple .wmain,body.theme-apple .wmeta,body.theme-apple .forecast,body.theme-apple .calHead,body.theme-apple .calGrid,body.theme-apple .emain,body.theme-apple .emeta,body.theme-apple .acrow,body.theme-apple .modeWrap,body.theme-apple .actions,body.theme-apple .blindHint,
 body.theme-flyme .ctop,body.theme-flyme .metrics,body.theme-flyme .wmain,body.theme-flyme .wmeta,body.theme-flyme .forecast,body.theme-flyme .calHead,body.theme-flyme .calGrid,body.theme-flyme .emain,body.theme-flyme .emeta,body.theme-flyme .acrow,body.theme-flyme .modeWrap,body.theme-flyme .actions,body.theme-flyme .blindHint,
 body.theme-cyber .ctop,body.theme-cyber .metrics,body.theme-cyber .wmain,body.theme-cyber .wmeta,body.theme-cyber .forecast,body.theme-cyber .calHead,body.theme-cyber .calGrid,body.theme-cyber .emain,body.theme-cyber .emeta,body.theme-cyber .acrow,body.theme-cyber .modeWrap,body.theme-cyber .actions,body.theme-cyber .blindHint,
 body.theme-pixel .ctop,body.theme-pixel .metrics,body.theme-pixel .wmain,body.theme-pixel .wmeta,body.theme-pixel .forecast,body.theme-pixel .calHead,body.theme-pixel .calGrid,body.theme-pixel .emain,body.theme-pixel .emeta,body.theme-pixel .acrow,body.theme-pixel .modeWrap,body.theme-pixel .actions,body.theme-pixel .blindHint{padding-left:0;}
-body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-pixel .ebar{margin-left:0;}
+body.theme-mijia .ebar,body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-cyber .ebar,body.theme-pixel .ebar{margin-left:0;}
 
 @media (max-width:1500px){
   .app{height:100vh;padding-bottom:12px;}
@@ -903,7 +972,8 @@ if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostnam
 document.addEventListener('contextmenu',function(e){e.preventDefault();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){var a=document.getElementById('assistant');if(a&&!a.classList.contains('hidden'))closeAssistant();var c=document.getElementById('caps');if(c&&!c.classList.contains('hidden'))closeCaps();}});
 var lastRenderKey='';
-var devices=[], camCards=[], speakerCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='dark', statusData=null;
+var BASE_PAGE=10;
+var devices=[], camCards=[], speakerCards=[], pages=[], page=0, PAGE=10, weather=null, weatherLabel='天气', layoutOrder=[], editing=false, editOrder=[], theme='mijia', statusData=null, gridRows=0, gridCols=0, editRows=0, editCols=0;
 var speakerCfg={enabled:false,text_enabled:false,voice_enabled:false,answer_mode:'speak',max_chars:200,speakers:[]};
 var assistantSpeaker=null, assistantChatTimer=null, assistantVoiceTimer=null, assistantVoiceSince=0, assistantVoiceHeard=false, assistantVoiceBaseline='', assistantTaskId='', assistantLastAnswer='', voiceLastAnswer='', assistantVoiceStarted=0;
 var viewport=document.getElementById('viewport');
@@ -931,13 +1001,13 @@ function toast(msg,err){
   el.textContent=msg;el.className='msg show'+(err?' err':'');
   clearTimeout(el._t);el._t=setTimeout(function(){el.className='msg';},2500);
 }
-var THEME_IDS=['dark','light','apple','flyme','cyber','morandi','pixel'];
-var THEME_LABELS={dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
+var THEME_IDS=['mijia','dark','light','apple','flyme','cyber','morandi','pixel'];
+var THEME_LABELS={mijia:'米家',dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
 function applyTheme(t){
-  if(THEME_IDS.indexOf(t)<0)t='dark';
+  if(THEME_IDS.indexOf(t)<0)t='mijia';
   theme=t;
-  document.body.classList.remove('light','theme-apple','theme-flyme','theme-cyber','theme-morandi','theme-pixel');
-  if(t==='light'||t==='apple'||t==='flyme'||t==='morandi')document.body.classList.add('light');
+  document.body.classList.remove('light','theme-mijia','theme-apple','theme-flyme','theme-cyber','theme-morandi','theme-pixel');
+  if(t==='mijia'||t==='light'||t==='apple'||t==='flyme'||t==='morandi')document.body.classList.add('light');
   if(t!=='dark'&&t!=='light')document.body.classList.add('theme-'+t);
   var b=document.getElementById('themeBtn');
   if(b){
@@ -1205,6 +1275,37 @@ function editCardHTML(d){
     +'<div class="editBody"><div class="nm"><span class="ico">'+ico+'</span>'+nm+'</div><div class="md">'+md+'</div></div>'
     +'<span class="badge'+(d.blind?' blind':'')+'">'+badge+'</span></div>';
 }
+function applyGridSize(){
+  var r=gridRows||0,c=gridCols||0;
+  PAGE=(r&&c)?Math.max(4,r*c):BASE_PAGE;
+  var root=document.documentElement;
+  if(r&&c){root.style.setProperty('--grid-cols',c);root.style.setProperty('--grid-rows',r);root.classList.add('customGrid');}
+  else{root.classList.remove('customGrid');}
+}
+function gridOptions(sel,min,max){
+  var out='';
+  for(var i=min;i<=max;i++){out+='<option value="'+i+'"'+(i===sel?' selected':'')+'>'+i+'</option>';}
+  return out;
+}
+function editBarHTML(){
+  var c=editCols||4,r=editRows||3;
+  return '<div class="editBar"><label>横（每页几列）<select id="editCols">'+gridOptions(c,2,8)+'</select></label>'
+    +'<label>竖（每页几行）<select id="editRows">'+gridOptions(r,1,6)+'</select></label>'
+    +'<span class="gridInfo">每页 ' + r + ' 行 × ' + c + ' 列 = ' + (r*c) + ' 张</span>'
+    +'<button class="gridReset" onclick="resetGrid()">恢复自动排版</button></div>';
+}
+function onGridChange(){
+  var c=document.getElementById('editCols'),r=document.getElementById('editRows');
+  if(!c||!r)return;
+  editCols=Number(c.value)||4;editRows=Number(r.value)||3;
+  gridRows=editRows;gridCols=editCols;applyGridSize();
+  var keep=window.scrollY;renderEdit();window.scrollTo(0,keep);
+}
+function resetGrid(){
+  editRows=0;editCols=0;gridRows=0;gridCols=0;applyGridSize();
+  var keep=window.scrollY;renderEdit();window.scrollTo(0,keep);
+  toast('已恢复自动排版（按屏幕大小分页）');
+}
 function renderEdit(){
   var cards=orderedCards(allCards());
   var byKey={};cards.forEach(function(d){byKey[d._key]=d;});
@@ -1221,7 +1322,10 @@ function renderEdit(){
   }
   track.style.transition='none';
   track.style.transform='translateX(0)';
-  track.innerHTML='<div class="editView"><div class="editGrid" id="editGrid">'+html+'</div><div class="editHint">拖动卡片调整顺序，每 '+PAGE+' 张为一页；保存后生效。</div></div>';
+  track.innerHTML='<div class="editView">'+editBarHTML()+'<div class="editGrid" id="editGrid">'+html+'</div><div class="editHint">拖动卡片调整顺序；横竖数量可自定义，排版始终居中；每页 '+(gridRows&&gridCols?(gridRows+'×'+gridCols+' = '+PAGE):('自动 '+PAGE))+' 张，保存后生效。</div></div>';
+  var ec=document.getElementById('editCols'),er=document.getElementById('editRows');
+  if(ec)ec.addEventListener('change',onGridChange);
+  if(er)er.addEventListener('change',onGridChange);
   bindEditDrag();
   updateHeader();
 }
@@ -1268,6 +1372,7 @@ function bindEditDrag(){
 }
 function toggleEdit(){
   if(editing)return;
+  editRows=gridRows;editCols=gridCols;
   editOrder=orderedCards(allCards()).map(function(d){return d._key;});
   editing=true;document.body.classList.add('editing');
   lastRenderKey='';render();
@@ -1278,9 +1383,10 @@ function cancelLayout(){
 }
 function saveLayout(){
   fetch(API+'/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({order:editOrder})}).then(function(r){return r.json();}).then(function(r){
+    body:JSON.stringify({order:editOrder,rows:editRows||0,cols:editCols||0})}).then(function(r){return r.json();}).then(function(r){
     if(!r.ok){toast(r.msg||'保存失败',true);return;}
     layoutOrder=r.order||editOrder.slice();
+    gridRows=r.rows||0;gridCols=r.cols||0;applyGridSize();
     editing=false;document.body.classList.remove('editing');page=0;
     lastRenderKey='';render();toast('排版已保存');
   }).catch(function(e){toast('保存失败：'+e,true);});
@@ -1322,7 +1428,8 @@ function load(){
     statusData=s;updateCount();
     weather=s.weather||null;
     weatherLabel=s.weather_label||weatherLabel;
-    if(s.page_size)PAGE=Number(s.page_size)||PAGE;
+    if(s.page_size)BASE_PAGE=Number(s.page_size)||BASE_PAGE;
+    applyGridSize();
     applyTheme(s.theme||theme);
     applyCursor(s.hide_cursor);
     if(location.pathname==='/'&&s.active_page&&s.active_page.id){location.href='/';return null;}
@@ -1331,7 +1438,11 @@ function load(){
   }).then(function(j){
     if(!j)return;
     devices=j.devices||[];
-    if(j.layout)layoutOrder=j.layout;
+    if(j.layout){
+      if(Array.isArray(j.layout)){layoutOrder=j.layout;}
+      else{layoutOrder=j.layout.order||[];gridRows=j.layout.rows||0;gridCols=j.layout.cols||0;}
+      applyGridSize();
+    }
     render();
     if(j.ts){var d=new Date(j.ts*1000);document.getElementById('updated').textContent='更新 '+pad2(d.getHours())+':'+pad2(d.getMinutes());}
   }).catch(function(e){

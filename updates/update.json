@@ -1,8 +1,8 @@
 {
-  "version": "0.7.16",
+  "version": "0.7.17",
   "released": "2026-10-29",
-  "notes": "后台异地摄像头桥接改为开箱可用：去掉目录导入/安装包上传流程，桥接随面板直接可用；Windows 桌面图标改用新的图标文件，避免系统图标缓存不刷新。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.16-update.tar.gz",
-  "sha256": "d6cf14a538ef92199483dc0c207bbc27923ce362805fc116b7e7252cb7b3b55e",
-  "size": 2954782
+  "notes": "新增默认「米家」主题（摄像头页同步）；每页卡片数改到面板「排版」里自定义横竖并始终居中；后台改分区切换、设备显示提前、概览加摄像头与桥接状态；天气城市默认成都。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.17-update.tar.gz",
+  "sha256": "8238857e760425cf5f103ee428b3ef15581584c5cbb7c415bb8ef56cd908962c",
+  "size": 2962461
 }

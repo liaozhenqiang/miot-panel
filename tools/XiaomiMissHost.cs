@@ -17,7 +17,7 @@ internal static class XiaomiMissHost
     private const int CodecH265 = 5;
     private const int MaxFrame = 8 * 1024 * 1024;
 
-    private static string _did, _model, _rpc, _tokenFile, _dllDir, _ffmpegPath, _logPath;
+    private static string _did, _model, _rpc, _ctrl, _tokenFile, _dllDir, _ffmpegPath, _logPath;
     private static int _parentPid;
     private static string _token;
     private static StreamWriter _log;
@@ -195,6 +195,9 @@ internal static class XiaomiMissHost
             Thread starter = new Thread(VideoStarter);
             starter.IsBackground = true;
             starter.Start();
+            Thread ctrl = new Thread(ControlPoller);
+            ctrl.IsBackground = true;
+            ctrl.Start();
             while (!_stopped)
             {
                 Thread.Sleep(500);
@@ -228,6 +231,8 @@ internal static class XiaomiMissHost
         _did = vals[0];
         _model = vals[1];
         _rpc = vals[2];
+        int apiCut = _rpc.IndexOf("/api/");
+        _ctrl = apiCut > 0 ? _rpc.Substring(0, apiCut) + "/api/camera/bridge_ctrl" : "";
         _tokenFile = vals[3];
         _dllDir = vals[4];
         _ffmpegPath = vals[5];
@@ -385,15 +390,118 @@ internal static class XiaomiMissHost
         return 0;
     }
 
+    private static void ControlPoller()
+    {
+        if (string.IsNullOrEmpty(_ctrl))
+        {
+            return;
+        }
+        int fails = 0;
+        while (!_stopped)
+        {
+            if (_session == IntPtr.Zero)
+            {
+                Thread.Sleep(300);
+                continue;
+            }
+            byte[] resp = null;
+            try
+            {
+                resp = HttpPostTo(_ctrl, "{\"did\":\"" + _did + "\"}", 2500);
+            }
+            catch (Exception ex)
+            {
+                Log("ctrl poll error: " + ex.Message);
+            }
+            if (resp == null)
+            {
+                // 面板不支持该接口时彻底停轮询，避免刷日志
+                if (++fails > 30)
+                {
+                    Log("ctrl poll disabled");
+                    return;
+                }
+                Thread.Sleep(600);
+                continue;
+            }
+            fails = 0;
+            string text = Encoding.UTF8.GetString(resp);
+            if (text.Length > 0)
+            {
+                SendCommands(text);
+            }
+            Thread.Sleep(120);
+        }
+    }
+
+    private static void SendCommands(string text)
+    {
+        string[] lines = text.Replace("\r", "").Split('\n');
+        foreach (string line in lines)
+        {
+            if (line.Length == 0)
+            {
+                continue;
+            }
+            string[] parts = line.Split(' ');
+            if (parts.Length != 3)
+            {
+                continue;
+            }
+            int cmd, len;
+            if (!int.TryParse(parts[0], out cmd) || !int.TryParse(parts[1], out len))
+            {
+                continue;
+            }
+            if (len <= 0 || len > 4096 || _session == IntPtr.Zero)
+            {
+                continue;
+            }
+            byte[] payload;
+            try
+            {
+                payload = Convert.FromBase64String(parts[2]);
+            }
+            catch
+            {
+                continue;
+            }
+            if (payload.Length != len)
+            {
+                continue;
+            }
+            IntPtr buf = Marshal.AllocHGlobal(len);
+            try
+            {
+                Marshal.Copy(payload, 0, buf, len);
+                int rc = _cmdSend(_session, cmd, buf, len);
+                Log("ctrl cmd=0x" + cmd.ToString("X") + " len=" + len + " rc=" + rc);
+            }
+            catch (Exception ex)
+            {
+                Log("ctrl send error: " + ex.Message);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buf);
+            }
+        }
+    }
+
     private static byte[] HttpPost(string json)
     {
-        HttpWebRequest req = (HttpWebRequest)WebRequest.Create(_rpc);
+        return HttpPostTo(_rpc, json, 30000);
+    }
+
+    private static byte[] HttpPostTo(string url, string json, int timeoutMs)
+    {
+        HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
         req.Method = "POST";
         req.Proxy = null;
         req.ContentType = "application/json; charset=utf-8";
         req.Headers["X-Miss-Token"] = _token;
-        req.Timeout = 30000;
-        req.ReadWriteTimeout = 30000;
+        req.Timeout = timeoutMs;
+        req.ReadWriteTimeout = timeoutMs;
         byte[] data = Encoding.UTF8.GetBytes(json);
         req.ContentLength = data.Length;
         using (Stream s = req.GetRequestStream())

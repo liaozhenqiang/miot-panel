@@ -105,6 +105,9 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 .adminNav a:hover,.adminNav a.active{background:rgba(255,106,0,.1);color:var(--accent);}
 #adminView > section.card,#secAccount,#secSystem{scroll-margin-top:64px;}
 .overviewChips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px;}
+.overviewStack{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:-4px 0 14px;padding:10px 12px;border:1px dashed var(--line);border-radius:12px;background:#fbfcfe;}
+.overviewStack .stackLabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;}
+.overviewStack .stackLink{margin-left:auto;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;}
 .ovChip{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;background:#f4f6fa;border:1px solid var(--line);font-size:12.5px;color:var(--muted);}
 .ovChip b{color:var(--text);font-weight:700;}
 .ovChip.ok{background:rgba(24,160,88,.09);border-color:rgba(24,160,88,.2);color:#16804a;}
@@ -145,9 +148,10 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
   <div id="adminView" class="hidden">
     <nav class="adminNav" id="adminNav">
       <a href="#secOverview" class="active">概览</a>
+      <a href="#secDevices">设备</a>
       <a href="#secMusic">音乐与音箱</a>
       <a href="#secAppearance">外观</a>
-      <a href="#secFamily">家庭与设备</a>
+      <a href="#secFamily">家庭与页面</a>
       <a href="#secCamera">摄像头</a>
       <a href="#secSecurity">安全与维护</a>
       <a href="#secUpdate">更新</a>
@@ -158,7 +162,8 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <h2>概览</h2>
       <div class="sub" id="overviewLine">正在读取…</div>
       <div class="overviewChips" id="overviewChips"></div>
-      <div class="row"><button class="primary" onclick="location.href='/'">打开面板</button><button onclick="toggleMusic()">打开音乐中心</button></div>
+      <div class="overviewStack" id="overviewStack"><span class="hint">正在读取摄像头与桥接状态…</span></div>
+      <div class="row"><button class="primary" onclick="location.href='/'">打开面板</button><button onclick="toggleMusic()">打开音乐中心</button><button onclick="showSection('secCamera')">摄像头设置</button></div>
       <div class="lanGrid">
         <div>
           <div class="connHead"><b>局域网访问</b><span class="pill" id="lanStatePill"></span></div>
@@ -179,6 +184,13 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       </div>
     </section>
 
+    <section class="card" id="secDevices">
+      <h2>设备显示与改名</h2>
+      <div class="sub">勾选“显示”并保存后，云端可读写的设备才会出现在面板。蓝牙/传感器等不可控设备即使勾选也不会显示。</div>
+      <div class="row" style="margin-bottom:10px"><input id="devSearch" placeholder="搜索名称/型号/IP" oninput="filterRows()" style="max-width:320px"><span class="pill" id="devCount"></span></div>
+      <div class="tableWrap"><table><thead><tr><th>显示</th><th>自定义名称</th><th>原名称 / 型号</th><th>角色</th><th>在线</th><th>局域网 IP</th><th>公网 IP</th></tr></thead><tbody id="devRows"></tbody></table></div>
+      <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设备设置</button></div>
+    </section>
     <section class="card" id="secMusic">
       <h2>音乐与 AI 音箱</h2>
       <div class="sub" id="musicInfo">Songloft 音乐中心 + 小爱 MIoT 插件。扫码绑定小米账号后，可在后台统一管理：无限听歌、多房间、语音口令、大模型人设与小爱原生 TTS。</div>
@@ -382,6 +394,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <h2>外观与自定义页面</h2>
       <div class="sub">内置 7 个主题：经典黑夜/白天 + 5 套风格主题。苹果风（毛玻璃/大圆角）、魅族风（居中时钟/扁平卡片）、赛博霓虹（网格/霓虹/方形）、莫兰迪（暖砂纸/宋体/异形圆角）、像素终端（CRT/等宽/硬阴影）。面板右上角可依次切换，后台可指定当前主题。</div>
       <div class="row"><select id="adminTheme" style="max-width:280px">
+        <option value="mijia">米家（默认）</option>
         <option value="dark">经典黑夜</option><option value="light">经典白天</option>
         <option value="apple">苹果风</option><option value="flyme">魅族风</option>
         <option value="cyber">赛博霓虹</option><option value="morandi">莫兰迪</option><option value="pixel">像素终端</option>
@@ -407,13 +420,12 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 
     <section class="card" id="secFamily">
       <h2>家庭与页面</h2>
-      <div class="sub">过滤设备所在家庭，设置天气城市和每页卡片数。过滤前缀留空表示显示所有家庭。</div>
+      <div class="sub">过滤设备所在家庭、天气城市与手机地区。每页显示几张卡请到面板右上「排版」里自定义横竖数量；过滤前缀留空表示显示所有家庭。</div>
       <div class="grid">
         <div><label>家庭名称</label><input id="homeLabel" placeholder="如 我的家"></div>
-        <div><label>天气城市（wttr.in，如 Beijing）</label><input id="weatherLocation" placeholder="如 Beijing"></div>
+        <div><label>天气城市（wttr.in，如 Beijing）</label><input id="weatherLocation" placeholder="如 Chengdu（默认成都）"></div>
         <div><label>天气标题</label><input id="weatherLabel" placeholder="如 本地天气"></div>
         <div><label>手机地区（小米云）</label><input id="country" placeholder="cn"></div>
-        <div><label>每页卡片数（4-12）</label><input id="pageSize" type="number" min="4" max="12"></div>
       </div>
       <div class="grid two">
         <div><label>公网 IP 前缀（每行一个）</label><textarea id="wanPrefixes" placeholder="203.0.113.&#10;198.51.100."></textarea><div class="hint">设备详情里的“公网 IP”以此开头即属于该家庭。</div></div>
@@ -422,13 +434,6 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设置</button><button onclick="refreshData()">刷新云端设备/天气</button></div>
     </section>
 
-    <section class="card" id="secDevices">
-      <h2>设备显示与改名</h2>
-      <div class="sub">勾选“显示”并保存后，云端可读写的设备才会出现在面板。蓝牙/传感器等不可控设备即使勾选也不会显示。</div>
-      <div class="row" style="margin-bottom:10px"><input id="devSearch" placeholder="搜索名称/型号/IP" oninput="filterRows()" style="max-width:320px"><span class="pill" id="devCount"></span></div>
-      <div class="tableWrap"><table><thead><tr><th>显示</th><th>自定义名称</th><th>原名称 / 型号</th><th>角色</th><th>在线</th><th>局域网 IP</th><th>公网 IP</th></tr></thead><tbody id="devRows"></tbody></table></div>
-      <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设备设置</button></div>
-    </section>
 
     <section class="card" id="secCamera">
       <h2>摄像头</h2>
@@ -479,7 +484,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <section class="card" id="secSystem">
         <h2>维护与恢复默认</h2>
         <div class="sub">调试配置出错时可按需要恢复：只重置外观不会影响设备；重置设置会保留后台 PIN 和小米登录；完全重置会重新进入首次向导。</div>
-        <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复黑夜主题</button><button onclick="lockDevice()">锁定此设备</button></div>
+        <div class="row"><button onclick="resetPanel('layout')">恢复默认排版</button><button onclick="resetPanel('theme')">恢复默认主题（米家）</button><button onclick="lockDevice()">锁定此设备</button></div>
         <div class="sep"></div>
         <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
         <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
@@ -552,6 +557,29 @@ function renderOverview(){
   var el=$('overviewChips');if(!el)return;
   el.innerHTML=chips.map(function(x){return '<span class="ovChip '+(x[2]?'ok':'off')+'">'+esc(x[0])+' <b>'+esc(x[1])+'</b></span>';}).join('');
   $('overviewLine').textContent='面板 v'+((state&&state.version)||'')+' · 端口 '+((state&&state.port)||'')+(m.error?(' · '+m.error):' · 服务正常');
+}
+async function loadOverviewStack(){
+  var el=$('overviewStack');if(!el)return;
+  var chips=[],cam=null,bridge=null;
+  try{var r=await fetch('/api/camera/setup_state',{cache:'no-store'});if(r.ok)cam=await r.json();}catch(e){}
+  var rb=await api('/api/admin/p2p_bridge/status');
+  if(rb.status===200&&rb.data)bridge=rb.data;
+  if(cam){
+    chips.push(['go2rtc',cam.go2rtc_ok?'正常':'未启动',!!cam.go2rtc_ok]);
+    chips.push(['RTSP 8554',cam.rtsp_ok===false?'被占用':'正常',cam.rtsp_ok!==false]);
+    chips.push(['ffmpeg',cam.ffmpeg_ok?'正常':'未安装',!!cam.ffmpeg_ok]);
+    if(cam.remote)chips.push(['服务','远程 go2rtc',true]);
+  }else{
+    chips.push(['摄像头','状态读取失败',false]);
+  }
+  if(bridge){
+    var txt=bridge.mode==='off'?'已关闭':(bridge.available?'可用':'未就绪');
+    chips.push(['P2P 桥接',txt,bridge.mode==='off'?true:!!bridge.available]);
+    if(!bridge.available&&bridge.reasons&&bridge.reasons.length)chips.push(['原因',bridge.reasons.join('；'),false]);
+  }
+  el.innerHTML='<span class="stackLabel">摄像头</span>'+chips.map(function(x){
+    return '<span class="ovChip '+(x[2]?'ok':'off')+'">'+esc(x[0])+' <b>'+esc(x[1])+'</b></span>';
+  }).join('')+'<span class="stackLink" onclick="showSection(&#39;secCamera&#39;)">摄像头设置 ›</span>';
 }
 async function loadLanInfo(){
   var r=await api('/api/admin/laninfo');
@@ -759,8 +787,10 @@ async function load(){
     if(r.data.setup){show('setupView');return;}
     if(!r.data.ok){toast(r.data.msg||'加载失败',true);show('loginView');return;}
     state=r.data;show('adminView');$('adminLogout').classList.remove('hidden');render();loadMusicInfo();
+    if(!secShown){secShown=true;showSection((location.hash||'#secOverview').slice(1));}
   }catch(e){toast('加载失败：'+e,true);}
 }
+var secShown=false;
 var MUSIC_SOURCE_ORDER=['qq','kuwo','migu','bilibili','netease','kugou','qianqian','soda','apple'];
 var MUSIC_SOURCE_LABELS={netease:'网易云',qq:'QQ音乐',kugou:'酷狗',kuwo:'酷我',migu:'咪咕',qianqian:'千千',soda:'汽水',apple:'Apple Music',bilibili:'Bilibili'};
 var musicDeviceGroups=[], musicQRLock=false, musicEditingGroupId='';
@@ -1365,6 +1395,7 @@ async function saveSpeakerPanelConfig(){
   }else setMusicMsg($('spkMsg'),(r.data&&r.data.msg)||'保存失败',true);
 }
 var THEME_DEFS=[
+  {id:'mijia',label:'米家（默认）',bg:'linear-gradient(135deg,#ffffff,#f2f3f5)',fg:'#ff6a00'},
   {id:'dark',label:'经典黑夜',bg:'linear-gradient(135deg,#151a26,#0b0e14)',fg:'#ff7a18'},
   {id:'light',label:'经典白天',bg:'linear-gradient(135deg,#f7f9fc,#eef2f7)',fg:'#ff6a00'},
   {id:'apple',label:'苹果风',bg:'linear-gradient(135deg,#dbeafe,#f8fafc 55%,#e9d5ff)',fg:'#0071e3'},
@@ -1376,7 +1407,7 @@ var THEME_DEFS=[
 var CUSTOM_PAGE_STARTER='<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">\n<title>我的面板</title>\n<style>\n:root{--bg:#0b0e14;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.12);--txt:#eef2f7;--muted:#8f9aaa;--accent:#ff7a18;}\n*{box-sizing:border-box}\nhtml,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 88% -10%,rgba(255,105,0,.18),transparent 60%),linear-gradient(165deg,#151a26,#0b0e14);color:var(--txt);font-family:\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;}\n.wrap{max-width:1400px;margin:0 auto;padding:28px}\n.clock{font-size:96px;font-weight:700;line-height:1;color:#ffb36b}\n.date{color:var(--muted);font-size:20px;margin-top:8px}\n.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:24px}\n.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}\n.card h3{margin:0 0 8px;font-size:18px}.muted{color:var(--muted);font-size:13px;line-height:1.6}\na{color:var(--accent)}\n</style>\n</head>\n<body>\n<div class="wrap">\n  <div class="clock" id="clock">--:--</div>\n  <div class="date" id="date"></div>\n  <div class="grid">\n    <div class="card"><h3>天气</h3><div id="weather" class="muted">读取中…</div></div>\n    <div class="card"><h3>设备</h3><div id="devices" class="muted">读取中…</div></div>\n    <div class="card"><h3>链接</h3><div class="muted"><a href="/panel">内置面板</a> · <a href="/admin">后台管理</a></div></div>\n  </div>\n</div>\n<script>\nfunction tick(){var d=new Date();document.getElementById("clock").textContent=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");document.getElementById("date").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日";}\ntick();setInterval(tick,1000);\nfetch("/api/status").then(function(r){return r.json()}).then(function(s){var w=s.weather||{};document.getElementById("weather").textContent=(w.temp!==undefined?w.temp+"°C ":"")+(w.text||"暂无天气");});\nfetch("/api/devices").then(function(r){return r.json()}).then(function(d){document.getElementById("devices").textContent=(d.devices||[]).length+" 张设备卡片";});\n<\/script>\n</body>\n</html>';
 var customPages=[], currentPageId='', pagesLoaded=false;
 function renderThemeSwatches(){
-  var cur=$('adminTheme').value||(state&&state.theme)||'dark';
+  var cur=$('adminTheme').value||(state&&state.theme)||'mijia';
   $('themeSwatches').innerHTML=THEME_DEFS.map(function(t){
     return '<div class="themeSwatch '+t.id+(t.id===cur?' sel':'')+'" style="background:'+t.bg+'" onclick="pickTheme(\''+t.id+'\')"><span style="color:'+t.fg+'">'+esc(t.label)+'</span></div>';
   }).join('');
@@ -1534,7 +1565,7 @@ async function clearLogs(){
 function render(){
   var c=state.config||{};
   $('homeLabel').value=c.home_label||'';$('weatherLocation').value=c.weather_location||'';
-  $('weatherLabel').value=c.weather_label||'';$('country').value=c.country||'cn';$('pageSize').value=c.page_size||10;
+  $('weatherLabel').value=c.weather_label||'';$('country').value=c.country||'cn';
   $('wanPrefixes').value=(c.wan_prefixes||[]).join('\n');$('lanPrefixes').value=(c.lan_prefixes||[]).join('\n');
   var src=state.auth_source||'panel';
   var srcText=src==='plugin'?'来自小爱插件（设备控制共用）':'面板独立登录';
@@ -1543,13 +1574,13 @@ function render(){
   $('xiaomiLogoutBtn').classList.toggle('hidden',!state.logged_in||src==='plugin');
   renderDevices();
   renderSpeakerPanelSettings();
-  $('adminTheme').value=state.theme||'dark';
+  $('adminTheme').value=state.theme||'mijia';
   renderThemeSwatches();
   if($('cursorMode'))$('cursorMode').value=c.hide_cursor||'auto';
   $('updateCurrent').value='v'+(state.version||'');
   $('updateUrl').value=c.update_url||'';
   if($('go2rtcUrl'))$('go2rtcUrl').value=c.go2rtc_url||'';
-  renderOverview();renderMusicConnection();loadLanInfo();loadMusicStackStatus();
+  renderOverview();renderMusicConnection();loadLanInfo();loadMusicStackStatus();loadOverviewStack();
   loadUpdateStatus();
   loadBridge();
   loadCameraSection();
@@ -1588,7 +1619,6 @@ async function saveConfig(){
   var body={
     home_label:$('homeLabel').value.trim(),weather_location:$('weatherLocation').value.trim(),
     weather_label:$('weatherLabel').value.trim(),country:$('country').value.trim(),
-    page_size:Number($('pageSize').value)||10,
     wan_prefixes:splitPrefixes($('wanPrefixes').value),lan_prefixes:splitPrefixes($('lanPrefixes').value),
     hidden_devices:hidden,renames:renames
   };
@@ -1688,5 +1718,27 @@ async function refreshData(){
 initAIPresets('aiPreset');
 initAIPresets('chatPreset');
 load();
-document.querySelectorAll('.adminNav a').forEach(function(a){a.addEventListener('click',function(){document.querySelectorAll('.adminNav a').forEach(function(x){x.classList.toggle('active',x===a);});});});
+var SEC_GROUPS={
+  secOverview:['secOverview'],
+  secDevices:['secDevices'],
+  secMusic:['secMusic','secSpeaker'],
+  secAppearance:['secAppearance'],
+  secFamily:['secFamily'],
+  secCamera:['secCamera'],
+  secSecurity:['secSecurity'],
+  secUpdate:['secUpdate'],
+  secLogs:['secLogs']
+};
+var SEC_ALL=[];Object.keys(SEC_GROUPS).forEach(function(k){SEC_ALL=SEC_ALL.concat(SEC_GROUPS[k]);});
+function showSection(key){
+  if(!SEC_GROUPS[key])key='secOverview';
+  var visible=SEC_GROUPS[key];
+  SEC_ALL.forEach(function(id){var el=$(id);if(el)el.classList.toggle('hidden',visible.indexOf(id)<0);});
+  document.querySelectorAll('.adminNav a').forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+key);});
+  if(location.hash!=='#'+key){try{history.replaceState(null,'','#'+key);}catch(e){location.hash='#'+key;}}
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('.adminNav a').forEach(function(a){
+  a.addEventListener('click',function(e){e.preventDefault();showSection((a.getAttribute('href')||'').slice(1));});
+});
 </script></body></html>

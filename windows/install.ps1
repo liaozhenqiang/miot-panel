@@ -72,7 +72,8 @@ if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
 if ($OpenFirewall) {
     try {
         New-NetFirewallRule -DisplayName "MIOT Panel $Port" -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -ErrorAction Stop | Out-Null
-        Write-Host "== firewall rule added for TCP $Port"
+        New-NetFirewallRule -DisplayName "MIOT Panel Discovery" -Direction Inbound -Protocol UDP -LocalPort 37020 -Action Allow -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "== firewall rule added for TCP $Port and UDP 37020"
     } catch {
         Write-Warning "Could not add firewall rule (run PowerShell as Administrator)."
     }

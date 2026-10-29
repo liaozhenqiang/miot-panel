@@ -1,0 +1,8 @@
+{
+  "version": "0.7.17",
+  "released": "2026-10-29",
+  "notes": "新增默认「米家」主题（摄像头页同步）；每页卡片数改到面板「排版」里自定义横竖并始终居中；后台改分区切换、设备显示提前、概览加摄像头与桥接状态；天气城市默认成都。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.17-update.tar.gz",
+  "sha256": "8238857e760425cf5f103ee428b3ef15581584c5cbb7c415bb8ef56cd908962c",
+  "size": 2962461
+}

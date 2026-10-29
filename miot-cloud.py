@@ -201,7 +201,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.16"
+APP_VERSION = "0.7.17"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -285,18 +285,20 @@ SPK_RATE = {}
 SPK_TTL = 20
 
 # 可移植配置：家庭过滤、天气城市、页面大小、管理员 PIN 等
+# 官方 libmiss 只有 Windows 版，所以只有 Windows 默认走桥接（云台/回放依赖这条通道）
+BRIDGE_MODE_DEFAULT = "always" if os.name == "nt" else "auto"
 DEFAULT_CONFIG = {
     "home_label": "我的家",
     "wan_prefixes": [],
     "lan_prefixes": [],
-    "weather_location": "",
-    "weather_label": "天气",
+    "weather_location": "Chengdu",
+    "weather_label": "成都天气",
     "country": "cn",
     "page_size": 10,
     "hidden_devices": [],
     "renames": {},
     "hide_cursor": "auto",
-    "p2p_bridge": "auto",
+    "p2p_bridge": BRIDGE_MODE_DEFAULT,
     "xiaomi_viewer_dir": "",
     "speaker_panel_enabled": True,
     "speaker_text_enabled": True,
@@ -346,8 +348,8 @@ def _normalize_config(data):
                       if str(v).strip()}
     cursor = str(src.get("hide_cursor") or "auto")
     out["hide_cursor"] = cursor if cursor in ("auto", "always", "never") else "auto"
-    bridge = str(src.get("p2p_bridge") or "auto").lower()
-    out["p2p_bridge"] = bridge if bridge in ("auto", "always", "off") else "auto"
+    bridge = str(src.get("p2p_bridge") or BRIDGE_MODE_DEFAULT).lower()
+    out["p2p_bridge"] = bridge if bridge in ("auto", "always", "off") else BRIDGE_MODE_DEFAULT
     out["xiaomi_viewer_dir"] = str(src.get("xiaomi_viewer_dir") or "").strip()[:500]
     for key in ("speaker_panel_enabled", "speaker_text_enabled",
                 "speaker_voice_enabled"):
@@ -383,7 +385,7 @@ def load_config():
         return _normalize_config({})
 
 CONFIG = load_config()
-THEME_IDS = ("dark", "light", "apple", "flyme", "cyber", "morandi", "pixel")
+THEME_IDS = ("mijia", "dark", "light", "apple", "flyme", "cyber", "morandi", "pixel")
 THEME_LEGACY = {"midnight": "cyber", "forest": "morandi", "sunset": "apple",
                 "ocean": "flyme", "rose": "morandi"}
 
@@ -2087,24 +2089,42 @@ def profile_for(model, role=None):
     return DEFAULT_PROFILE
 
 def load_layout():
+    out = {"order": [], "rows": 0, "cols": 0}
     try:
         with open(LAYOUT_FILE, encoding="utf-8") as f:
-            order = json.load(f).get("order") or []
-        return [str(x) for x in order if isinstance(x, str)][:300]
+            data = json.load(f)
+        out["order"] = [str(x) for x in (data.get("order") or []) if isinstance(x, str)][:300]
+        for key in ("rows", "cols"):
+            try:
+                out[key] = min(8, max(0, int(data.get(key) or 0)))
+            except (TypeError, ValueError):
+                out[key] = 0
     except Exception:
-        return []
+        pass
+    return out
 
-def save_layout(order):
+def save_layout(order, rows=None, cols=None):
     order = [str(x) for x in order if isinstance(x, str)][:300]
+    try:
+        rows = int(rows)
+    except (TypeError, ValueError):
+        rows = 0
+    try:
+        cols = int(cols)
+    except (TypeError, ValueError):
+        cols = 0
+    if not (1 <= rows <= 8 and 1 <= cols <= 8) or rows * cols < 4:
+        rows = cols = 0
+    payload = {"order": order, "rows": rows, "cols": cols}
     tmp = LAYOUT_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"order": order}, f, ensure_ascii=False)
+        json.dump(payload, f, ensure_ascii=False)
     os.replace(tmp, LAYOUT_FILE)
     try:
         os.chmod(LAYOUT_FILE, 0o644)
     except OSError:
         pass
-    return order
+    return payload
 
 _JSON_CACHE = {}
 _JSON_CACHE_LOCK = threading.Lock()
@@ -2504,7 +2524,7 @@ def ensure_cameras(force=False):
     transcode = bool(ffmpeg_bin) or remote
     local_ip = str(CONFIG.get("lan_ip") or LAN_IP)
     bridge = _bridge_prepare()
-    bridge_mode = CONFIG.get("p2p_bridge") or "auto"
+    bridge_mode = CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT
     rtsp_broken = ""
     if not remote and _camera_go2rtc_ok() and not _camera_rtsp_ok():
         rtsp_broken = ("本机 go2rtc 未监听 RTSP 8554（端口可能被占用），"
@@ -2571,12 +2591,13 @@ def ensure_cameras(force=False):
                     ok, err = _go2rtc_put("cam_" + did, src)
                     if ok:
                         if transcode:
-                            tsrc = ("ffmpeg:cam_%s#video=h264#width=640#height=360"
-                                    "#bitrate=600k" % did)
+                            tsrc = _transcode_src(did)
                             ok2, err2 = _go2rtc_put("cam_%s_h264" % did, tsrc)
                             if ok2:
                                 item["stream"] = "cam_%s_h264" % did
+                                item["quality"] = CAM_QUALITY.get(did) or "sd"
                                 item["source"] = "bridge"
+                                item["ptz"] = True
                                 item["note"] = "电脑版 P2P 桥接（可异地）"
                                 item["error"] = ""
                                 items.append(item)
@@ -2603,11 +2624,11 @@ def ensure_cameras(force=False):
                     if not ok:
                         raise RuntimeError(err)
                     if transcode:
-                        tsrc = ("ffmpeg:cam_%s#video=h264#width=640#height=360"
-                                "#bitrate=600k" % did)
+                        tsrc = _transcode_src(did)
                         ok, err = _go2rtc_put("cam_%s_h264" % did, tsrc)
                         if ok:
                             item["stream"] = "cam_%s_h264" % did
+                            item["quality"] = CAM_QUALITY.get(did) or "sd"
                         else:
                             item["error"] = "转码流注册失败"
                     else:
@@ -3113,8 +3134,8 @@ PWA_ICONS = {
 }
 
 ANDROID_APK_NAME = "miot-panel-android.apk"
-ANDROID_VERSION_NAME = "1.0.4"
-ANDROID_VERSION_CODE = 5
+ANDROID_VERSION_NAME = "1.0.5"
+ANDROID_VERSION_CODE = 6
 ANDROID_RELEASE_URL = "https://github.com/liaozhenqiang/miot-panel/releases/latest"
 
 
@@ -5260,7 +5281,7 @@ def _bridge_status():
         "ffmpeg_ok": bool(ffmpeg),
         "available": not reasons,
         "reasons": reasons,
-        "mode": CONFIG.get("p2p_bridge") or "auto",
+        "mode": CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT,
         "viewer_dir": CONFIG.get("xiaomi_viewer_dir") or "",
         "dll_dir": dll_dir,
         "helper": host,
@@ -5347,7 +5368,7 @@ def _bridge_job_start(src, is_exe=False, cleanup=None):
 def _bridge_prepare():
     if os.name != "nt":
         return None
-    if (CONFIG.get("p2p_bridge") or "auto") == "off":
+    if (CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT) == "off":
         return None
     host = _bridge_ensure_host()
     dll_dir = _bridge_dll_dir()
@@ -5365,6 +5386,65 @@ def _bridge_sig(did, model):
     key = _bridge_token().encode("ascii")
     msg = ("%s|%s" % (str(did), str(model))).encode("utf-8")
     return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
+
+
+MISS_CMD_MOTOR = 0x112
+CAM_QUALITY_LEVELS = ("sd", "hd")
+CAM_QUALITY = {}
+PTZ_OPERATIONS = {"left": 1, "right": 2, "up": 3, "down": 4}
+BRIDGE_CTRL_LOCK = threading.Lock()
+BRIDGE_CTRL_Q = {}
+BRIDGE_CTRL_SEEN = {}
+
+
+def _bridge_ctrl_enqueue(did, cmd, blob):
+    with BRIDGE_CTRL_LOCK:
+        q = BRIDGE_CTRL_Q.setdefault(did, [])
+        if len(q) >= 16:
+            return False
+        q.append((cmd, blob))
+        return True
+
+
+def _bridge_ctrl_take(did, limit=8):
+    with BRIDGE_CTRL_LOCK:
+        BRIDGE_CTRL_SEEN[did] = time.time()
+        q = BRIDGE_CTRL_Q.get(did) or []
+        if not q:
+            return []
+        out = q[:limit]
+        del q[:limit]
+        return out
+
+
+def _bridge_ctrl_live(did, max_age=6.0):
+    with BRIDGE_CTRL_LOCK:
+        last = BRIDGE_CTRL_SEEN.get(did) or 0
+        if not last or time.time() - last >= max_age:
+            BRIDGE_CTRL_Q.pop(did, None)
+            return False
+        return True
+
+
+def _camera_known(did):
+    with CAM_LOCK:
+        items = CAM_CACHE.get("items") or []
+    return any(str(i.get("did")) == did for i in items)
+
+
+def _camera_item(did):
+    with CAM_LOCK:
+        for item in (CAM_CACHE.get("items") or []):
+            if str(item.get("did")) == str(did):
+                return item
+    return None
+
+
+def _transcode_src(did):
+    """面板转码档位：流畅 640x360 / 高清 720p（改动后需要重新注册 go2rtc 流）。"""
+    if (CAM_QUALITY.get(str(did)) or "sd") == "hd":
+        return "ffmpeg:cam_%s#video=h264#width=1280#height=720#bitrate=2500k" % did
+    return "ffmpeg:cam_%s#video=h264#width=640#height=360#bitrate=600k" % did
 
 
 def _bridge_src(bridge, did, model):
@@ -6734,13 +6814,19 @@ class Handler(BaseHTTPRequestHandler):
             self.api_device_unlock(body)
             return
         if not (u.path.startswith(("/api/admin/", "/api/auth/"))
-                or u.path == "/api/camera/miss_rpc"):
+                or u.path in ("/api/camera/miss_rpc", "/api/camera/bridge_ctrl")):
             if not _device_authed(self):
                 self._send(401, {"ok": False, "unlock": True,
                                  "error": "此设备需要先输入 PIN"})
                 return
         if u.path == "/api/camera/miss_rpc":
             self.api_camera_miss_rpc(body)
+        elif u.path == "/api/camera/bridge_ctrl":
+            self.api_camera_bridge_ctrl(body)
+        elif u.path == "/api/camera/ptz":
+            self.api_camera_ptz(body)
+        elif u.path == "/api/camera/quality":
+            self.api_camera_quality(body)
         elif u.path == "/api/device_lock":
             self.api_device_lock()
         elif u.path == "/api/login":
@@ -6871,10 +6957,10 @@ class Handler(BaseHTTPRequestHandler):
                     and not states_snapshot.get(d["did"], {}).get("supported"))
         with WEATHER_LOCK:
             weather = dict(WEATHER)
-        theme = load_settings().get("theme", "dark")
+        theme = load_settings().get("theme", "mijia")
         theme = THEME_LEGACY.get(theme, theme)
         if theme not in THEME_IDS:
-            theme = "dark"
+            theme = "mijia"
         page = _page_state()
         self._send(200, {"logged_in": bool(auth),
                          "version": APP_VERSION,
@@ -7049,6 +7135,77 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": False, "error": str(e)[:160]})
             return
         self._send(200, data)
+
+    def api_camera_quality(self, body):
+        body = body or {}
+        did = str(body.get("did") or "")[:32]
+        level = str(body.get("quality") or "").strip().lower()
+        if not did or level not in CAM_QUALITY_LEVELS:
+            self._send(400, {"ok": False, "error": "清晰度参数不对"})
+            return
+        item = _camera_item(did) if did else None
+        if not item:
+            self._send(404, {"ok": False, "error": "没有找到这台摄像头"})
+            return
+        peer = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("quality:" + peer, 10, 60, 0.4):
+            self._send(429, {"ok": False, "error": "切换太频繁，稍等几秒"})
+            return
+        if not _camera_ffmpeg_bin():
+            self._send(409, {"ok": False, "error": "没装 ffmpeg，无法切换清晰度"})
+            return
+        CAM_QUALITY[did] = level
+        ok, err = _go2rtc_put("cam_%s_h264" % did, _transcode_src(did))
+        if not ok:
+            self._send(502, {"ok": False, "error": str(err or "清晰度切换失败")[:120]})
+            return
+        LOG.info("audit camera quality ip=%s did=%s level=%s", peer, did, level)
+        self._send(200, {"ok": True, "did": did, "quality": level})
+
+    def api_camera_bridge_ctrl(self, body):
+        """本地桥接进程专用：取走待发的 MISS 控制命令，只允许回环 + 临时 token。"""
+        if self.client_address[0] not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            self._send(403, {"ok": False, "error": "forbidden"})
+            return
+        token = self.headers.get("X-Miss-Token") or ""
+        if not token or not hmac.compare_digest(token, _bridge_token()):
+            self._send(401, {"ok": False, "error": "bad token"})
+            return
+        did = str((body or {}).get("did") or "")[:32]
+        if not did:
+            self._send(400, {"ok": False, "error": "bad request"})
+            return
+        out = []
+        for cmd, blob in _bridge_ctrl_take(did):
+            out.append("%d %d %s\n" % (cmd, len(blob),
+                                       base64.b64encode(blob).decode("ascii")))
+        self._send(200, "".join(out), ctype="text/plain; charset=utf-8")
+
+    def api_camera_ptz(self, body):
+        body = body or {}
+        did = str(body.get("did") or "")[:32]
+        key = str(body.get("dir") or body.get("operation") or "").strip().lower()
+        op = PTZ_OPERATIONS.get(key)
+        if op is None and key.isdigit():
+            op = int(key)
+        if not did or op not in (1, 2, 3, 4):
+            self._send(400, {"ok": False, "error": "方向参数不对"})
+            return
+        if not _camera_known(did):
+            self._send(404, {"ok": False, "error": "没有找到这台摄像头"})
+            return
+        peer = self.client_address[0]
+        if not _rate_ok("ptz:%s:%s" % (peer, did), 20, 10.0, 0.06):
+            self._send(429, {"ok": False, "error": "操作太频繁，慢一点"})
+            return
+        if not _bridge_ctrl_live(did):
+            self._send(409, {"ok": False, "error": "这台还没在拉流，先打开画面再控制"})
+            return
+        if not _bridge_ctrl_enqueue(did, MISS_CMD_MOTOR,
+                                    ('{"operation":%d}' % op).encode("ascii")):
+            self._send(429, {"ok": False, "error": "控制队列已满，稍后再试"})
+            return
+        self._send(200, {"ok": True, "did": did, "operation": op})
 
     def api_camera_miss_rpc(self, body):
         """本地桥接进程专用：用面板登录态代发小米云端 RPC，只允许回环 + 临时 token。"""
@@ -7396,9 +7553,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(order, list):
             self._send(400, {"ok": False, "msg": "order 格式错误"})
             return
-        saved = save_layout(order)
-        LOG.info("layout saved: %d cards", len(saved))
-        self._send(200, {"ok": True, "order": saved})
+        layout = save_layout(order, body.get("rows"), body.get("cols"))
+        LOG.info("layout saved: %d cards, grid %sx%s", len(layout["order"]),
+                 layout["rows"] or "-", layout["cols"] or "-")
+        self._send(200, {"ok": True, "order": layout["order"],
+                         "rows": layout["rows"], "cols": layout["cols"]})
 
     def api_theme(self, body):
         theme = body.get("theme")
@@ -7485,10 +7644,10 @@ class Handler(BaseHTTPRequestHandler):
         devices, err = fetch_all_devices()
         with WEATHER_LOCK:
             weather = dict(WEATHER)
-        theme = load_settings().get("theme", "dark")
+        theme = load_settings().get("theme", "mijia")
         theme = THEME_LEGACY.get(theme, theme)
         if theme not in THEME_IDS:
-            theme = "dark"
+            theme = "mijia"
         self._send(200, {
             "ok": True, "config": _public_config(),
             "devices": devices or [], "cloud_error": err,
@@ -7810,7 +7969,7 @@ class Handler(BaseHTTPRequestHandler):
             if value in ("auto", "always", "never"):
                 updates["hide_cursor"] = value
         if "p2p_bridge" in body:
-            value = str(body.get("p2p_bridge") or "auto").lower()
+            value = str(body.get("p2p_bridge") or BRIDGE_MODE_DEFAULT).lower()
             if value in ("auto", "always", "off"):
                 updates["p2p_bridge"] = value
         if "xiaomi_viewer_dir" in body and isinstance(body.get("xiaomi_viewer_dir"), str):
@@ -7891,7 +8050,7 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         if what in ("theme", "all"):
             settings = load_settings()
-            settings["theme"] = "dark"
+            settings["theme"] = "mijia"
             save_settings(settings)
         if what in ("settings", "factory"):
             if what == "settings":
