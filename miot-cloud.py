@@ -203,7 +203,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.22"
+APP_VERSION = "0.7.23"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -4918,7 +4918,7 @@ def _stack_plugin_plan():
     out.append({"local": "panel-sso.jsplugin.zip",
                 "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/"
                        "music/panel-sso.jsplugin.zip",
-                "sha": "f47ac03df8d0dda86809d8ac0d74bb2c0f0827542b03ef96a14c3f51a3dc154f",
+                "sha": "48ccfe271bf7e195520311965eda10d0491b9bf48cd432d6b40099e25ca41ebb",
                 "tag": "", "kind": "zip"})
     return out
 
@@ -6368,16 +6368,72 @@ def _songloft_web_base():
     return _songloft_public_url().rstrip("/") + "/"
 
 
-def _songloft_sso_url():
-    base = _songloft_base()
+SSO_PLUGIN_FILE = os.path.join(APP_DIR, "music", "panel-sso.jsplugin.zip")
+
+
+def _sso_plugin_bundle():
+    return SSO_PLUGIN_FILE if os.path.isfile(SSO_PLUGIN_FILE) else ""
+
+
+def _songloft_sso_ok():
     try:
         with urllib.request.urlopen(
-                base + "/api/v1/jsplugin/" + SONGLOFT_SSO_ENTRY + "/",
+                _songloft_base() + "/api/v1/jsplugin/" + SONGLOFT_SSO_ENTRY + "/",
                 timeout=4) as r:
-            if r.status != 200:
-                raise RuntimeError("音乐中心免登录入口不可用")
+            return r.status == 200
     except Exception:
-        raise RuntimeError("音乐中心免登录入口不可用，请确认 panel-sso 插件已安装")
+        return False
+
+
+def _songloft_plugin_version():
+    code, data = _songloft_req("GET", "/api/v1/jsplugins", timeout=6)
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    for item in plugins or []:
+        if isinstance(item, dict) and str(item.get("entry_path") or "") == SONGLOFT_SSO_ENTRY:
+            return str(item.get("version") or "")
+    return ""
+
+
+def _songloft_install_sso_plugin(force=False):
+    """把面板内置的免登录插件装进当前音乐中心，返回 (ok, message)。
+
+    玩法：Songloft 的 registry 安装接口只认 download_url，所以由面板自己提供
+    /music/panel-sso.jsplugin.zip 给它拉取；插件目录里放文件不会被自动注册。
+    """
+    src = _sso_plugin_bundle()
+    want = _zip_plugin_version(src) if src else ""
+    try:
+        have = _songloft_plugin_version()
+    except Exception:
+        have = ""
+    if have and not force and (not want or have == want):
+        return True, "插件已是最新（%s）" % have
+    if not src:
+        return False, "面板缺少内置插件包"
+    host = ("127.0.0.1" if _local_upstream(_songloft_base(), 58091)
+            else str(CONFIG.get("lan_ip") or LAN_IP))
+    url = "http://%s:%d/music/panel-sso.jsplugin.zip" % (host, PORT)
+    code, resp = _songloft_req("POST", "/api/v1/jsplugins/registry/install",
+                               {"download_url": url}, timeout=60)
+    ok = (code in (200, 201) and isinstance(resp, dict)
+          and int(resp.get("success") or 0) > 0)
+    if ok:
+        LOG.info("music sso plugin installed: %s", want or "?")
+        return True, "已安装 %s" % (want or "")
+    detail = ""
+    if isinstance(resp, dict):
+        results = resp.get("results") or []
+        if results and isinstance(results[0], dict):
+            detail = str(results[0].get("error") or "")
+        detail = detail or str(resp.get("error") or resp.get("message") or "")
+    LOG.warning("music sso plugin install failed: %s %s", code, detail[:160])
+    return False, detail[:160] or ("安装失败（HTTP %s）" % code)
+
+
+def _songloft_sso_url():
+    ok, msg = _songloft_install_sso_plugin()
+    if not ok and not _songloft_sso_ok():
+        raise RuntimeError("音乐中心免登录入口不可用：%s" % msg)
     user, pwd = _songloft_creds()
     if not user or not pwd:
         raise RuntimeError("未找到音乐中心管理员凭据")
@@ -7138,6 +7194,17 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         if u.path == "/unlock":
             self._send(200, UNLOCK_HTML, "text/html; charset=utf-8")
+            return
+        if u.path == "/music/panel-sso.jsplugin.zip":
+            src = _sso_plugin_bundle()
+            try:
+                with open(src, "rb") as f:
+                    data = f.read()
+            except (OSError, TypeError):
+                self._send(404, {"error": "not found"})
+                return
+            self._send(200, data, "application/zip",
+                       {"Content-Disposition": 'attachment; filename="panel-sso.jsplugin.zip"'})
             return
         if u.path.startswith("/go2rtc"):
             if not _device_authed(self):
@@ -8929,6 +8996,13 @@ class Handler(BaseHTTPRequestHandler):
             stack["disabled"] = host not in ("127.0.0.1", "localhost", LAN_IP.lower())
             _stack_state_write(stack)
         _clear_songloft_token()
+        sso_msg = ""
+        if not sso_ready:
+            try:
+                ok, sso_msg = _songloft_install_sso_plugin()
+                sso_ready = bool(ok) or _songloft_sso_ok()
+            except Exception as exc:
+                sso_msg = str(exc)[:120]
         try:
             threading.Thread(target=_import_panel_auth_to_plugin,
                              kwargs={"force": True}, daemon=True).start()
@@ -8941,6 +9015,7 @@ class Handler(BaseHTTPRequestHandler):
                               "status": item.get("status") or ""})
         self._send(200, {"ok": True, "url": url, "version": version,
                          "plugins": names, "sso_ready": sso_ready,
+                         "sso_msg": sso_msg,
                          "go_music_dl_url": gmd_url})
 
     def api_admin_music_stack_status(self):
@@ -10534,6 +10609,21 @@ def _nl_parse(text):
             "text": "%s：%s → %s" % (dev["name"], label, display)}
 
 
+def _sync_sso_quiet():
+    try:
+        want = _zip_plugin_version(_sso_plugin_bundle()) if _sso_plugin_bundle() else ""
+        try:
+            have = _songloft_plugin_version()
+        except Exception:
+            have = ""
+        if have and want and have == want:
+            return
+        ok, msg = _songloft_install_sso_plugin()
+        LOG.info("music sso plugin: %s", msg)
+    except Exception as exc:
+        LOG.debug("music sso plugin sync skipped: %s", str(exc)[:120])
+
+
 def _music_autostart():
     """容器/机器重启后把已安装的音乐中心拉起来（进程不随服务自启）。"""
     if os.environ.get("MIOT_NO_MUSIC_AUTOSTART"):
@@ -10546,10 +10636,12 @@ def _music_autostart():
         _stack_sync_sso_plugin()
         sport = int(state.get("songloft_port") or 58091)
         if _port_json("http://127.0.0.1:%d/api/v1/version" % sport):
+            _sync_sso_quiet()
             return
         LOG.info("music stack: autostart")
         _stack_start()
         LOG.info("music stack: autostart done")
+        _sync_sso_quiet()
     except Exception as exc:
         LOG.warning("music stack autostart failed: %s", str(exc)[:160])
 

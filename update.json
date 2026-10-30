@@ -1,8 +1,8 @@
 {
-  "version": "0.7.22",
+  "version": "0.7.23",
   "released": "2026-10-30",
-  "notes": "新增自检诊断（一键汇总账号/设备/摄像头/音乐中心/组件守护并自动脱敏）、配置迁移包（口令加密导出导入）、组件看门狗（音乐中心与摄像头自动探活重启）、面板口令控设备（一句话开灯/调温/调风速）、按使用习惯自动排序，以及发布前自动回归脚本。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.22-update.tar.gz",
-  "sha256": "397d88df8e4f2435e9485c030cbea413221bd1aed928632e944fcc9833159d42",
-  "size": 2984645
+  "notes": "修复音乐中心免登录插件装不上：面板现在会通过音乐中心的插件安装接口自动安装/升级 panel-sso（自带 entryHash/zipHash，兼容 Songloft 的校验），连接音乐中心或打开后台音乐中心时自动补装，不再只往目录里拷文件。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.23-update.tar.gz",
+  "sha256": "9faf743d6e4c7384ec5436de25733b8aabf9bd187f1d4fed7c55d7dce06c8089",
+  "size": 2986037
 }
