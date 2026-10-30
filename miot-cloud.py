@@ -201,7 +201,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.17"
+APP_VERSION = "0.7.19"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -4590,10 +4590,10 @@ def _stack_start_services(sport, gport, user, pwd):
     os.makedirs(paths["gmd_data"], exist_ok=True)
     os.makedirs(paths["plugins"], exist_ok=True)
     state = _stack_state_read()
-    sl_exe = os.path.join(paths["bin"], "songloft.exe")
-    gmd_exe = os.path.join(paths["bin"], "music-dl.exe")
+    sl_exe = os.path.join(paths["bin"], _stack_exe("songloft"))
+    gmd_exe = os.path.join(paths["bin"], _stack_exe("music-dl"))
     if not os.path.isfile(sl_exe) or not os.path.isfile(gmd_exe):
-        raise RuntimeError("Windows 音乐组件未安装，请重新安装 MIOT Panel")
+        raise RuntimeError("音乐组件未安装，请先在后台点“安装音乐中心”")
     sl_running = bool((_port_json("http://127.0.0.1:%d/api/v1/version" % sport) or {}).get("version"))
     if sl_running and not _pid_alive(state.get("songloft_pid")):
         adopted = False
@@ -4640,6 +4640,89 @@ def _stack_start_services(sport, gport, user, pwd):
     return state
 
 
+STACK_REPOS = {
+    "songloft": "songloft-org/songloft",
+    "gmd": "guohuiyuan/go-music-dl",
+    "plugin_miot": "songloft-org/songloft-plugin-miot",
+    "plugin_gmd": "songloft-org/songloft-plugin-go-music-dl",
+}
+STACK_REMOTE_CACHE = {}
+STACK_REMOTE_TTL = 3600
+
+
+def _gh_open(url, timeout=15, headers=None):
+    req = urllib.request.Request(url, headers=headers or {
+        "User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _gh_latest_tag(repo, timeout=15):
+    """不走 api.github.com（国内经常 403 限流），用 releases/latest 的重定向取 tag。"""
+    try:
+        with _gh_open("https://github.com/%s/releases/latest" % repo, timeout) as resp:
+            final = resp.geturl() or ""
+    except Exception as exc:
+        LOG.warning("github latest failed for %s: %s", repo, str(exc)[:100])
+        return ""
+    marker = "/releases/tag/"
+    return final.split(marker, 1)[1].strip("/") if marker in final else ""
+
+
+def _gh_assets(repo, tag, timeout=15):
+    """列出版本资产名（expanded_assets 是个小 HTML 片段，不需要 API token）。"""
+    url = "https://github.com/%s/releases/expanded_assets/%s" % (repo, tag)
+    try:
+        with _gh_open(url, timeout) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception as exc:
+        LOG.warning("github assets failed for %s@%s: %s", repo, tag, str(exc)[:100])
+        return []
+    return sorted(set(re.findall(r"/releases/download/[^\"']+/([^\"'/]+)", html)))
+
+
+def _gh_checksums(repo, tag, assets, timeout=20):
+    """下载 release 里的 checksums 文件，返回 {资产名: sha256}。"""
+    names = [n for n in assets if "checksum" in n.lower() and n.lower().endswith((".txt", ".sha256", ".sum"))]
+    if not names:
+        names = ["checksums.txt", "go-music-dl_checksums.txt"]
+    for name in names:
+        url = "https://github.com/%s/releases/download/%s/%s" % (repo, tag, name)
+        try:
+            with _gh_open(url, timeout) as resp:
+                text = resp.read().decode("utf-8", "replace")
+        except Exception:
+            continue
+        out = {}
+        for line in text.splitlines():
+            parts = line.replace("*", " ").split()
+            if len(parts) >= 2 and len(parts[0]) == 64:
+                out[parts[-1]] = parts[0].lower()
+        if out:
+            return out
+    return {}
+
+
+def _stack_remote(key):
+    """查上游最新版本：{tag, assets, sums}，带 1 小时缓存。"""
+    now = time.time()
+    cached = STACK_REMOTE_CACHE.get(key)
+    if cached and now - cached.get("ts", 0) < STACK_REMOTE_TTL:
+        return cached
+    repo = STACK_REPOS.get(key)
+    if not repo:
+        return {}
+    tag = _gh_latest_tag(repo)
+    if not tag:
+        return {}
+    assets = _gh_assets(repo, tag)
+    data = {"repo": repo, "tag": tag, "assets": assets,
+            "sums": _gh_checksums(repo, tag, assets) if assets else {}, "ts": now}
+    if assets:
+        STACK_REMOTE_CACHE[key] = data
+        LOG.info("music remote %s -> %s (%d assets)", key, tag, len(assets))
+    return data
+
+
 MUSIC_STACK_CACHE = os.path.join(ROOT, "music-stack-cache")
 MUSIC_STACK_DOWNLOADS = (
     ("songloft.exe",
@@ -4660,8 +4743,112 @@ GMD_WIN_ZIP_SHA = "bffb84679bbba84d765331d068e28037b03993ceb493f201bd2ccfce4ce71
 GMD_WIN_EXE_SHA = "c3bab7b23c5c37187b9209067767ec3fd2991883799696253462a5f2a6f19deb"
 
 
+def _stack_platform():
+    """(os_tag, arch_tag)：windows/linux + amd64/arm64/armv7。"""
+    import platform as _pf
+    os_tag = "windows" if os.name == "nt" else "linux"
+    machine = (_pf.machine() or "").lower()
+    if machine in ("x86_64", "amd64"):
+        arch = "amd64"
+    elif machine in ("aarch64", "arm64"):
+        arch = "arm64"
+    elif machine.startswith("armv7") or machine in ("armv7l", "armhf", "arm"):
+        arch = "armv7"
+    else:
+        arch = "amd64"
+    return os_tag, arch
+
+
+def _stack_exe(base):
+    return base + (".exe" if os.name == "nt" else "")
+
+
+STACK_PINNED = {
+    "songloft": {
+        ("windows", "amd64"): ("https://github.com/songloft-org/songloft/releases/download/v2.13.5/"
+                               "songloft-windows-amd64.exe",
+                               "6ea4120ff643923a879f4840b362e55d0d77e268e1bab2b1f8e6b1b1467c81a7"),
+        ("windows", "arm64"): ("https://github.com/songloft-org/songloft/releases/download/v2.13.7/"
+                               "songloft-windows-arm64.exe", ""),
+        ("linux", "amd64"): ("https://github.com/songloft-org/songloft/releases/download/v2.13.7/"
+                             "songloft-linux-amd64", ""),
+        ("linux", "arm64"): ("https://github.com/songloft-org/songloft/releases/download/v2.13.7/"
+                             "songloft-linux-arm64", ""),
+        ("linux", "armv7"): ("https://github.com/songloft-org/songloft/releases/download/v2.13.7/"
+                             "songloft-linux-armv7", ""),
+    },
+    "gmd": {
+        ("windows", "amd64"): ("https://github.com/guohuiyuan/go-music-dl/releases/download/v1.1.3/"
+                               "go-music-dl_windows_amd64.zip",
+                               "bffb84679bbba84d765331d068e28037b03993ceb493f201bd2ccfce4ce71776"),
+        ("linux", "amd64"): ("https://github.com/guohuiyuan/go-music-dl/releases/download/v1.1.3/"
+                             "go-music-dl_linux_amd64.tar.gz",
+                             "dba470476c81ebdc6c3ef089737e4667a97c8e1acadaac019439a233411a0b4b"),
+        ("linux", "arm64"): ("https://github.com/guohuiyuan/go-music-dl/releases/download/v1.1.3/"
+                             "go-music-dl_linux_arm64.tar.gz",
+                             ""),
+        ("linux", "armv7"): ("https://github.com/guohuiyuan/go-music-dl/releases/download/v1.1.3/"
+                             "go-music-dl_linux_armv7.tar.gz",
+                             ""),
+    },
+}
+
+
+def _stack_asset_name(key, os_tag, arch):
+    if key == "songloft":
+        return "songloft-%s-%s%s" % (os_tag, arch, ".exe" if os_tag == "windows" else "")
+    if key == "gmd":
+        return ("go-music-dl_%s_%s.zip" if os_tag == "windows"
+                else "go-music-dl_%s_%s.tar.gz") % (os_tag, arch)
+    return ""
+
+
+def _stack_pick(key, os_tag, arch):
+    """优先上游最新（资产名 + checksums.txt），失败回落到固定版本。返回 (url, sha, tag, source)。"""
+    name = _stack_asset_name(key, os_tag, arch)
+    remote = _stack_remote(key) or {}
+    if name and name in (remote.get("assets") or []):
+        url = "https://github.com/%s/releases/download/%s/%s" % (
+            remote.get("repo"), remote.get("tag"), name)
+        return url, (remote.get("sums") or {}).get(name, ""), remote.get("tag", ""), "latest"
+    pinned = STACK_PINNED.get(key, {}).get((os_tag, arch))
+    if pinned:
+        return pinned[0], pinned[1], "", "pinned"
+    return "", "", "", ""
+
+
+def _stack_plugin_plan():
+    """两个插件（上游最新优先）+ 我们自己仓库的 panel-sso。"""
+    out = []
+    for key, local, fallback in (
+            ("plugin_miot", "miot.jsplugin.zip",
+             ("https://github.com/songloft-org/songloft-plugin-miot/releases/download/"
+              "v2026.10.25.0/miot.jsplugin.zip",
+              "40750a25b367fd9838e0f5c1623ed8b4955f6f9d75734653a3cfe6742b9ef22a")),
+            ("plugin_gmd", "go-music-dl.jsplugin.zip",
+             ("https://github.com/songloft-org/songloft-plugin-go-music-dl/releases/download/"
+              "v2026.10.16/go-music-dl.jsplugin.zip",
+              "71135b9f4cb5028fc7ac473e30a61576060310203fb8cafbd1279946c27d08b1"))):
+        remote = _stack_remote(key) or {}
+        asset = local
+        url = ""
+        if asset in (remote.get("assets") or []):
+            url = "https://github.com/%s/releases/download/%s/%s" % (
+                remote.get("repo"), remote.get("tag"), asset)
+        # 上游 latest 没有 checksums 文件时不能拿旧版本的 SHA 去校验
+        out.append({"local": local, "url": url or fallback[0],
+                    "sha": ((remote.get("sums") or {}).get(asset, "") if url else fallback[1]),
+                    "tag": remote.get("tag", ""), "kind": "zip"})
+    out.append({"local": "panel-sso.jsplugin.zip",
+                "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/"
+                       "music/panel-sso.jsplugin.zip",
+                "sha": "f0ad8826172816d358752a277586affe196cd0ae00fcc5d56d1dfc609718f36c",
+                "tag": "", "kind": "zip"})
+    return out
+
+
 def _stack_required_files():
-    return ("songloft.exe", "music-dl.exe",
+    return (_stack_exe("songloft"), _stack_exe("music-dl"),
             os.path.join("plugins", "miot.jsplugin.zip"),
             os.path.join("plugins", "go-music-dl.jsplugin.zip"),
             os.path.join("plugins", "panel-sso.jsplugin.zip"))
@@ -4694,7 +4881,10 @@ def _mirror_candidates(url):
 def _download_verified(url, dest, expected_sha, timeout=180, progress=None):
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.is_file() and _sha256_file(dest) == expected_sha:
+    expected_sha = (expected_sha or "").strip().lower()
+    if expected_sha and dest.is_file() and _sha256_file(dest) == expected_sha:
+        return dest
+    if not expected_sha and dest.is_file() and dest.stat().st_size > 0:
         return dest
     last_error = None
     for candidate in _mirror_candidates(url):
@@ -4723,8 +4913,10 @@ def _download_verified(url, dest, expected_sha, timeout=180, progress=None):
                             progress(done, total)
                         except Exception:
                             pass
-            if _sha256_file(part) != expected_sha:
+            if expected_sha and _sha256_file(part) != expected_sha:
                 raise RuntimeError("SHA256 不匹配")
+            if not expected_sha:
+                LOG.warning("music component %s downloaded without checksum", Path(dest).name)
             os.replace(part, dest)
             return dest
         except Exception as exc:
@@ -4739,54 +4931,103 @@ def _download_verified(url, dest, expected_sha, timeout=180, progress=None):
     raise RuntimeError("下载失败（官方源和国内镜像均不可用）：%s" % str(last_error)[:160])
 
 
+def _stack_extract_member(archive, member, dest):
+    """从 zip/tar.gz 里取出单个可执行文件，返回是否成功。"""
+    name = os.path.basename(str(archive)).lower()
+    try:
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(archive) as zf:
+                target = next((n for n in zf.namelist()
+                               if os.path.basename(n) == member), None)
+                if not target:
+                    return False
+                with zf.open(target) as src, open(dest, "wb") as out:
+                    out.write(src.read())
+        else:
+            with tarfile.open(archive) as tf:
+                info = next((m for m in tf.getmembers()
+                             if os.path.basename(m.name) == member and m.isfile()), None)
+                if not info:
+                    return False
+                src = tf.extractfile(info)
+                if not src:
+                    return False
+                with open(dest, "wb") as out:
+                    out.write(src.read())
+    except Exception as exc:
+        LOG.warning("music extract %s failed: %s", member, str(exc)[:120])
+        return False
+    try:
+        os.chmod(dest, 0o755)
+    except OSError:
+        pass
+    return True
+
+
 def _stack_download_bundle(progress=None):
+    """按平台拉取上游最新版（失败回落固定版本），返回解压好的目录。"""
     progress = progress or (lambda *a: None)
     src = Path(MUSIC_STACK_CACHE)
-    plugins = src / "plugins"
-    plugins.mkdir(parents=True, exist_ok=True)
-    items = list(MUSIC_STACK_DOWNLOADS)
-    total_items = len(items) + 1
-    span = 58.0 / total_items
-    index = 0
-    for name, url, sha in items:
-        index += 1
-        label = "Songloft" if name == "songloft.exe" else (
-            "panel-sso 插件" if name.startswith("panel-sso") else name)
-        base = (index - 1) * span
-        progress("正在下载 %s (%d/%d)" % (label, index, total_items), base)
+    (src / "plugins").mkdir(parents=True, exist_ok=True)
+    os_tag, arch = _stack_platform()
+    sl_name = _stack_exe("songloft")
+    gmd_name = _stack_exe("music-dl")
 
-        def on_bytes(done, total, base=base):
-            pct = base + (span * done / total if total else 0)
-            progress(None, pct)
+    steps = []
+    for key, local in (("songloft", sl_name), ("gmd", gmd_name)):
+        url, sha, tag, source = _stack_pick(key, os_tag, arch)
+        if not url:
+            raise RuntimeError("找不到 %s 的 %s/%s 下载地址" % (key, os_tag, arch))
+        steps.append({"key": key, "local": local, "url": url, "sha": sha,
+                      "tag": tag, "source": source})
+    plugins = _stack_plugin_plan()
+    total = len(steps) + len(plugins)
+    span = 92.0 / max(total, 1)
+    base = 0.0
 
-        target = plugins / name if name.endswith(".jsplugin.zip") else src / name
-        _download_verified(url, target, sha, progress=on_bytes)
-    progress("正在下载 go-music-dl (5/5)", 4 * span)
-    gmd_zip = src / "music-dl.zip"
-    _download_verified(GMD_WIN_ZIP_URL, gmd_zip, GMD_WIN_ZIP_SHA,
-                       progress=lambda done, total: progress(
-                           None, 4 * span + (span * done / total if total else 0)))
-    progress("正在解压 go-music-dl", 64)
-    exe = src / "music-dl.exe"
-    with zipfile.ZipFile(gmd_zip) as zf:
-        data = zf.read("music-dl.exe")
-    tmp = exe.with_suffix(".exe.part")
-    with open(tmp, "wb") as f:
-        f.write(data)
-    if _sha256_file(tmp) != GMD_WIN_EXE_SHA:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise RuntimeError("go-music-dl.exe 校验失败")
-    os.replace(tmp, exe)
-    progress("组件下载与校验完成", 65)
+    for step in steps:
+        label = "Songloft" if step["key"] == "songloft" else "go-music-dl"
+        ver = step["tag"] or "固定版本"
+        progress("正在下载 %s（%s）" % (label, ver), base)
+        archive = src / ("songloft-archive" + (".zip" if step["key"] == "gmd"
+                                              and os_tag == "windows" else
+                                              (".tar.gz" if step["key"] == "gmd" else ".bin")))
+        target = src / step["local"]
+        if step["key"] == "gmd":
+            def on_bytes(done, total_b, base=base, span=span):
+                progress(None, base + (span * done / total_b if total_b else 0))
+            _download_verified(step["url"], archive, step["sha"], progress=on_bytes)
+            if not _stack_extract_member(archive, "music-dl" + (".exe" if os_tag == "windows" else ""),
+                                         target):
+                raise RuntimeError("go-music-dl 包里没有找到可执行文件")
+            try:
+                os.remove(archive)
+            except OSError:
+                pass
+        else:
+            def on_bytes(done, total_b, base=base, span=span):
+                progress(None, base + (span * done / total_b if total_b else 0))
+            _download_verified(step["url"], target, step["sha"], progress=on_bytes)
+            try:
+                os.chmod(target, 0o755)
+            except OSError:
+                pass
+        base += span
+
+    for item in plugins:
+        progress("正在下载插件 %s" % item["local"], base)
+        target = src / "plugins" / item["local"]
+        _download_verified(item["url"], target, item["sha"])
+        if item["local"].endswith(".zip") and not zipfile.is_zipfile(target):
+            raise RuntimeError("插件包损坏：%s" % item["local"])
+        base += span
+
+    progress("组件下载完成", 95)
     return str(src)
+
 
 def _stack_install(progress=None):
     progress = progress or (lambda *a: None)
-    if os.name != "nt":
-        raise RuntimeError("一键安装音乐中心仅支持 Windows；Linux 请运行 music/install-music-stack.sh")
     src = MUSIC_STACK_SRC
     missing = _stack_missing(src)
     if missing:
@@ -4808,8 +5049,13 @@ def _stack_install(progress=None):
         os.makedirs(paths["plugins"], exist_ok=True)
         os.makedirs(paths["songloft_data"], exist_ok=True)
         os.makedirs(paths["gmd_data"], exist_ok=True)
-        for name in ("songloft.exe", "music-dl.exe"):
-            shutil.copy2(os.path.join(src, name), os.path.join(paths["bin"], name))
+        for name in (_stack_exe("songloft"), _stack_exe("music-dl")):
+            target = os.path.join(paths["bin"], name)
+            shutil.copy2(os.path.join(src, name), target)
+            try:
+                os.chmod(target, 0o755)
+            except OSError:
+                pass
         for name in os.listdir(os.path.join(src, "plugins")):
             if name.endswith(".jsplugin.zip"):
                 shutil.copy2(os.path.join(src, "plugins", name),
@@ -4945,12 +5191,10 @@ def _stack_install_job():
 
 
 def _stack_start():
-    if os.name != "nt":
-        raise RuntimeError("Windows 音乐中心管理仅支持 Windows")
     with MUSIC_STACK_LOCK:
         state = _stack_state_read()
         if not state.get("installed"):
-            raise RuntimeError("尚未安装 Windows 音乐中心")
+            raise RuntimeError("尚未安装音乐中心，请先点“检测并安装”")
         creds = _stack_creds()
         sport = int(state.get("songloft_port") or 58091)
         gport = int(state.get("gmd_port") or 8081)
@@ -5260,15 +5504,22 @@ def _bridge_token_file():
 
 
 def _bridge_status():
-    platform_ok = os.name == "nt"
-    host = _bridge_ensure_host() if platform_ok else ""
-    dll_dir = _bridge_dll_dir() if platform_ok else ""
+    if os.name == "nt":
+        kind = "win"
+        host = _bridge_ensure_host()
+        python = ""
+        helper = host
+    else:
+        python, helper = _wine_helper_paths()
+        host = _wine_bin()
+        kind = "wine" if (host and python and helper) else ""
+    platform_ok = bool(kind)
+    dll_dir = _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin() if platform_ok else ""
     reasons = []
     if not platform_ok:
-        reasons.append("仅支持 Windows")
-    if not host:
-        reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）")
+        reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）" if os.name == "nt"
+                       else "当前镜像没有 wine 桥接（P2P 桥接仅 amd64 镜像提供）")
     if not dll_dir:
         reasons.append("桥接组件未就绪，请更新到完整安装包")
     if not ffmpeg:
@@ -5276,7 +5527,8 @@ def _bridge_status():
     return {
         "ok": True,
         "platform_ok": platform_ok,
-        "helper_ok": bool(host),
+        "kind": kind,
+        "helper_ok": bool(helper),
         "dll_ok": bool(dll_dir),
         "ffmpeg_ok": bool(ffmpeg),
         "available": not reasons,
@@ -5284,7 +5536,7 @@ def _bridge_status():
         "mode": CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT,
         "viewer_dir": CONFIG.get("xiaomi_viewer_dir") or "",
         "dll_dir": dll_dir,
-        "helper": host,
+        "helper": helper,
         "ffmpeg": ffmpeg,
         "token_file": os.path.join(BRIDGE_DIR, "bridge.token"),
         "dlls": list(BRIDGE_DLLS),
@@ -5365,12 +5617,54 @@ def _bridge_job_start(src, is_exe=False, cleanup=None):
     return True
 
 
+def _wine_bin():
+    """Linux/Docker 下跑官方 Windows DLL 的 wine 可执行文件。"""
+    if os.name == "nt":
+        return ""
+    for path in ("/usr/bin/wine", "/usr/local/bin/wine"):
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return shutil.which("wine") or ""
+
+
+def _wine_helper_paths():
+    base = os.path.join(APP_DIR, "tools")
+    python = os.path.join(base, "wine-py", "python.exe")
+    helper = os.path.join(base, "miss_host_wine.py")
+    if os.path.isfile(python) and os.path.isfile(helper):
+        return python, helper
+    return "", ""
+
+
+def _drain_pipe(pipe, did):
+    try:
+        for line in iter(pipe.readline, b""):
+            text = line.decode("utf-8", "replace").strip()
+            if text:
+                LOG.info("bridge %s: %s", did, text[:200])
+    except Exception:
+        pass
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+
 def _bridge_prepare():
-    if os.name != "nt":
-        return None
     if (CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT) == "off":
         return None
-    host = _bridge_ensure_host()
+    kind, host, python, helper = "win", "", "", ""
+    if os.name == "nt":
+        host = _bridge_ensure_host()
+        if not host:
+            return None
+    else:
+        wine = _wine_bin()
+        python, helper = _wine_helper_paths()
+        if not (wine and python and helper):
+            return None
+        kind, host = "wine", wine
     dll_dir = _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin()
     token_file = _bridge_token_file() if (host and dll_dir and ffmpeg) else ""
@@ -5378,8 +5672,12 @@ def _bridge_prepare():
         return None
     logs = os.path.join(BRIDGE_DIR, "logs")
     os.makedirs(logs, exist_ok=True)
-    return {"host": host, "dll_dir": dll_dir, "ffmpeg": ffmpeg,
-            "token_file": token_file, "logs": logs}
+    bridge = {"kind": kind, "host": host, "dll_dir": dll_dir, "ffmpeg": ffmpeg,
+              "token_file": token_file, "logs": logs}
+    if kind == "wine":
+        bridge["python"] = python
+        bridge["helper"] = helper
+    return bridge
 
 
 def _bridge_sig(did, model):
@@ -5455,6 +5753,14 @@ def _bridge_src(bridge, did, model):
 
 def _bridge_host_args(bridge, did, model):
     log = _bridge_log_path(bridge, did)
+    if bridge.get("kind") == "wine":
+        return [bridge["host"], bridge["python"], bridge["helper"],
+                "--did", str(did), "--model", str(model),
+                "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
+                "--token-file", bridge["token_file"],
+                "--dll-dir", bridge["dll_dir"],
+                "--log", log,
+                "--parent", str(os.getpid())]
     return [bridge["host"],
             "--did", str(did), "--model", str(model),
             "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
@@ -7270,16 +7576,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         args = _bridge_host_args(bridge, did, model)
         flags = 0x08000000 if os.name == "nt" else 0
+        wine_mode = bridge.get("kind") == "wine"
         try:
-            proc = subprocess.Popen(args, stdin=subprocess.DEVNULL,
+            proc = subprocess.Popen(args,
+                                    stdin=subprocess.PIPE if wine_mode else subprocess.DEVNULL,
                                     stdout=subprocess.PIPE,
-                                    stderr=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE if wine_mode else subprocess.DEVNULL,
                                     creationflags=flags)
         except Exception as exc:
             LOG.warning("bridge spawn failed: %s", exc)
             self._send(500, {"ok": False, "error": "桥接启动失败"})
             return
-        LOG.info("bridge stream start did=%s pid=%s", did, proc.pid)
+        ff = None
+        if wine_mode:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            threading.Thread(target=_drain_pipe, args=(proc.stderr, did),
+                             daemon=True).start()
+            try:
+                ff = subprocess.Popen(
+                    [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
+                     "-use_wallclock_as_timestamps", "1",
+                     "-f", "hevc", "-i", "pipe:0",
+                     "-c", "copy", "-an", "-flush_packets", "1",
+                     "-f", "mpegts", "pipe:1"],
+                    stdin=proc.stdout, stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL)
+            except Exception as exc:
+                LOG.warning("bridge ffmpeg spawn failed: %s", exc)
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                self._send(500, {"ok": False, "error": "桥接转码启动失败"})
+                return
+        LOG.info("bridge stream start did=%s pid=%s kind=%s", did, proc.pid, bridge.get("kind"))
         try:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
@@ -7287,7 +7620,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
-            fd = proc.stdout.fileno()
+            fd = (ff or proc).stdout.fileno()
             while True:
                 chunk = os.read(fd, 65536)
                 if not chunk:
@@ -7297,14 +7630,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             LOG.debug("bridge stream write end: %s", exc)
         finally:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                pass
+            for doomed in (ff, proc):
+                if doomed is None:
+                    continue
+                try:
+                    doomed.kill()
+                except Exception:
+                    pass
+                try:
+                    doomed.wait(timeout=5)
+                except Exception:
+                    pass
             LOG.info("bridge stream end did=%s rc=%s", did, proc.returncode)
 
     def api_camera_ensure(self, u=None):
@@ -8365,31 +8701,34 @@ class Handler(BaseHTTPRequestHandler):
         state = _stack_state_read()
         sport = int(state.get("songloft_port") or 58091)
         gport = int(state.get("gmd_port") or 8081)
-        sl = _port_json("http://127.0.0.1:%d/api/v1/version" % sport) if os.name == "nt" else None
-        gmd = bool(_wait_http("http://127.0.0.1:%d/music/" % gport, 2))             if os.name == "nt" else False
+        sl = _port_json("http://127.0.0.1:%d/api/v1/version" % sport)
+        gmd = bool(_wait_http("http://127.0.0.1:%d/music/" % gport, 2))
         logs = ""
         try:
             with open(_stack_paths()["sl_log"], "rb") as f:
                 logs = f.read()[-4000:].decode("utf-8", "replace")
         except OSError:
             pass
-        if os.name == "nt":
-            missing_src = _stack_missing(MUSIC_STACK_SRC)
-            missing_cache = _stack_missing(MUSIC_STACK_CACHE)
-            source_ready = not missing_src or not missing_cache
-        else:
-            missing_src = []
-            missing_cache = []
-            source_ready = False
-        can_download = os.name == "nt"
+        missing_src = _stack_missing(MUSIC_STACK_SRC)
+        missing_cache = _stack_missing(MUSIC_STACK_CACHE)
+        source_ready = not missing_src or not missing_cache
+        can_download = True
+        latest = {}
+        for key in ("songloft", "gmd", "plugin_miot", "plugin_gmd"):
+            try:
+                latest[key] = (_stack_remote(key) or {}).get("tag", "")
+            except Exception:
+                latest[key] = ""
         self._send(200, {
             "ok": True, "platform": "windows" if os.name == "nt" else "linux",
             "supported": source_ready or can_download,
             "source_ready": source_ready, "can_download": can_download,
+            "latest": latest,
             "missing": [] if source_ready else missing_src,
             "installed": bool(state.get("installed")),
             "running": bool(sl) and gmd,
             "songloft_running": bool(sl), "gmd_running": gmd,
+            "songloft_version": str((sl or {}).get("version") or ""),
             "songloft_port": sport, "gmd_port": gport,
             "songloft_url": state.get("songloft_url") or
             ("http://127.0.0.1:%d" % sport if state.get("installed") else ""),
@@ -8400,10 +8739,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_admin_music_stack_install(self):
         if not self._admin_require():
-            return
-        if os.name != "nt":
-            self._send(400, {"ok": False,
-                             "error": "Linux 请运行 music/install-music-stack.sh；Docker 请连接外部音乐中心"})
             return
         with MUSIC_STACK_JOB_LOCK:
             if MUSIC_STACK_JOB["running"]:
@@ -8441,6 +8776,12 @@ class Handler(BaseHTTPRequestHandler):
         ip = str(CONFIG.get("lan_ip") or LAN_IP)
         suffix = "" if PORT == 80 else ":%d" % PORT
         base = "http://%s%s" % (ip, suffix)
+        # Docker 里探测到的是容器内网 IP（172.17.0.2），手机访问不到；
+        # 后台既然是从某个地址打开的，就用它给手机生成地址和二维码。
+        host = (self.headers.get("Host") or "").strip()
+        host_name = host.rsplit(":", 1)[0].strip("[]") if host else ""
+        if host_name and not host_name.startswith("127.") and host_name not in ("localhost", "::1"):
+            base = "http://" + host
         phone_url = base + "/login?m=phone"
         self._send(200, {
             "ok": True, "lan_ip": ip, "port": PORT,

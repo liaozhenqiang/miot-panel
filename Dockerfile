@@ -30,6 +30,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        python3 ca-certificates tzdata passwd \
     && rm -rf /var/lib/apt/lists/*
+# amd64 才装 wine：官方 libmiss 是 32 位 Windows DLL，只能靠 wine32 跑
+ARG TARGETARCH
+RUN set -eux; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        dpkg --add-architecture i386; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends wine wine32:i386; \
+        apt-get purge -y --auto-remove libgl1-mesa-dri libllvm15 || true; \
+        rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* \
+               /usr/share/locale/* /usr/share/wine/mono /usr/share/wine/gecko; \
+    fi
 
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
@@ -37,6 +48,13 @@ COPY miot-cloud.py cloud_panel.html admin.html camera.html compat.js \
      manifest.webmanifest sw.js sensor_models.json miot_models.json.gz /app/
 COPY icons /app/icons
 COPY android /app/android
+# 桥接助手：32 位 Windows Python + 官方 DLL 目录（发布镜像里填满，仓库里是占位）
+COPY tools/miss_host_wine.py /app/tools/miss_host_wine.py
+COPY tools/wine-py/ /app/tools/wine-py/
+COPY tools/xiaomi-viewer/ /app/tools/xiaomi-viewer/
+ENV WINEPREFIX=/data/.wine \
+    WINEDEBUG=-all \
+    WINEDLLOVERRIDES=mscoree,mshtml=
 
 RUN groupadd --gid 10001 panel \
     && useradd --uid 10001 --gid panel --home-dir /data --shell /usr/sbin/nologin panel \
