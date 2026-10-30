@@ -201,7 +201,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.19"
+APP_VERSION = "0.7.20"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -385,7 +385,8 @@ def load_config():
         return _normalize_config({})
 
 CONFIG = load_config()
-THEME_IDS = ("mijia", "dark", "light", "apple", "flyme", "cyber", "morandi", "pixel")
+THEME_IDS = ("mijia", "dark", "light", "apple", "flyme", "cyber", "morandi", "pixel",
+              "aurora", "paper")
 THEME_LEGACY = {"midnight": "cyber", "forest": "morandi", "sunset": "apple",
                 "ocean": "flyme", "rose": "morandi"}
 

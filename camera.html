@@ -244,6 +244,16 @@ body.light .compBar .compProgressWrap{background:#f1e3d5;}
 @media (max-width:680px) and (max-height:480px){
   .side{width:200px;flex-basis:200px;}
 }
+body.theme-aurora{--bg:#070b18;--panel:rgba(20,28,48,.8);--panel2:rgba(28,38,64,.86);--line:rgba(120,200,255,.16);--text:#e9f2ff;--muted:#8fa3c4;--accent:#3ee8c4;background:linear-gradient(170deg,#070b18,#0b1226 60%,#070a14);font-family:'MiSans','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',sans-serif;}
+body.theme-aurora .side,body.theme-aurora .bar{background:rgba(12,18,34,.82);}
+body.theme-aurora .cam{border-radius:16px;}
+body.theme-aurora .cam.active{border-color:rgba(62,232,196,.55);box-shadow:0 0 0 1px rgba(62,232,196,.35) inset;}
+body.theme-aurora .ptz{background:radial-gradient(circle at 50% 38%,rgba(40,60,96,.9),rgba(8,12,24,.86));border-color:rgba(120,200,255,.22);}
+body.theme-paper{--bg:#f6f1e7;--panel:#fffdf8;--panel2:#f3ece0;--line:#e3d9c8;--text:#2b2620;--muted:#7a6f60;--accent:#1f4e5f;background:linear-gradient(180deg,#f8f4ec,#f1eadc);font-family:Georgia,'Songti SC',serif;}
+body.theme-paper .side,body.theme-paper .bar{background:#fffdf8;}
+body.theme-paper .cam{border-radius:8px;border-color:#e3d9c8;}
+body.theme-paper .cam.active{border-color:#1f4e5f;}
+body.theme-paper .ptz{background:radial-gradient(circle at 50% 38%,#20404a,#101c20);}
 </style></head><body>
 <div class="bar">
   <div class="left">
@@ -473,7 +483,7 @@ function installComponents(){
     .catch(function(){ compInstall.disabled=false; });
 }
 
-var THEME_IDS = ['mijia','dark','light','apple','flyme','cyber','morandi','pixel'];
+var THEME_IDS = ['mijia','dark','light','apple','flyme','cyber','morandi','pixel','aurora','paper'];
 var THEME_LABELS = {mijia:'米家',dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
 var theme = 'mijia';
 var themeBtn = document.getElementById('themeBtn');

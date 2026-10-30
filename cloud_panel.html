@@ -910,6 +910,19 @@ body.theme-mijia .ebar,body.theme-apple .ebar,body.theme-flyme .ebar,body.theme-
   .editGrid{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
   .editBody{min-width:0;}
 }
+
+body.theme-aurora{--bg:#070b18;--panel:rgba(20,28,48,.72);--panel2:rgba(28,38,64,.8);--line:rgba(120,200,255,.16);--text:#e9f2ff;--muted:#8fa3c4;--accent:#3ee8c4;background:radial-gradient(1200px 700px at 12% -10%,rgba(62,232,196,.20),transparent 60%),radial-gradient(900px 600px at 92% 0%,rgba(122,108,255,.22),transparent 55%),linear-gradient(170deg,#070b18,#0b1226 60%,#070a14);font-family:'MiSans','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',sans-serif;}
+body.theme-aurora .card{background:linear-gradient(180deg,rgba(28,38,64,.86),rgba(16,22,38,.9));border:1px solid rgba(120,200,255,.16);border-radius:22px;box-shadow:0 18px 40px rgba(0,10,30,.45),inset 0 1px 0 rgba(255,255,255,.06);}
+body.theme-aurora .clock{background:linear-gradient(92deg,#3ee8c4,#7a6cff 70%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+body.theme-aurora .btn{background:linear-gradient(120deg,rgba(62,232,196,.20),rgba(122,108,255,.24));border:1px solid rgba(122,108,255,.36);color:#eafffb;border-radius:14px;}
+body.theme-aurora .ico{border-radius:12px;background:linear-gradient(135deg,rgba(62,232,196,.18),rgba(122,108,255,.18));color:#bff7ea;}
+body.theme-paper{--bg:#f6f1e7;--panel:#fffdf8;--panel2:#f3ece0;--line:#e3d9c8;--text:#2b2620;--muted:#7a6f60;--accent:#1f4e5f;background:linear-gradient(180deg,#f8f4ec,#f1eadc);font-family:Georgia,'Songti SC','Noto Serif CJK SC',serif;}
+body.theme-paper .card{background:#fffdf8;border:1px solid #e3d9c8;border-radius:10px;box-shadow:0 1px 0 #efe6d6,0 10px 24px rgba(84,66,42,.06);}
+body.theme-paper .clock{color:#1f2a2e;font-family:Georgia,serif;}
+body.theme-paper .btn{background:#1f4e5f;color:#f7fbfc;border-radius:8px;border:1px solid #1f4e5f;}
+body.theme-paper .ico{background:#f1eadc;border:1px solid #e3d9c8;color:#7a6f60;border-radius:8px;}
+@media (min-width:1281px) and (max-width:1500px){.page{grid-template-columns:repeat(4,minmax(0,1fr));}.card{min-height:0;}}
+@media (min-width:901px) and (max-width:1100px){.page{grid-template-columns:repeat(3,minmax(0,1fr));}.card{min-height:0;}}
 </style></head><body>
 <div class="app">
   <div class="head">
@@ -1002,7 +1015,7 @@ function toast(msg,err){
   clearTimeout(el._t);el._t=setTimeout(function(){el.className='msg';},2500);
 }
 var THEME_IDS=['mijia','dark','light','apple','flyme','cyber','morandi','pixel'];
-var THEME_LABELS={mijia:'米家',dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端'};
+var THEME_LABELS={mijia:'米家',dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端',aurora:'极光',paper:'纸感'};
 function applyTheme(t){
   if(THEME_IDS.indexOf(t)<0)t='mijia';
   theme=t;
