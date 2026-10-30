@@ -1,0 +1,8 @@
+{
+  "version": "0.7.24",
+  "released": "2026-10-30",
+  "notes": "修复 v0.7.23 引入的问题：后台打开音乐中心会报 name base is not defined（重写免登录地址生成时漏了 base 变量），现在后台打开和新窗口打开都正常。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.24-update.tar.gz",
+  "sha256": "77391dee154e14543816269e19062238abbbea1dbae12cb99a20e3ca1dcb1a67",
+  "size": 2986024
+}

@@ -59,9 +59,6 @@ import tempfile
 import zipfile
 import ctypes
 import ssl
-import struct
-import html as html_lib
-import zipfile
 from pathlib import Path
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -203,7 +200,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.23"
+APP_VERSION = "0.7.24"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -6431,6 +6428,7 @@ def _songloft_install_sso_plugin(force=False):
 
 
 def _songloft_sso_url():
+    base = _songloft_base()
     ok, msg = _songloft_install_sso_plugin()
     if not ok and not _songloft_sso_ok():
         raise RuntimeError("音乐中心免登录入口不可用：%s" % msg)

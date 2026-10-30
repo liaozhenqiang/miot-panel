@@ -1,8 +1,8 @@
 {
-  "version": "0.7.23",
+  "version": "0.7.24",
   "released": "2026-10-30",
-  "notes": "修复音乐中心免登录插件装不上：面板现在会通过音乐中心的插件安装接口自动安装/升级 panel-sso（自带 entryHash/zipHash，兼容 Songloft 的校验），连接音乐中心或打开后台音乐中心时自动补装，不再只往目录里拷文件。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.23-update.tar.gz",
-  "sha256": "9faf743d6e4c7384ec5436de25733b8aabf9bd187f1d4fed7c55d7dce06c8089",
-  "size": 2986037
+  "notes": "修复 v0.7.23 引入的问题：后台打开音乐中心会报 name base is not defined（重写免登录地址生成时漏了 base 变量），现在后台打开和新窗口打开都正常。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.24-update.tar.gz",
+  "sha256": "77391dee154e14543816269e19062238abbbea1dbae12cb99a20e3ca1dcb1a67",
+  "size": 2986024
 }
