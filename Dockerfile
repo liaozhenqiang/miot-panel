@@ -47,6 +47,7 @@ WORKDIR /app
 COPY miot-cloud.py cloud_panel.html admin.html camera.html compat.js \
      manifest.webmanifest sw.js sensor_models.json miot_models.json.gz /app/
 COPY icons /app/icons
+COPY music/panel-sso.jsplugin.zip /app/music/panel-sso.jsplugin.zip
 COPY android /app/android
 # 桥接助手：32 位 Windows Python + 官方 DLL 目录（发布镜像里填满，仓库里是占位）
 COPY tools/miss_host_wine.py /app/tools/miss_host_wine.py

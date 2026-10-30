@@ -56,6 +56,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 import ssl
 import struct
 import html as html_lib
@@ -201,7 +202,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.20"
+APP_VERSION = "0.7.21"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -4326,6 +4327,64 @@ def _gmd_port():
         return 8080
 
 
+def _local_upstream(value, default_port):
+    """把配置地址解析成 (scheme, host, port)；只有指向本机时才返回，用于同源反代。"""
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return None
+    if "://" not in raw:
+        raw = "http://" + raw
+    try:
+        parsed = urllib.parse.urlsplit(raw)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").strip().lower()
+    if not host or host not in _go2rtc_local_hosts():
+        return None
+    scheme = parsed.scheme if parsed.scheme in ("http", "https") else "http"
+    try:
+        port = parsed.port or (443 if scheme == "https" else default_port)
+    except ValueError:
+        return None
+    return scheme, host, port
+
+
+def _music_proxy_target():
+    return _local_upstream(_songloft_base(), 58091)
+
+
+def _music_proxy_prefix():
+    """本机音乐中心走面板同源代理，返回前缀；远程/未安装返回空串。"""
+    return "/songloft" if _music_proxy_target() else ""
+
+
+def _proxy_safe_path(path):
+    """去掉 .. 段，避免借代理跳到本机其它端口上的服务。"""
+    head, sep, query = path.partition("?")
+    parts = []
+    for seg in head.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(seg)
+    out = "/" + "/".join(parts)
+    if head.endswith("/") and not out.endswith("/"):
+        out += "/"
+    return out + sep + query
+
+
+def _music_proxy_html(text):
+    """音乐中心是相对路径+<base> 的 SPA：把 base 指到代理前缀下即可整体运行。"""
+    if '<base href="/">' in text:
+        text = text.replace('<base href="/">', '<base href="/songloft/">')
+    elif "<base " not in text.lower():
+        text = text.replace("<head>", '<head><base href="/songloft/">', 1)
+    return text.replace('href="/"', 'href="/songloft/"')
+
+
 def _plugin_account_file():
     return str(CONFIG.get("plugin_account_file") or PLUGIN_ACCOUNT_FILE)
 
@@ -4843,7 +4902,7 @@ def _stack_plugin_plan():
     out.append({"local": "panel-sso.jsplugin.zip",
                 "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/"
                        "music/panel-sso.jsplugin.zip",
-                "sha": "f0ad8826172816d358752a277586affe196cd0ae00fcc5d56d1dfc609718f36c",
+                "sha": "f47ac03df8d0dda86809d8ac0d74bb2c0f0827542b03ef96a14c3f51a3dc154f",
                 "tag": "", "kind": "zip"})
     return out
 
@@ -5191,11 +5250,43 @@ def _stack_install_job():
             MUSIC_STACK_JOB["running"] = False
 
 
+def _zip_plugin_version(path):
+    try:
+        with zipfile.ZipFile(path) as z:
+            return str(json.loads(z.read("plugin.json").decode("utf-8")).get("version") or "")
+    except Exception:
+        return ""
+
+
+def _stack_sync_sso_plugin():
+    """面板自带的面板单点登录插件跟随面板升级（旧版登录后会跳到错误的根路径）。"""
+    src = os.path.join(APP_DIR, "music", "panel-sso.jsplugin.zip")
+    if not os.path.isfile(src):
+        return False
+    dst = os.path.join(_stack_paths()["plugins"], "panel-sso.jsplugin.zip")
+    if not os.path.isfile(dst):
+        return False
+    want = _zip_plugin_version(src)
+    if not want or _zip_plugin_version(dst) == want:
+        return False
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        tmp = dst + ".tmp"
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dst)
+        LOG.info("music stack: panel-sso plugin -> %s", want)
+        return True
+    except Exception as exc:
+        LOG.warning("music stack: panel-sso plugin update failed: %s", str(exc)[:120])
+        return False
+
+
 def _stack_start():
     with MUSIC_STACK_LOCK:
         state = _stack_state_read()
         if not state.get("installed"):
             raise RuntimeError("尚未安装音乐中心，请先点“检测并安装”")
+        _stack_sync_sso_plugin()
         creds = _stack_creds()
         sport = int(state.get("songloft_port") or 58091)
         gport = int(state.get("gmd_port") or 8081)
@@ -6253,6 +6344,14 @@ def _songloft_login(force=False):
         return token
 
 
+def _songloft_web_base():
+    """浏览器里打开音乐中心的基址：本机组件走面板同源代理，否则用直连地址。"""
+    prefix = _music_proxy_prefix()
+    if prefix:
+        return prefix + "/"
+    return _songloft_public_url().rstrip("/") + "/"
+
+
 def _songloft_sso_url():
     base = _songloft_base()
     try:
@@ -6285,8 +6384,8 @@ def _songloft_sso_url():
     frag = base64.urlsafe_b64encode(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).decode("ascii").rstrip("=")
-    return "%s/api/v1/jsplugin/%s/#%s" % (
-        _songloft_public_url(), SONGLOFT_SSO_ENTRY, frag)
+    return "%sapi/v1/jsplugin/%s/#%s" % (
+        _songloft_web_base(), SONGLOFT_SSO_ENTRY, frag)
 
 
 def _songloft_req(method, path, payload=None, timeout=15, retry=True):
@@ -6875,16 +6974,19 @@ class Handler(BaseHTTPRequestHandler):
             conn.close()
 
     def _proxy_go2rtc_ws(self, target, host, port, path):
+        self._tunnel_ws(target.scheme, host, port, path)
+
+    def _tunnel_ws(self, scheme, host, port, path):
         upstream = None
         try:
             upstream = socket.create_connection((host, port), timeout=10)
-            if target.scheme == "https":
+            if scheme == "https":
                 upstream = ssl.create_default_context().wrap_socket(
                     upstream, server_hostname=host)
             lines = ["%s %s HTTP/1.1" % (self.command, path)]
             for key, value in self.headers.items():
                 if key.lower() == "origin":
-                    continue  # go2rtc checks Origin against upstream Host
+                    continue  # 上游会按自己的 Host 校验 Origin
                 if key.lower() == "host":
                     value = "%s:%d" % (host, port)
                 lines.append("%s: %s" % (key, value))
@@ -6918,13 +7020,103 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         client.sendall(data)
         except Exception as exc:
-            LOG.debug("go2rtc websocket proxy failed: %s", exc)
+            LOG.debug("websocket proxy failed: %s", exc)
         finally:
             try:
                 if upstream:
                     upstream.close()
             except Exception:
                 pass
+
+    # ------------------------------------------------------- 音乐中心同源代理
+    def _music_route(self):
+        u = urllib.parse.urlparse(self.path)
+        prefix = ""
+        for item in ("/songloft", "/api/v1/jsplugin-assets"):
+            if u.path == item or u.path.startswith(item + "/"):
+                prefix = item
+                break
+        if not prefix or not _music_proxy_target():
+            return False
+        if not _admin_authed(self):
+            self._send(401, {"ok": False, "login": True})
+            return True
+        self._proxy_music(prefix)
+        return True
+
+    def _proxy_music(self, prefix):
+        target = _music_proxy_target()
+        if not target:
+            self._send(404, {"ok": False,
+                             "error": "音乐中心未运行在本机，无法使用同源代理"})
+            return
+        if self.path == prefix:
+            self._send(301, b"", "text/plain; charset=utf-8",
+                       {"Location": prefix + "/"})
+            return
+        scheme, host, port = target
+        raw = self.path[len(prefix):] if prefix == "/songloft" else self.path
+        path = _proxy_safe_path(raw or "/")
+        if (self.headers.get("Upgrade") or "").lower() == "websocket":
+            self._tunnel_ws(scheme, host, port, path)
+        else:
+            self._proxy_music_http(prefix, scheme, host, port, path)
+
+    def _proxy_music_http(self, prefix, scheme, host, port, path):
+        cls = (http.client.HTTPSConnection if scheme == "https"
+               else http.client.HTTPConnection)
+        conn = cls(host, port, timeout=30)
+        headers = {}
+        for key, value in self.headers.items():
+            if key.lower() in ("host", "connection", "proxy-connection", "keep-alive",
+                               "transfer-encoding", "upgrade", "accept-encoding"):
+                continue
+            headers[key] = value
+        headers["Host"] = "%s:%d" % (host, port)
+        body = None
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > 0:
+                body = self.rfile.read(length)
+            conn.request(self.command, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            ctype = resp.getheader("Content-Type") or ""
+            rewrite = prefix == "/songloft" and "text/html" in ctype.lower()
+            data = resp.read() if rewrite else None
+            self.send_response(resp.status)
+            for key, value in resp.getheaders():
+                low = key.lower()
+                if low in ("connection", "keep-alive", "transfer-encoding", "content-length",
+                           "content-encoding") or (rewrite and low == "content-type"):
+                    continue
+                if low == "location" and value.startswith("/"):
+                    value = prefix + value
+                self.send_header(key, value)
+            if rewrite:
+                payload = _music_proxy_html(data.decode("utf-8", "replace")).encode("utf-8")
+                self.send_header("Content-Type", ctype or "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            if self.command == "HEAD":
+                pass
+            elif rewrite:
+                self.wfile.write(payload)
+            else:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            self.close_connection = True
+        except Exception as exc:
+            LOG.debug("music proxy failed: %s", exc)
+            try:
+                self._send(502, {"ok": False, "error": "音乐中心代理不可用"})
+            except Exception:
+                pass
+        finally:
+            conn.close()
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
@@ -6937,6 +7129,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "error": "此设备需要先输入 PIN"})
                 return
             self._proxy_go2rtc()
+            return
+        if self._music_route():
             return
         if not _device_authed(self):
             public = (u.path in ("/setup", "/admin", "/api/setup_state",
@@ -7099,7 +7293,19 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
+    def do_PUT(self):
+        if self._music_route():
+            return
+        self._send(404, {"error": "not found"})
+
+    do_PATCH = do_PUT
+    do_DELETE = do_PUT
+    do_HEAD = do_PUT
+    do_OPTIONS = do_PUT
+
     def do_POST(self):
+        if self._music_route():
+            return
         u = urllib.parse.urlparse(self.path)
         try:
             length = int(self.headers.get("Content-Length", 0) or 0)
@@ -8833,7 +9039,8 @@ class Handler(BaseHTTPRequestHandler):
                              "error": "音乐中心未连接，请先安装或连接音乐中心"})
             return
         try:
-            self._send(200, {"ok": True, "url": _songloft_sso_url()})
+            self._send(200, {"ok": True, "url": _songloft_sso_url(),
+                             "base": _songloft_web_base()})
         except Exception as e:
             LOG.warning("music SSO failed: %s", e)
             self._send(200, {"ok": False, "error": str(e)[:200]})
@@ -9444,6 +9651,26 @@ def _reexec_for_update(_signum=None, _frame=None):
     os.execv(sys.executable, [sys.executable, script])
 
 
+def _music_autostart():
+    """容器/机器重启后把已安装的音乐中心拉起来（进程不随服务自启）。"""
+    if os.environ.get("MIOT_NO_MUSIC_AUTOSTART"):
+        return
+    time.sleep(6)
+    try:
+        state = _stack_state_read()
+        if not state.get("installed") or state.get("disabled"):
+            return
+        _stack_sync_sso_plugin()
+        sport = int(state.get("songloft_port") or 58091)
+        if _port_json("http://127.0.0.1:%d/api/v1/version" % sport):
+            return
+        LOG.info("music stack: autostart")
+        _stack_start()
+        LOG.info("music stack: autostart done")
+    except Exception as exc:
+        LOG.warning("music stack autostart failed: %s", str(exc)[:160])
+
+
 def main():
     if "--restart-helper" in sys.argv:
         try:
@@ -9484,6 +9711,7 @@ def main():
         _kill_port_owners(PORT)
         threading.Thread(target=_stack_autostart, daemon=True).start()
     threading.Thread(target=_camera_autostart, daemon=True).start()
+    threading.Thread(target=_music_autostart, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)
     srv.serve_forever()

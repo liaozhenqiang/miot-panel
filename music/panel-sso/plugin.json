@@ -1,6 +1,6 @@
 {
   "name": "面板单点登录",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "由米家面板后台写入 Songloft 登录态，实现免二次登录",
   "author": "miot-cloud",
   "license": "MIT",

@@ -25,10 +25,11 @@ a{color:#ff6a00;font-weight:700;text-decoration:none;margin-top:8px;}
   var title=document.getElementById("title"),msg=document.getElementById("msg"),box=document.getElementById("box");
   function b64d(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";var bin=atob(s),bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);return new TextDecoder().decode(bytes);}
   function openDb(){return new Promise(function(res,rej){var q=indexedDB.open("songloft",1);q.onupgradeneeded=function(){var db=q.result;if(!db.objectStoreNames.contains("kv"))db.createObjectStore("kv");};q.onsuccess=function(){res(q.result);};q.onerror=function(){rej(q.error||new Error("IndexedDB 打开失败"));};});}
-  function putAll(db,data){return new Promise(function(res,rej){var expiresAt=new Date(Date.now()+Number(data.expires_in||3600)*1000).toISOString();var tx=db.transaction("kv","readwrite"),st=tx.objectStore("kv");st.put(data.access_token,"secure.access_token");st.put(data.refresh_token||"","secure.refresh_token");st.put(expiresAt,"secure.token_expires_at");st.put(location.origin,"prefs.server_url");st.put(data.username||"","prefs.last_username");tx.oncomplete=function(){res();};tx.onerror=function(){rej(tx.error||new Error("写入登录态失败"));};});}
+  function appBase(){var p=location.pathname||"/",i=p.indexOf("/api/v1/jsplugin/");if(i>=0)p=p.slice(0,i);p=p.replace(/\/+$/,"");return p==="/"?"":p;}
+  function putAll(db,data){return new Promise(function(res,rej){var expiresAt=new Date(Date.now()+Number(data.expires_in||3600)*1000).toISOString();var tx=db.transaction("kv","readwrite"),st=tx.objectStore("kv");st.put(data.access_token,"secure.access_token");st.put(data.refresh_token||"","secure.refresh_token");st.put(expiresAt,"secure.token_expires_at");st.put(location.origin+appBase(),"prefs.server_url");st.put(data.username||"","prefs.last_username");tx.oncomplete=function(){res();};tx.onerror=function(){rej(tx.error||new Error("写入登录态失败"));};});}
   async function main(){
     var raw=(location.hash||"").replace(/^#/,"");
-    if(!raw){location.replace("/");return;}
+    if(!raw){location.replace(appBase()+"/");return;}
     try{
       var data=JSON.parse(b64d(raw));
       if(!data.access_token)throw new Error("登录令牌无效");
@@ -37,11 +38,11 @@ a{color:#ff6a00;font-weight:700;text-decoration:none;margin-top:8px;}
       try{if(window.parent&&window.parent!==window)window.parent.postMessage({type:"panel-sso-done"},"*");}catch(e){}
       title.textContent="登录成功";
       msg.textContent="正在进入音乐中心…";
-      location.replace("/");
+      location.replace(appBase()+"/");
     }catch(e){
       title.textContent="自动登录失败";
       msg.textContent=(e&&e.message)||String(e);
-      var a=document.createElement("a");a.href="/";a.textContent="手动打开音乐中心";box.appendChild(a);
+      var a=document.createElement("a");a.href=appBase()+"/";a.textContent="手动打开音乐中心";box.appendChild(a);
     }
   }
   main();

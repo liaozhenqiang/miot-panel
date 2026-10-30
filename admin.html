@@ -526,7 +526,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
   </div>
 </div>
 <script>
-var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='';
+var API='', state=null, musicURL='', musicState=null, musicLoaded=false, musicAccounts=[], musicQR=null, musicTimer=null, musicSSOOrigin='', musicSSOBase='';
 var updateTarget='', updateTimer=null, lanInfo=null, stackStatus=null, stackPollTimer=null;
 function $(id){return document.getElementById(id);}
 function show(id){['setupView','loginView','adminView'].forEach(function(x){$(x).classList.toggle('hidden',x!==id);});}
@@ -535,7 +535,7 @@ window.addEventListener('message',function(e){
   if(!e.data||e.data.type!=='panel-sso-done')return;
   if(!musicSSOOrigin||e.origin!==musicSSOOrigin)return;
   var f=$('musicFrame');
-  if(f&&!f.classList.contains('hidden'))f.src=musicSSOOrigin+'/';
+  if(f&&!f.classList.contains('hidden'))f.src=musicSSOBase||(musicSSOOrigin+'/');
   toast('音乐中心已免登录进入');
 });
 async function api(path,body){
@@ -1326,7 +1326,8 @@ async function getMusicSSOURL(){
     return '';
   }
   var url=r.data.url||'';
-  try{musicSSOOrigin=new URL(url).origin;}catch(e){musicSSOOrigin='';}
+  musicSSOBase=r.data.base||url;
+  try{musicSSOOrigin=new URL(url,location.href).origin;}catch(e){musicSSOOrigin='';}
   return url;
 }
 async function toggleMusic(){

@@ -1,0 +1,8 @@
+{
+  "version": "0.7.21",
+  "released": "2026-10-30",
+  "notes": "音乐中心开箱即用：容器/设备重启后自动拉起已安装的音乐中心；后台内嵌音乐中心改走面板同源代理 /songloft/，只开面板一个端口也能用，单点登录、插件样式与音频请求全部走代理；单点登录插件随面板自动升级，登录后回到正确的音乐中心首页。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.21-update.tar.gz",
+  "sha256": "8a69f01368d156375c1b4848e9783b6b71270d65630031e0be70230841848ae9",
+  "size": 2972684
+}
