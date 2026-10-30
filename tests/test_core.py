@@ -170,7 +170,8 @@ def test_qr_poll_success_saves_qrcode_auth(monkeypatch):
     assert "sid" not in miot.QR_SESSIONS
 
 
-def test_device_cookie_invalidates_on_pin_change():
+def test_device_cookie_survives_pin_change():
+    """设备 cookie 用独立随机密钥签名，改 PIN 不会把已授权设备踢下线。"""
     class FakeHandler:
         client_address = ("192.168.1.5", 12345)
 
@@ -179,17 +180,21 @@ def test_device_cookie_invalidates_on_pin_change():
 
     old_salt = miot.CONFIG.get("admin_pin_salt")
     old_hash = miot.CONFIG.get("admin_pin_hash")
+    old_secret = miot.CONFIG.get("device_secret")
     try:
         miot.CONFIG["admin_pin_salt"] = "salt"
         miot.CONFIG["admin_pin_hash"] = "hash-a"
-        header = miot._device_cookie_header()
-        value = header.split(";", 1)[0]
+        miot.CONFIG["device_secret"] = "s" * 64
+        value = miot._device_cookie_header().split(";", 1)[0]
         assert miot._device_cookie_valid(FakeHandler(value))
         miot.CONFIG["admin_pin_hash"] = "hash-b"
+        assert miot._device_cookie_valid(FakeHandler(value))
+        miot.CONFIG["device_secret"] = "t" * 64
         assert not miot._device_cookie_valid(FakeHandler(value))
     finally:
         miot.CONFIG["admin_pin_salt"] = old_salt
         miot.CONFIG["admin_pin_hash"] = old_hash
+        miot.CONFIG["device_secret"] = old_secret
 
 
 def test_sensor_semantics_and_units():

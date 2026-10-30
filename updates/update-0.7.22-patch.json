@@ -1,0 +1,8 @@
+{
+  "version": "0.7.22",
+  "released": "2026-10-30",
+  "notes": "新增自检诊断（一键汇总账号/设备/摄像头/音乐中心/组件守护并自动脱敏）、配置迁移包（口令加密导出导入）、组件看门狗（音乐中心与摄像头自动探活重启）、面板口令控设备（一句话开灯/调温/调风速）、按使用习惯自动排序，以及发布前自动回归脚本。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.22-update.tar.gz",
+  "sha256": "f2f011ce332d5d8eb3bbbed2605e6e3d58d79924350d9af5fb54044f036cbe1d",
+  "size": 2984637
+}

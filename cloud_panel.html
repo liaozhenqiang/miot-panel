@@ -923,6 +923,16 @@ body.theme-paper .btn{background:#1f4e5f;color:#f7fbfc;border-radius:8px;border:
 body.theme-paper .ico{background:#f1eadc;border:1px solid #e3d9c8;color:#7a6f60;border-radius:8px;}
 @media (min-width:1281px) and (max-width:1500px){.page{grid-template-columns:repeat(4,minmax(0,1fr));}.card{min-height:0;}}
 @media (min-width:901px) and (max-width:1100px){.page{grid-template-columns:repeat(3,minmax(0,1fr));}.card{min-height:0;}}
+.nlWrap{position:fixed;inset:0;z-index:80;background:rgba(8,12,20,.45);backdrop-filter:blur(4px);display:flex;align-items:flex-start;justify-content:center;padding:10vh 16px 16px;}
+.nlWrap.hidden{display:none;}
+.nlBox{width:min(560px,100%);background:var(--card,#fff);color:var(--text,#1b2433);border:1px solid var(--line,rgba(0,0,0,.1));border-radius:18px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.35);}
+.nlHead{display:flex;align-items:center;justify-content:space-between;font-weight:700;margin-bottom:12px;}
+.nlClose{cursor:pointer;font-size:22px;line-height:1;opacity:.6;padding:0 4px;}
+.nlBox input{width:100%;height:44px;border-radius:12px;border:1px solid var(--line,rgba(0,0,0,.15));background:transparent;color:inherit;padding:0 12px;font-size:15px;outline:none;}
+.nlRow{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
+.nlHint{font-size:12px;opacity:.6;}
+.nlOk{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(53,199,122,.12);color:#1f8a52;font-size:14px;}
+.nlErr{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(230,70,70,.12);color:#c33;font-size:14px;}
 </style></head><body>
 <div class="app">
   <div class="head">
@@ -931,6 +941,7 @@ body.theme-paper .ico{background:#f1eadc;border:1px solid #e3d9c8;color:#7a6f60;
       <span class="home" id="home"></span>
       <span class="count" id="count"></span>
       <div class="tools">
+        <button class="toolbtn" id="nlBtn" style="display:none" onclick="toggleNL()" title="用一句话控制设备">口令</button>
         <button class="toolbtn" id="adminBtn" onclick="location.href='/admin'" title="后台管理">后台</button>
         <button class="toolbtn" id="cameraBtn" onclick="location.href='/camera'">摄像头</button>
         <button class="toolbtn" id="themeBtn" onclick="toggleTheme()" title="切换面板风格主题">黑夜</button>
@@ -947,6 +958,14 @@ body.theme-paper .ico{background:#f1eadc;border:1px solid #e3d9c8;color:#7a6f60;
   </div>
   <div class="viewport" id="viewport"><div class="track" id="track"></div></div>
   <div class="foot"><span id="foot">数据每 15 秒刷新 · 仅显示当前家庭</span><div class="dots" id="dots"></div><span id="updated"></span></div>
+</div>
+<div class="nlWrap hidden" id="nlWrap" onclick="if(event.target===this)toggleNL(false)">
+  <div class="nlBox">
+    <div class="nlHead"><span>说一句话控制设备</span><span class="nlClose" onclick="toggleNL(false)">×</span></div>
+    <input id="nlInput" placeholder="例如：打开客厅灯 / 空调调到 26 度 / 风扇风速 2" onkeydown="if(event.key==='Enter')runNL()">
+    <div class="nlRow"><button class="toolbtn primary" onclick="runNL()">解析</button><span class="nlHint" id="nlHint">只做解析，执行前你可以再确认</span></div>
+    <div id="nlPlan"></div>
+  </div>
 </div>
 <div class="msg" id="msg"></div>
 <div class="assistant hidden" id="caps" onclick="if(event.target===this)closeCaps()">
@@ -1009,6 +1028,51 @@ function applyCursor(mode){
   document.body.classList.toggle('showcursor',mode==='never');
 }
 function isOn(v){return v===true||v==='true'||v===1||v==='1'||v==='on';}
+
+var nlPlan=null;
+function toggleNL(force){
+  var el=document.getElementById('nlWrap');
+  if(!el)return;
+  var show=(force===undefined)?el.classList.contains('hidden'):!!force;
+  el.classList.toggle('hidden',!show);
+  if(show){var i=document.getElementById('nlInput');if(i)setTimeout(function(){i.focus();},60);}
+}
+function nlRender(html){var p=document.getElementById('nlPlan');if(p)p.innerHTML=html;}
+async function runNL(){
+  var input=document.getElementById('nlInput');
+  var text=input?input.value.trim():'';
+  if(!text)return;
+  var hint=document.getElementById('nlHint');
+  if(hint)hint.textContent='解析中…';
+  var r={ok:false,error:'请求失败'};
+  try{
+    var resp=await fetch(API+'/api/nl',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:text})});
+    r=await resp.json();
+  }catch(e){}
+  if(hint)hint.textContent='';
+  if(!r.ok){nlRender('<div class="nlErr">'+esc(r.error||'没听懂这句话')+'</div>');return;}
+  nlPlan=r;
+  nlRender('<div class="nlOk">'+esc(r.text)+'</div><div class="nlRow">'
+    +'<button class="toolbtn primary" onclick="execNL()">执行</button>'
+    +'<button class="toolbtn" onclick="nlReset()">重说</button></div>');
+}
+function nlReset(){
+  nlPlan=null;
+  var i=document.getElementById('nlInput');if(i){i.value='';i.focus();}
+  var h=document.getElementById('nlHint');if(h)h.textContent='只做解析，执行前你可以再确认';
+  nlRender('');
+}
+async function execNL(){
+  if(!nlPlan)return;
+  try{
+    var resp=await fetch(API+'/api/set_prop',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({did:nlPlan.did,siid:nlPlan.siid,piid:nlPlan.piid,value:nlPlan.value})});
+    var r=await resp.json();
+    if(r.ok){toast('已执行：'+nlPlan.text);toggleNL(false);nlReset();setTimeout(load,900);}
+    else toast(r.msg||'执行失败',true);
+  }catch(e){toast('执行失败：'+e,true);}
+}
 function toast(msg,err){
   var el=document.getElementById('msg');if(!el)return;
   el.textContent=msg;el.className='msg show'+(err?' err':'');
@@ -1442,6 +1506,7 @@ function load(){
     weather=s.weather||null;
     weatherLabel=s.weather_label||weatherLabel;
     if(s.page_size)BASE_PAGE=Number(s.page_size)||BASE_PAGE;
+    var nlb=document.getElementById('nlBtn');if(nlb)nlb.style.display=s.nl_enabled?'':'none';
     applyGridSize();
     applyTheme(s.theme||theme);
     applyCursor(s.hide_cursor);
@@ -1456,6 +1521,7 @@ function load(){
       else{layoutOrder=j.layout.order||[];gridRows=j.layout.rows||0;gridCols=j.layout.cols||0;}
       applyGridSize();
     }
+    if(j.auto_order){layoutOrder=[];}
     render();
     if(j.ts){var d=new Date(j.ts*1000);document.getElementById('updated').textContent='更新 '+pad2(d.getHours())+':'+pad2(d.getMinutes());}
   }).catch(function(e){

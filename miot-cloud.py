@@ -202,7 +202,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.21"
+APP_VERSION = "0.7.22"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -316,6 +316,9 @@ DEFAULT_CONFIG = {
     "plugin_account_file": "",
     "lan_ip": "",
     "update_url": "",
+    "watchdog_enabled": True,
+    "auto_order": False,
+    "nl_enabled": True,
     "admin_pin_salt": "",
     "admin_pin_hash": "",
 }
@@ -372,6 +375,9 @@ def _normalize_config(data):
     out["lan_ip"] = str(src.get("lan_ip") or "").strip()[:64]
     update_url = str(src.get("update_url") or "").strip()[:500]
     out["update_url"] = update_url if update_url.startswith(("http://", "https://")) else ""
+    out["watchdog_enabled"] = src.get("watchdog_enabled", True) is not False
+    out["auto_order"] = src.get("auto_order", False) is True
+    out["nl_enabled"] = src.get("nl_enabled", True) is not False
     out["admin_pin_salt"] = str(src.get("admin_pin_salt") or "")
     out["admin_pin_hash"] = str(src.get("admin_pin_hash") or "")
     secret = str(src.get("device_secret") or "")
@@ -3679,7 +3685,8 @@ def _public_config():
             "speaker_panel_enabled", "speaker_text_enabled", "speaker_voice_enabled",
             "speaker_answer_mode", "speaker_max_chars", "speaker_hidden",
             "speaker_default", "songloft_url", "songloft_user", "go_music_dl_url",
-            "go2rtc_url", "plugin_account_file", "lan_ip", "update_url")
+            "go2rtc_url", "plugin_account_file", "lan_ip", "update_url",
+            "auto_order", "watchdog_enabled", "nl_enabled")
     data = {k: CONFIG.get(k) for k in keys}
     data["songloft_pass_set"] = bool(CONFIG.get("songloft_pass"))
     return data
@@ -4486,6 +4493,14 @@ def _port_json(url, timeout=3):
             return json.loads(resp.read() or b"{}")
     except Exception:
         return None
+
+
+def _url_ok(url, timeout=3):
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return 200 <= int(resp.status) < 400
+    except Exception:
+        return False
 
 
 def _pid_alive(pid):
@@ -7282,6 +7297,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_music_web_sso()
         elif u.path == "/api/admin/p2p_bridge/status":
             self.api_admin_p2p_bridge_status()
+        elif u.path == "/api/admin/diag":
+            self.api_admin_diag()
         elif u.path == "/api/admin/update/status":
             self.api_admin_update_status()
         elif u.path == "/api/speaker_assist":
@@ -7315,7 +7332,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/admin/p2p_bridge/upload":
             self.api_admin_p2p_bridge_upload(length)
             return
-        if length < 0 or length > self.max_body:
+        if length < 0 or length > (8 * 1024 * 1024 if u.path == "/api/admin/config/import"
+                                   else self.max_body):
             self._send(413, {"ok": False, "error": "请求体超过 1MB"})
             return
         raw = self.rfile.read(length) if length else b""
@@ -7378,6 +7396,14 @@ class Handler(BaseHTTPRequestHandler):
             self.api_admin_logs_clear()
         elif u.path == "/api/admin/refresh":
             self.api_admin_refresh()
+        elif u.path == "/api/admin/watchdog":
+            self.api_admin_watchdog(body)
+        elif u.path == "/api/admin/config/export":
+            self.api_admin_config_export(body)
+        elif u.path == "/api/admin/config/import":
+            self.api_admin_config_import(body)
+        elif u.path == "/api/nl":
+            self.api_nl(body)
         elif u.path == "/api/auth/qr_start":
             self.api_auth_qr_start(body)
         elif u.path == "/api/auth/qr_poll":
@@ -7486,6 +7512,7 @@ class Handler(BaseHTTPRequestHandler):
                          "sensor_count": sensors, "blind_count": blind,
                          "weather": weather or None, "theme": theme,
                          "hide_cursor": CONFIG.get("hide_cursor") or "auto",
+                         "nl_enabled": bool(CONFIG.get("nl_enabled", True)),
                          "active_page": ({"id": page["active"], "name": page["name"],
                                           "version": page["version"]}
                                          if page.get("active") else None)})
@@ -7540,7 +7567,9 @@ class Handler(BaseHTTPRequestHandler):
                 item["modes"] = prof.get("modes") or []
                 item["temp_min"], item["temp_max"] = prof.get("temp_range", (16, 30))
             devs.append(item)
-        self._send(200, {"devices": devs, "ts": DEV_TS, "layout": load_layout()})
+        self._send(200, {"devices": _order_devices(devs), "ts": DEV_TS,
+                         "layout": load_layout(),
+                         "auto_order": bool(CONFIG.get("auto_order"))})
 
     def api_caps(self, u=None):
         q = urllib.parse.parse_qs(u.query) if u else {}
@@ -7600,6 +7629,8 @@ class Handler(BaseHTTPRequestHandler):
         ok, err = cloud_set_cap(did, siid, piid, value)
         LOG.info("audit set_prop ip=%s did=%s %s-%s=%s -> %s", ip, did, siid, piid, value,
                  "OK" if ok else (err or "fail"))
+        if ok:
+            _usage_bump(did)
         self._send(200, {"ok": ok, "msg": "" if ok else err,
                          "value": value if ok else None})
 
@@ -7632,6 +7663,8 @@ class Handler(BaseHTTPRequestHandler):
         ok, err = cloud_call_action(did, siid, aiid)
         LOG.info("audit action ip=%s did=%s %s-%s -> %s", ip, did, siid, aiid,
                  "OK" if ok else (err or "fail"))
+        if ok:
+            _usage_bump(did)
         self._send(200, {"ok": ok, "msg": "" if ok else err})
 
     def api_cameras(self, u=None):
@@ -8072,6 +8105,8 @@ class Handler(BaseHTTPRequestHandler):
         ok, err = cloud_set_prop(did, d["model"], cmd, value, d.get("role"))
         LOG.info("audit control ip=%s did=%s cmd=%s=%s -> %s", ip, did, cmd, value,
                  "OK" if ok else (err or "fail"))
+        if ok:
+            _usage_bump(did)
         if not ok:
             self._send(200, {"ok": False, "msg": err})
             return
@@ -8097,6 +8132,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "msg": "order 格式错误"})
             return
         layout = save_layout(order, body.get("rows"), body.get("cols"))
+        if CONFIG.get("auto_order"):
+            save_config({"auto_order": False})
+            LOG.info("layout saved manually, auto_order disabled")
         LOG.info("layout saved: %d cards, grid %sx%s", len(layout["order"]),
                  layout["rows"] or "-", layout["cols"] or "-")
         self._send(200, {"ok": True, "order": layout["order"],
@@ -8507,6 +8545,8 @@ class Handler(BaseHTTPRequestHandler):
             updates["renames"] = {str(k): str(v)[:40]
                                   for k, v in list(body["renames"].items())[:500]
                                   if str(v).strip()}
+        if "auto_order" in body:
+            updates["auto_order"] = body.get("auto_order") is True
         if "hide_cursor" in body:
             value = str(body.get("hide_cursor") or "auto")
             if value in ("auto", "always", "never"):
@@ -9585,6 +9625,110 @@ class Handler(BaseHTTPRequestHandler):
         WEATHER_WAKE.set()
         self._send(200, {"ok": True})
 
+    def api_admin_diag(self):
+        if not self._admin_require():
+            return
+        try:
+            data = _diag_collect()
+            data["ok"] = True
+            self._send(200, data)
+        except Exception as exc:
+            LOG.warning("diag failed: %s", exc)
+            self._send(200, {"ok": False, "error": str(exc)[:200]})
+
+    def api_admin_watchdog(self, body):
+        if not self._admin_require():
+            return
+        if "enabled" in body:
+            save_config({"watchdog_enabled": body.get("enabled") is not False})
+        self._send(200, {"ok": True, "enabled": bool(CONFIG.get("watchdog_enabled", True)),
+                         "items": (_watchdog_report() or {}).get("items") or {}})
+
+    def api_admin_config_export(self, body):
+        if not self._admin_require():
+            return
+        password = str(body.get("password") or "")
+        if len(password) < 6:
+            self._send(400, {"ok": False, "error": "口令至少 6 位，用于加密迁移包"})
+            return
+        try:
+            env = _bundle_encrypt(_bundle_payload(), password)
+        except Exception as exc:
+            LOG.warning("config export failed: %s", exc)
+            self._send(500, {"ok": False, "error": str(exc)[:200]})
+            return
+        LOG.info("audit config_export ip=%s", self.client_address[0])
+        name = "miot-panel-backup-%s.miotbak" % time.strftime("%Y%m%d-%H%M%S")
+        self._send(200, {"ok": True, "filename": name,
+                         "bundle": json.dumps(env, ensure_ascii=False, separators=(",", ":"))})
+
+    def api_admin_config_import(self, body):
+        if not self._admin_require():
+            return
+        password = str(body.get("password") or "")
+        raw = body.get("bundle")
+        if not password or not raw:
+            self._send(400, {"ok": False, "error": "请提供迁移包内容和口令"})
+            return
+        if isinstance(raw, str) and len(raw) > 8 * 1024 * 1024:
+            self._send(413, {"ok": False, "error": "迁移包过大"})
+            return
+        try:
+            env = json.loads(raw) if isinstance(raw, str) else raw
+            payload = _bundle_decrypt(env, password)
+        except ValueError as exc:
+            self._send(400, {"ok": False, "error": str(exc)})
+            return
+        except Exception:
+            self._send(400, {"ok": False, "error": "迁移包格式无效"})
+            return
+        if not bool(body.get("apply")):
+            cfg = payload.get("config") or {}
+            pages = payload.get("pages") or {}
+            auth = payload.get("auth") or {}
+            self._send(200, {"ok": True, "preview": {
+                "app_version": payload.get("app_version") or "",
+                "created": payload.get("created") or 0,
+                "devices_hidden": len(cfg.get("hidden_devices") or []),
+                "renames": len(cfg.get("renames") or {}),
+                "pages": len(pages.get("items") or []),
+                "account": bool(auth.get("service_token")),
+                "pin": bool(cfg.get("admin_pin_hash")),
+                "songloft": bool(cfg.get("songloft_url")),
+            }})
+            return
+        try:
+            backup = _bundle_apply(payload)
+        except ValueError as exc:
+            self._send(400, {"ok": False, "error": str(exc)})
+            return
+        except Exception as exc:
+            LOG.warning("config import failed: %s", exc)
+            self._send(500, {"ok": False, "error": str(exc)[:200]})
+            return
+        LOG.info("audit config_import ip=%s backup=%s", self.client_address[0], backup)
+        try:
+            TRY_NEXT.clear()
+            threading.Thread(target=poll_once, daemon=True).start()
+        except Exception:
+            pass
+        self._send(200, {"ok": True, "backup": backup})
+
+    def api_nl(self, body):
+        if not CONFIG.get("nl_enabled", True):
+            self._send(403, {"ok": False, "error": "自然语言控制已在后台关闭"})
+            return
+        ip = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("nl:" + ip, 60, 60):
+            self._send(429, {"ok": False, "error": "操作过于频繁，请稍后再试"})
+            return
+        text = str(body.get("text") or "").strip()[:120]
+        plan = _nl_parse(text)
+        if plan.get("ok"):
+            LOG.info("audit nl ip=%s text=%s -> did=%s %s-%s=%s", ip, text[:40],
+                     plan.get("did"), plan.get("siid"), plan.get("piid"), plan.get("value"))
+        self._send(200, plan)
+
 
 DISCOVERY_LOCK = threading.Lock()
 DISCOVERY_HITS = {}
@@ -9651,6 +9795,744 @@ def _reexec_for_update(_signum=None, _frame=None):
     os.execv(sys.executable, [sys.executable, script])
 
 
+# ----------------------------------------------------------------- 组件看门狗
+WATCHDOG_LOCK = threading.Lock()
+WATCHDOG = {"items": {}, "last_tick": 0.0, "started": 0.0}
+WD_RESTART_GAP = 300.0
+WD_FAIL_LIMIT = 3
+
+
+def _wd_set(name, ok, error="", detail=""):
+    now = time.time()
+    with WATCHDOG_LOCK:
+        it = WATCHDOG["items"].setdefault(
+            name, {"ok": None, "fails": 0, "restarts": 0, "last_restart": 0.0,
+                   "last_error": "", "ts": 0.0})
+        it["ts"] = now
+        it["ok"] = bool(ok)
+        if ok:
+            it["fails"] = 0
+            it["last_error"] = ""
+        else:
+            it["fails"] = int(it.get("fails") or 0) + 1
+            if error:
+                it["last_error"] = str(error)[:160]
+        if detail:
+            it["detail"] = str(detail)[:160]
+
+
+def _wd_fails(name):
+    with WATCHDOG_LOCK:
+        return int((WATCHDOG["items"].get(name) or {}).get("fails") or 0)
+
+
+def _wd_restart_allowed(name, now):
+    with WATCHDOG_LOCK:
+        it = WATCHDOG["items"].get(name) or {}
+        return now - float(it.get("last_restart") or 0) >= WD_RESTART_GAP
+
+
+def _wd_restart_done(name):
+    with WATCHDOG_LOCK:
+        it = WATCHDOG["items"].setdefault(name, {})
+        it["restarts"] = int(it.get("restarts") or 0) + 1
+        it["last_restart"] = time.time()
+        it["fails"] = 0
+
+
+def _watchdog_report():
+    with WATCHDOG_LOCK:
+        items = {k: dict(v) for k, v in WATCHDOG["items"].items()}
+        return {"enabled": bool(CONFIG.get("watchdog_enabled", True)),
+                "last_tick": WATCHDOG["last_tick"],
+                "started": WATCHDOG["started"],
+                "items": items}
+
+
+def _wd_music():
+    state = _stack_state_read()
+    if not state.get("installed") or state.get("disabled"):
+        return
+    sport = int(state.get("songloft_port") or 58091)
+    gport = int(state.get("gmd_port") or 8081)
+    sl = bool((_port_json("http://127.0.0.1:%d/api/v1/version" % sport,
+                          timeout=4) or {}).get("version"))
+    _wd_set("songloft", sl, "" if sl else "音乐中心无响应")
+    gmd = _url_ok("http://127.0.0.1:%d/music/" % gport, timeout=3)
+    _wd_set("gmd", gmd, "" if gmd else "go-music-dl 无响应")
+    now = time.time()
+    if (sl and gmd) or not _wd_restart_allowed("music", now):
+        return
+    if max(_wd_fails("songloft"), _wd_fails("gmd")) < WD_FAIL_LIMIT:
+        return
+    _wd_restart_done("music")
+    LOG.warning("watchdog: restarting music stack (songloft=%s gmd=%s)", sl, gmd)
+    try:
+        _stack_start()
+        LOG.info("watchdog: music stack restarted")
+    except Exception as exc:
+        LOG.warning("watchdog: music restart failed: %s", str(exc)[:160])
+
+
+def _wd_camera():
+    if _camera_external_go2rtc() or not _camera_go2rtc_bin():
+        return
+    ok = _camera_go2rtc_ok()
+    _wd_set("go2rtc", ok, "" if ok else "go2rtc 无响应")
+    rtsp = ok and _camera_rtsp_ok()
+    if ok:
+        _wd_set("rtsp", rtsp, "" if rtsp else "RTSP 8554 未监听")
+    if ok and rtsp:
+        return
+    now = time.time()
+    if not _wd_restart_allowed("camera", now):
+        return
+    if max(_wd_fails("go2rtc"), _wd_fails("rtsp")) < WD_FAIL_LIMIT:
+        return
+    _wd_restart_done("camera")
+    LOG.warning("watchdog: restarting camera stack")
+    try:
+        _camera_start()
+        LOG.info("watchdog: camera stack restarted")
+    except Exception as exc:
+        LOG.warning("watchdog: camera restart failed: %s", str(exc)[:160])
+
+
+def _watchdog_tick():
+    if not CONFIG.get("watchdog_enabled", True):
+        return
+    WATCHDOG["last_tick"] = time.time()
+    _wd_music()
+    _wd_camera()
+    if CONFIG.get("auto_order"):
+        with USAGE_LOCK:
+            _usage_write_locked()
+
+
+def _watchdog_loop():
+    time.sleep(25)
+    WATCHDOG["started"] = time.time()
+    while True:
+        try:
+            _watchdog_tick()
+        except Exception as exc:
+            LOG.debug("watchdog tick failed: %s", exc)
+        time.sleep(60)
+
+
+# ----------------------------------------------------------------- 使用习惯
+USAGE_FILE = os.path.join(ROOT, "device_usage.json")
+USAGE_LOCK = threading.RLock()
+_USAGE = {"data": None, "saved": 0.0}
+USAGE_KEEP_DAYS = 120
+
+
+def _usage_load():
+    with USAGE_LOCK:
+        if _USAGE["data"] is not None:
+            return _USAGE["data"]
+        data = {}
+        try:
+            with open(USAGE_FILE, encoding="utf-8") as f:
+                raw = json.load(f)
+            cutoff = time.time() - USAGE_KEEP_DAYS * 86400
+            if isinstance(raw, dict):
+                for did, item in list(raw.items())[:500]:
+                    if not isinstance(item, dict):
+                        continue
+                    ts = float(item.get("ts") or 0)
+                    if ts < cutoff:
+                        continue
+                    data[str(did)] = {"n": max(0, int(item.get("n") or 0)), "ts": ts}
+        except (OSError, ValueError, TypeError):
+            data = {}
+        _USAGE["data"] = data
+        return data
+
+
+def _usage_write_locked():
+    try:
+        tmp = USAGE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_USAGE["data"] or {}, f, ensure_ascii=False)
+        os.replace(tmp, USAGE_FILE)
+        _USAGE["saved"] = time.time()
+    except OSError as exc:
+        LOG.debug("usage save failed: %s", exc)
+
+
+def _usage_bump(did):
+    if not did:
+        return
+    now = time.time()
+    with USAGE_LOCK:
+        data = _usage_load()
+        item = data.setdefault(str(did), {"n": 0, "ts": 0.0})
+        item["n"] = int(item.get("n") or 0) + 1
+        item["ts"] = now
+        if now - float(_USAGE["saved"] or 0) >= 15:
+            _usage_write_locked()
+
+
+def _usage_score(did, now=None):
+    now = now or time.time()
+    with USAGE_LOCK:
+        item = _usage_load().get(str(did)) or {}
+        n = int(item.get("n") or 0)
+        if n <= 0:
+            return 0.0
+        age = max(0.0, now - float(item.get("ts") or 0))
+    return n * (0.5 ** (age / (7 * 86400.0)))
+
+
+def _order_devices(devs):
+    """按最近使用把常控设备提前；没打开开关或没有记录时保持云端顺序。"""
+    if not CONFIG.get("auto_order") or len(devs) < 2:
+        return devs
+    now = time.time()
+    scored = [(_usage_score(d.get("did"), now), i, d) for i, d in enumerate(devs)]
+    used = sorted([x for x in scored if x[0] > 0.05], key=lambda x: (-x[0], x[1]))
+    if not used:
+        return devs
+    head = [x[2] for x in used]
+    used_ids = {id(d) for d in head}
+    return head + [x[2] for x in scored if id(x[2]) not in used_ids]
+
+
+# ----------------------------------------------------------------- 自检诊断
+DIAG_START = time.time()
+
+
+def _diag_mask(text):
+    t = str(text or "")
+    t = re.sub(r"\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}\b", r"\1.*.*", t)
+    t = re.sub(r"(?i)\b(token|passtoken|access_token|servicetoken|api_key|password|signature)=([^&\s\"']+)",
+               r"\1=***", t)
+    return t
+
+
+def _dur_text(seconds):
+    seconds = int(max(0, seconds))
+    d, rem = divmod(seconds, 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    if d:
+        return "%d 天 %d 小时" % (d, h)
+    if h:
+        return "%d 小时 %d 分" % (h, m)
+    return "%d 分" % m
+
+
+def _size_text(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "-"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return ("%.0f %s" % (n, unit)) if unit in ("B", "KB") else ("%.1f %s" % (n, unit))
+        n /= 1024.0
+    return "-"
+
+
+def _mem_usage():
+    if os.path.exists("/proc/meminfo"):
+        try:
+            kv = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    key, _, rest = line.partition(":")
+                    parts = rest.split()
+                    if parts:
+                        kv[key.strip()] = int(parts[0]) * 1024
+            return kv.get("MemTotal"), kv.get("MemAvailable")
+        except (OSError, ValueError):
+            return None, None
+    if os.name == "nt":
+        try:
+            class _MemStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            status = _MemStatus()
+            status.dwLength = ctypes.sizeof(status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullTotalPhys), int(status.ullAvailPhys)
+        except Exception:
+            pass
+    return None, None
+
+
+def _diag_log_errors(limit=6):
+    try:
+        if _journald_available():
+            out = subprocess.run(["journalctl", "-u", "miot-cloud", "-n", "300",
+                                  "--no-pager", "-o", "cat"],
+                                 capture_output=True, timeout=8).stdout.decode("utf-8", "replace")
+            lines = out.splitlines()
+        else:
+            lines = _read_file_log(300)
+    except Exception:
+        lines = []
+    bad = [x for x in lines if " WARNING " in x or " ERROR " in x or "Traceback" in x]
+    return [_diag_mask(x)[:180] for x in bad[-limit:]]
+
+
+def _diag_collect():
+    now = time.time()
+    items = []
+
+    def add(key, label, state, detail=""):
+        items.append({"key": key, "label": label, "state": state, "detail": detail})
+
+    try:
+        disk = shutil.disk_usage(ROOT)
+        disk_txt = "%s 可用 / %s" % (_size_text(disk.free), _size_text(disk.total))
+    except OSError:
+        disk_txt = "无法读取"
+    total_mem, avail_mem = _mem_usage()
+    mem_txt = ("%s 可用 / %s" % (_size_text(avail_mem), _size_text(total_mem))
+               if total_mem else "无法读取")
+
+    add("version", "服务", "v" + APP_VERSION,
+        "%s · 端口 %d · 已运行 %s" % ("Windows" if os.name == "nt" else "Linux",
+                                      PORT, _dur_text(now - DIAG_START)))
+    add("disk", "资源", "磁盘 " + disk_txt, "内存 " + mem_txt)
+
+    with STATE_LOCK:
+        devs = list(DEVICES)
+        states = {k: dict(v) for k, v in STATE.items()}
+    online = sum(1 for d in devs if d.get("online"))
+    sensors = sum(1 for d in devs if d.get("role") == "sensor")
+    blind = sum(1 for d in devs if not states.get(d["did"], {}).get("supported"))
+    hidden = len(CONFIG.get("hidden_devices") or [])
+    add("account", "小米账号", "已登录" if _load_auth() else "未登录",
+        "%d 台设备（%d 传感器 · %d 隐藏）· 在线 %d · 盲控 %d"
+        % (len(devs), sensors, hidden, online, blind))
+
+    try:
+        cam = _camera_setup_payload()
+        cam_list = cam.get("cameras") or []
+        cam_online = sum(1 for c in cam_list if c.get("online"))
+        parts = ["go2rtc " + ("正常" if cam.get("go2rtc_ok") else "未运行"),
+                 "RTSP " + ("正常" if cam.get("rtsp_ok") else "未监听"),
+                 "ffmpeg " + ("已安装" if cam.get("ffmpeg_ok") else "缺失")]
+        if cam.get("remote"):
+            parts.append("远程 go2rtc")
+        bridge = cam.get("bridge") or {}
+        if bridge:
+            parts.append("桥接 %s/%s" % (bridge.get("mode") or "-",
+                                        "可用" if bridge.get("available") else "未就绪"))
+        add("camera", "摄像头", "%d 路（%d 在线）" % (len(cam_list), cam_online), " · ".join(parts))
+    except Exception as exc:
+        add("camera", "摄像头", "读取失败", str(exc)[:120])
+
+    sl_base = _songloft_base()
+    try:
+        ver = (_port_json(sl_base + "/api/v1/version", timeout=4) or {}).get("version") or ""
+    except Exception:
+        ver = ""
+    add("music", "音乐中心", ("Songloft " + ver) if ver else "未响应",
+        ("后台地址 /songloft/ 同源代理" if ver and _music_proxy_target() else sl_base))
+    gmd_ok = bool(_port_json(_gmd_base() + "/music/", timeout=3))
+    add("gmd", "在线音源", "正常" if gmd_ok else "未响应", _gmd_base())
+
+    wd = _watchdog_report()
+    wd_txt = " · ".join("%s %s(%d 次重启)" % (
+        name, "正常" if it.get("ok") else "异常", int(it.get("restarts") or 0))
+        for name, it in sorted(wd["items"].items())) or \
+        "没有需要守护的组件（音乐中心/摄像头未安装或不归本机管）"
+    add("watchdog", "守护", "开启" if wd["enabled"] else "关闭",
+        (("上次巡检 %s 前 · " % _dur_text(now - wd["last_tick"])) if wd["last_tick"] else "")
+        + wd_txt)
+
+    errors = _diag_log_errors()
+    add("errors", "最近告警", "%d 条" % len(errors), "" if errors else "日志里没有新的告警")
+
+    head = "米家面板自检 v%s · %s · 端口 %d · 已运行 %s" % (
+        APP_VERSION, "Windows" if os.name == "nt" else "Linux", PORT,
+        _dur_text(now - DIAG_START))
+    lines = [head, time.strftime("生成时间 %Y-%m-%d %H:%M:%S", time.localtime(now)), ""]
+    for it in items:
+        lines.append("[%s] %s%s" % (it["label"], it["state"],
+                                    (" · " + it["detail"]) if it["detail"] else ""))
+    if errors:
+        lines.append("")
+        lines.append("[最近告警]")
+        lines.extend("  " + x for x in errors)
+    return {"items": items, "errors": errors, "text": "\n".join(lines),
+            "version": APP_VERSION, "ts": now}
+
+
+# ----------------------------------------------------------------- 配置迁移包
+BUNDLE_FORMAT = "miot-panel-backup"
+BUNDLE_ITER = 120000
+BUNDLE_SKIP = {"device_secret"}
+
+
+def _bundle_key(password, salt, iterations):
+    return hashlib.pbkdf2_hmac("sha256", str(password).encode("utf-8"), salt, int(iterations))
+
+
+def _bundle_stream(key, nonce, size):
+    out = bytearray()
+    counter = 0
+    while len(out) < size:
+        out.extend(hmac.new(key, nonce + counter.to_bytes(8, "big"),
+                            hashlib.sha256).digest())
+        counter += 1
+    return bytes(out[:size])
+
+
+def _bundle_encrypt(payload, password):
+    salt = os.urandom(16)
+    nonce = os.urandom(16)
+    key = _bundle_key(password, salt, BUNDLE_ITER)
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    data = bytes(a ^ b for a, b in zip(raw, _bundle_stream(key, nonce, len(raw))))
+    mac = hmac.new(key, b"miot-panel-mac" + nonce + data, hashlib.sha256).hexdigest()
+    return {
+        "format": BUNDLE_FORMAT, "version": 1, "created": int(time.time()),
+        "app_version": APP_VERSION,
+        "kdf": {"name": "pbkdf2-sha256", "iter": BUNDLE_ITER,
+                "salt": base64.b64encode(salt).decode("ascii")},
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "data": base64.b64encode(data).decode("ascii"),
+        "mac": mac,
+    }
+
+
+def _bundle_decrypt(env, password):
+    if not isinstance(env, dict) or env.get("format") != BUNDLE_FORMAT:
+        raise ValueError("不是米家面板配置文件")
+    kdf = env.get("kdf") or {}
+    try:
+        salt = base64.b64decode(str(kdf.get("salt") or ""))
+        nonce = base64.b64decode(str(env.get("nonce") or ""))
+        data = base64.b64decode(str(env.get("data") or ""))
+        iterations = int(kdf.get("iter") or 0)
+    except Exception:
+        raise ValueError("配置文件已损坏")
+    if not salt or not nonce or iterations < 10000:
+        raise ValueError("配置文件已损坏")
+    key = _bundle_key(password, salt, iterations)
+    want = hmac.new(key, b"miot-panel-mac" + nonce + data, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(want, str(env.get("mac") or "")):
+        raise ValueError("口令不正确，或文件已损坏")
+    raw = bytes(a ^ b for a, b in zip(data, _bundle_stream(key, nonce, len(data))))
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise ValueError("配置文件内容无法解析")
+
+
+def _bundle_payload():
+    cfg = {k: v for k, v in CONFIG.items() if k not in BUNDLE_SKIP}
+    pages = _load_pages_meta()
+    files = {}
+    for it in pages.get("items") or []:
+        pid = str(it.get("id") or "")
+        if not pid:
+            continue
+        path = os.path.join(PAGES_DIR, pid + ".html")
+        try:
+            with open(path, "rb") as f:
+                files[pid] = base64.b64encode(f.read()[:512 * 1024]).decode("ascii")
+        except OSError:
+            continue
+    return {"created": int(time.time()), "app_version": APP_VERSION,
+            "config": cfg, "layout": load_layout(), "pages": pages,
+            "page_files": files, "auth": _load_auth() or {}}
+
+
+def _bundle_apply(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("配置文件内容无效")
+    cfg = payload.get("config")
+    if not isinstance(cfg, dict):
+        raise ValueError("配置文件缺少设置项")
+    backup_dir = os.path.join(ROOT, "config-backup-%s" % time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+        for name in ("cloud_config.json", "cloud_layout.json", "pages.json", "micloud_auth.json"):
+            src = os.path.join(ROOT, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(backup_dir, name))
+    except OSError:
+        pass
+    save_config(cfg)
+    layout = payload.get("layout")
+    if isinstance(layout, dict):
+        try:
+            save_layout(layout.get("order") or [], layout.get("rows"), layout.get("cols"))
+        except Exception:
+            pass
+    auth = payload.get("auth")
+    if isinstance(auth, dict) and auth.get("service_token"):
+        try:
+            _save_auth(auth)
+        except Exception:
+            pass
+    pages = payload.get("pages")
+    if isinstance(pages, dict) and isinstance(pages.get("items"), list):
+        meta = {"active": str(pages.get("active") or ""),
+                "items": [x for x in pages["items"] if isinstance(x, dict)]}
+        try:
+            os.makedirs(PAGES_DIR, exist_ok=True)
+            for pid, b64 in (payload.get("page_files") or {}).items():
+                pid = str(pid or "")
+                if not pid or not all(c.isalnum() or c in "_-" for c in pid):
+                    continue
+                try:
+                    raw = base64.b64decode(str(b64))
+                except Exception:
+                    continue
+                with open(os.path.join(PAGES_DIR, pid + ".html"), "wb") as f:
+                    f.write(raw[:512 * 1024])
+            _save_pages_meta(meta)
+        except OSError:
+            pass
+    return backup_dir
+
+
+# ----------------------------------------------------------------- 自然语言控制
+NL_OPEN = ("打开", "开启", "启动", "开一下", "开")
+NL_CLOSE = ("关闭", "关掉", "关一下", "停止", "停掉", "停", "关", "熄灭")
+NL_TYPE_WORDS = (("灯", ("light", "lamp")), ("空调", ("aircondition", "acpartner")),
+                 ("插座", ("plug", "outlet")), ("风扇", ("fan",)),
+                 ("窗帘", ("curtain",)), ("加湿器", ("humidifier",)),
+                 ("净化器", ("airpurifier", "purifier")), ("热水器", ("waterheater",)))
+
+
+def _nl_norm(text):
+    t = str(text or "").strip()
+    table = str.maketrans("０１２３４５６７８９．", "0123456789.")
+    return t.translate(table).replace(" ", "")
+
+
+def _nl_devices():
+    out = []
+    with STATE_LOCK:
+        devs = list(DEVICES)
+        states = {k: dict(v) for k, v in STATE.items()}
+    for d in devs:
+        if not d.get("online") or d.get("role") == "sensor":
+            continue
+        if not states.get(d["did"], {}).get("supported"):
+            continue
+        out.append({"did": d["did"], "name": str(d.get("name") or ""),
+                    "model": str(d.get("model") or ""), "role": d.get("role") or ""})
+    return out
+
+
+def _nl_name_variants(name):
+    """设备名去掉括号备注后再参与匹配，避免「文光汇空调伴侣」匹配不到「…（插座款）」。"""
+    out = []
+    base = str(name or "").strip()
+    if base:
+        out.append(base)
+    plain = re.sub(r"[（(][^)）]*[)）]", "", base).strip()
+    if plain and plain not in out:
+        out.append(plain)
+    return out
+
+
+def _nl_lcs(a, b):
+    if not a or not b:
+        return 0
+    best = 0
+    prev = [0] * (len(b) + 1)
+    for ch in a:
+        cur = [0] * (len(b) + 1)
+        for j, other in enumerate(b, 1):
+            if ch == other:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best:
+                    best = cur[j]
+        prev = cur
+    return best
+
+
+def _nl_match_device(text, devices):
+    exact = []
+    for d in devices:
+        for name in _nl_name_variants(d["name"]):
+            if name and name in text:
+                exact.append((len(name), d))
+                break
+    if exact:
+        exact.sort(key=lambda x: -x[0])
+        if len(exact) > 1 and exact[1][0] == exact[0][0] \
+                and exact[1][1]["did"] != exact[0][1]["did"]:
+            return None, "这句话能对上多台设备：%s，请说得更具体" % "、".join(
+                x[1]["name"] for x in exact[:3])
+        return exact[0][1], ""
+    scored = []
+    for d in devices:
+        score = max((_nl_lcs(n, text) for n in _nl_name_variants(d["name"])), default=0)
+        if score >= 4:
+            scored.append((score, d))
+    if scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        if len(scored) > 1 and scored[1][0] == scored[0][0]:
+            return None, "有多台设备都对得上：%s，请说得更具体" % "、".join(
+                x[1]["name"] for x in scored[:3])
+        return scored[0][1], ""
+    for word, models in NL_TYPE_WORDS:
+        if word not in text:
+            continue
+        same = [d for d in devices if any(m in d["model"] for m in models)]
+        if len(same) == 1:
+            return same[0], ""
+        if len(same) > 1:
+            return None, "有 %d 台%s，请说具体名称：%s" % (
+                len(same), word, "、".join(x["name"] for x in same[:4]))
+    return None, "没有找到这句话里的设备，请在句子里带上设备名"
+
+
+def _nl_pick_power(props):
+    for p in props:
+        if p.get("token") in ("on", "power"):
+            return p
+    for p in props:
+        if "开关" in str(p.get("label") or ""):
+            return p
+    for p in props:
+        if p.get("siid") == 2 and p.get("piid") == 1:
+            return p
+    return None
+
+
+def _nl_pick_range(props, unit_hint=""):
+    ranges = [p for p in props if p.get("kind") == "range"]
+    if unit_hint:
+        for p in ranges:
+            blob = (str(p.get("unit") or "") + str(p.get("label") or "")
+                    + str(p.get("token") or ""))
+            if unit_hint in blob:
+                return p
+    return ranges[0] if len(ranges) == 1 else None
+
+
+def _nl_parse(text):
+    norm = _nl_norm(text)
+    if not norm:
+        return {"ok": False, "error": "请说一句话，例如：打开客厅灯"}
+    devices = _nl_devices()
+    if not devices:
+        return {"ok": False, "error": "当前没有可控制的设备（可能都没在线）"}
+    dev, why = _nl_match_device(norm, devices)
+    if not dev:
+        return {"ok": False, "error": why or "没找到设备"}
+    caps = _device_caps(dev["model"]) or {}
+    props = caps.get("props") or []
+    if not props:
+        return {"ok": False, "error": "%s 暂时没有可用的通用控制" % dev["name"]}
+
+    wants_open = any(w in norm for w in NL_OPEN) and not any(w in norm for w in NL_CLOSE)
+    wants_close = any(w in norm for w in NL_CLOSE) and not any(w in norm for w in NL_OPEN)
+    num = re.search(r"(\d+(?:\.\d+)?)", norm)
+    target = None
+    value = None
+
+    if wants_open or wants_close:
+        prop = _nl_pick_power(props)
+        if prop and prop.get("kind") == "bool":
+            target = prop
+            value = bool(wants_open)
+
+    if target is None and num:
+        number = float(num.group(1))
+        unit_hint = ""
+        if "度" in norm or "℃" in norm or "°" in norm:
+            unit_hint = "温度"
+        elif "%" in norm:
+            unit_hint = "亮度"
+        prop = None
+        if unit_hint:
+            for p in props:
+                if p.get("kind") != "range":
+                    continue
+                blob = str(p.get("label") or "") + str(p.get("token") or "") + str(p.get("unit") or "")
+                if unit_hint in blob:
+                    prop = p
+                    break
+        if prop is None and not unit_hint and number.is_integer():
+            for p in props:
+                if p.get("kind") != "enum":
+                    continue
+                plabel = str(p.get("label") or "")
+                if len(plabel) < 2 or plabel not in norm:
+                    continue
+                if any(str(o.get("value")) == str(int(number))
+                       for o in p.get("options") or []):
+                    prop = p
+                    break
+        if prop is None and not unit_hint:
+            prop = _nl_pick_range(props)
+        if prop is not None and prop.get("kind") == "enum":
+            target = prop
+            value = _coerce_cap(prop, int(number))
+        elif prop is not None:
+            rng = prop.get("range") or [0, 100, 1]
+            try:
+                lo, hi = float(rng[0]), float(rng[1])
+            except (TypeError, ValueError, IndexError):
+                lo, hi = 0.0, 100.0
+            if not (lo <= number <= hi):
+                return {"ok": False,
+                        "error": "%s 的范围是 %g~%g，%g 超出范围"
+                                 % (prop.get("label") or "该属性", lo, hi, number)}
+            target = prop
+            value = _coerce_cap(prop, number)
+
+    if target is None:
+        found = []
+        for p in props:
+            if p.get("kind") != "enum":
+                continue
+            for opt in p.get("options") or []:
+                desc = str(opt.get("label") or opt.get("description") or "")
+                if len(desc) >= 2 and desc in norm:
+                    found.append((p, opt.get("value")))
+                    break
+        if len(found) == 1:
+            target, value = found[0]
+        elif len(found) > 1:
+            hinted = [x for x in found if str(x[0].get("label") or "") in norm]
+            if len(hinted) == 1:
+                target, value = hinted[0]
+            else:
+                return {"ok": False, "device": dev["name"],
+                        "error": "这句话能对上多个属性（%s），请说得更具体"
+                                 % "、".join(str(p.get("label") or "") for p, _ in found[:3])}
+
+    if target is None:
+        names = "、".join(str(p.get("label") or "") for p in props[:5])
+        return {"ok": False, "device": dev["name"],
+                "error": "没听懂要调什么，可以试试：%s" % names}
+
+    display = value
+    if isinstance(value, bool):
+        display = "开" if value else "关"
+    elif target.get("kind") == "enum":
+        for opt in target.get("options") or []:
+            if str(opt.get("value")) == str(value):
+                display = opt.get("label") or opt.get("description") or value
+                break
+    label = target.get("label") or "属性"
+    return {"ok": True, "did": dev["did"], "device": dev["name"],
+            "siid": target["siid"], "piid": target["piid"],
+            "label": target.get("label") or target.get("token") or "",
+            "kind": target.get("kind"), "value": value,
+            "text": "%s：%s → %s" % (dev["name"], label, display)}
+
+
 def _music_autostart():
     """容器/机器重启后把已安装的音乐中心拉起来（进程不随服务自启）。"""
     if os.environ.get("MIOT_NO_MUSIC_AUTOSTART"):
@@ -9712,6 +10594,7 @@ def main():
         threading.Thread(target=_stack_autostart, daemon=True).start()
     threading.Thread(target=_camera_autostart, daemon=True).start()
     threading.Thread(target=_music_autostart, daemon=True).start()
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)
     srv.serve_forever()

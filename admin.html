@@ -154,6 +154,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <a href="#secFamily">家庭与页面</a>
       <a href="#secCamera">摄像头</a>
       <a href="#secSecurity">安全与维护</a>
+      <a href="#secDiag">自检与迁移</a>
       <a href="#secUpdate">更新</a>
       <a href="#secLogs">日志</a>
     </nav>
@@ -188,6 +189,7 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <h2>设备显示与改名</h2>
       <div class="sub">勾选“显示”并保存后，云端可读写的设备才会出现在面板。蓝牙/传感器等不可控设备即使勾选也不会显示。</div>
       <div class="row" style="margin-bottom:10px"><input id="devSearch" placeholder="搜索名称/型号/IP" oninput="filterRows()" style="max-width:320px"><span class="pill" id="devCount"></span></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="autoOrder" style="width:auto"> 按使用习惯自动排序（常控设备排前面；开启后忽略面板手动排版，手动保存排版会自动关掉它）</label>
       <div class="tableWrap"><table><thead><tr><th>显示</th><th>自定义名称</th><th>原名称 / 型号</th><th>角色</th><th>在线</th><th>局域网 IP</th><th>公网 IP</th></tr></thead><tbody id="devRows"></tbody></table></div>
       <div class="row" style="margin-top:14px"><button class="primary" onclick="saveConfig()">保存设备设置</button></div>
     </section>
@@ -489,6 +491,27 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
         <div class="sub">重置设置：清空家庭过滤、改名、隐藏设备、天气、每页数量、自定义页面、音乐/AI 设置和排版；保留后台 PIN、小米登录和音乐中心连接。</div>
         <div class="row"><button class="danger" onclick="resetPanel('settings')">重置设置（保留 PIN/登录）</button><button class="danger" onclick="resetPanel('factory')">完全重置（回到首次向导）</button></div>
         <div class="hint"><a href="/setup" style="color:var(--accent)">打开首次设置向导</a>，可重新检查 PIN、音乐中心和小米登录状态。</div>
+      </section>
+    </div>
+
+    <div class="twoCols">
+      <section class="card" id="secDiag">
+        <h2>自检与诊断</h2>
+        <div class="sub">一键汇总账号、设备、摄像头、音乐中心、组件守护和最近的告警（IP 自动打码）。反馈问题时把这段文本发出来即可。</div>
+        <div class="row"><button class="primary" onclick="runDiag()">生成诊断</button><button onclick="copyDiag()">复制文本</button><span class="hint" id="diagHint"></span></div>
+        <div class="overviewChips" id="diagChips"></div>
+        <pre id="diagText" style="max-height:320px;overflow:auto;white-space:pre-wrap">点“生成诊断”开始。</pre>
+      </section>
+      <section class="card" id="secMigrate">
+        <h2>配置迁移</h2>
+        <div class="sub">把当前设置（登录态、主题排版、设备改名/隐藏、摄像头、音乐中心凭据、PIN、自定义页）打包成一个带口令的加密文件，换设备时直接导入。</div>
+        <div class="grid"><div><label>加密口令（至少 6 位）</label><input id="migPass" type="password" autocomplete="new-password" placeholder="自己设一个，导入时要输入同一个"></div></div>
+        <div class="row"><button class="primary" onclick="exportConfig()">导出迁移包</button><span class="hint">文件里含敏感凭据，别发到群里</span></div>
+        <div class="sep"></div>
+        <label>导入迁移包</label>
+        <textarea id="migData" rows="4" placeholder="把 .miotbak 文件内容粘贴到这里，或点下面的选择文件" style="width:100%;font-family:ui-monospace,monospace;font-size:12px"></textarea>
+        <div class="row"><input type="file" id="migFile" accept=".miotbak,.json,text/plain" onchange="readMigFile()" style="max-width:240px"><button onclick="importConfig(false)">先检查</button><button class="danger" onclick="importConfig(true)">确认导入</button></div>
+        <div class="msg" id="migMsg"></div>
       </section>
     </div>
 
@@ -1599,6 +1622,7 @@ function render(){
 function renderDevices(){
   var rows=state.devices||[];
   $('devCount').textContent='共 '+rows.length+' 台';
+  if($('autoOrder'))$('autoOrder').checked=!!(state.config&&state.config.auto_order);
   $('devRows').innerHTML=rows.map(function(d){
     var rename=d.rename||'';
     return '<tr data-search="'+esc((d.name||'')+' '+(d.model||'')+' '+(d.localip||'')+' '+(d.internet_ip||'')).toLowerCase()+'">'
@@ -1620,6 +1644,77 @@ function filterRows(){
   $('devCount').textContent='显示 '+shown;
 }
 function splitPrefixes(v){return v.split(/[\n,，]+/).map(function(x){return x.trim();}).filter(Boolean);}
+var diagText='';
+function copyText(text){
+  return new Promise(function(resolve,reject){
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(resolve,function(){fallback();});
+    }else fallback();
+    function fallback(){
+      try{
+        var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+        document.body.appendChild(ta);ta.select();var ok=document.execCommand('copy');ta.remove();
+        ok?resolve():reject(new Error('copy failed'));
+      }catch(e){reject(e);}
+    }
+  });
+}
+async function runDiag(){
+  var btn=event&&event.target;if(btn){btn.disabled=true;btn.textContent='生成中…';}
+  var r=await api('/api/admin/diag');
+  if(btn){btn.disabled=false;btn.textContent='生成诊断';}
+  if(!r.data||!r.data.ok){toast((r.data&&r.data.error)||'生成失败',true);return;}
+  diagText=r.data.text||'';
+  $('diagText').textContent=diagText;
+  $('diagHint').textContent='已生成 · '+new Date().toLocaleTimeString();
+  $('diagChips').innerHTML=(r.data.items||[]).map(function(it){
+    var bad=/未运行|未响应|未监听|缺失|失败|异常|关闭|0 条/.test(it.state);
+    return '<span class="ovChip '+(bad?'off':'ok')+'">'+esc(it.label)+' <b>'+esc(it.state)+'</b></span>';
+  }).join('');
+}
+function copyDiag(){
+  if(!diagText){toast('先点“生成诊断”',true);return;}
+  copyText(diagText).then(function(){toast('诊断文本已复制');},function(){toast('复制失败，请手动选中文本',true);});
+}
+async function exportConfig(){
+  var pass=$('migPass').value;
+  if(pass.length<6){toast('口令至少 6 位',true);return;}
+  var r=await api('/api/admin/config/export',{password:pass});
+  if(!r.data||!r.data.ok){toast((r.data&&r.data.error)||'导出失败',true);return;}
+  var blob=new Blob([r.data.bundle],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=r.data.filename||'miot-panel-backup.miotbak';
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1000);
+  $('migMsg').textContent='已导出 '+a.download+'（'+Math.round(r.data.bundle.length/1024)+' KB），请连同口令一起保管。';
+}
+function readMigFile(){
+  var f=$('migFile').files&&$('migFile').files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){$('migData').value=String(rd.result||'');$('migMsg').textContent='已读入 '+f.name+'，点“先检查”预览。';};
+  rd.onerror=function(){$('migMsg').textContent='读取文件失败';};
+  rd.readAsText(f);
+}
+async function importConfig(apply){
+  var pass=$('migPass').value,raw=$('migData').value.trim();
+  if(!raw){toast('请先粘贴或选择迁移包',true);return;}
+  if(!pass){toast('请输入迁移包口令',true);return;}
+  if(apply&&!confirm('导入会覆盖当前设置、登录态、排版和自定义页面（会先自动备份），确定继续？'))return;
+  if(apply){$('migMsg').textContent='正在导入…';}
+  var r=await api('/api/admin/config/import',{password:pass,bundle:raw,apply:!!apply});
+  if(!r.data||!r.data.ok){
+    $('migMsg').textContent=(r.data&&r.data.error)||'导入失败';
+    toast((r.data&&r.data.error)||'导入失败',true);return;
+  }
+  if(!apply){
+    var p=r.data.preview||{};
+    $('migMsg').textContent='检查通过：来自 v'+(p.app_version||'?')+' · 隐藏设备 '+(p.devices_hidden||0)
+      +' · 改名 '+(p.renames||0)+' · 自定义页 '+(p.pages||0)+' · 小米'+(p.account?'已登录':'未登录')
+      +' · PIN'+(p.pin?'有':'无')+' · 音乐中心'+(p.songloft?'已配置':'未配置');
+    return;
+  }
+  $('migMsg').textContent='导入完成，已备份到 '+r.data.backup+'，2 秒后刷新…';
+  setTimeout(function(){location.reload();},2000);
+}
 async function saveConfig(){
   var hidden=[],renames={};
   Array.prototype.forEach.call($('devRows').querySelectorAll('tr'),function(tr){
@@ -1630,7 +1725,8 @@ async function saveConfig(){
     home_label:$('homeLabel').value.trim(),weather_location:$('weatherLocation').value.trim(),
     weather_label:$('weatherLabel').value.trim(),country:$('country').value.trim(),
     wan_prefixes:splitPrefixes($('wanPrefixes').value),lan_prefixes:splitPrefixes($('lanPrefixes').value),
-    hidden_devices:hidden,renames:renames
+    hidden_devices:hidden,renames:renames,
+    auto_order:!!($('autoOrder')&&$('autoOrder').checked)
   };
   var r=await api('/api/admin/save',body);
   if(r.data.ok){toast('已保存，面板稍后刷新');setTimeout(load,1200);}
@@ -1736,6 +1832,7 @@ var SEC_GROUPS={
   secFamily:['secFamily'],
   secCamera:['secCamera'],
   secSecurity:['secSecurity'],
+  secDiag:['secDiag','secMigrate'],
   secUpdate:['secUpdate'],
   secLogs:['secLogs']
 };
