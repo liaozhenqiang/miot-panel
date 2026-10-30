@@ -57,6 +57,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+import ctypes
 import ssl
 import struct
 import html as html_lib
