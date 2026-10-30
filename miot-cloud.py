@@ -61,6 +61,17 @@ import ctypes
 import ssl
 from pathlib import Path
 
+if os.name == "nt":
+    # pythonw 启动的进程没有控制台，任何控制台子进程（powershell/netstat/tasklist/ping）
+    # 都会自己开一个黑框；统一隐藏，显式传 creationflags 的调用不受影响。
+    _subprocess_run = subprocess.run
+
+    def _run_hidden(*args, **kwargs):
+        kwargs.setdefault("creationflags", 0x08000000)
+        return _subprocess_run(*args, **kwargs)
+
+    subprocess.run = _run_hidden
+
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
@@ -200,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.24"
+APP_VERSION = "0.7.25"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -460,7 +471,12 @@ if CONFIG.get("lan_ip"):
     LAN_IP = str(CONFIG["lan_ip"])
 
 
+_LAN_CAND_CACHE = {"ts": 0.0, "data": None}
+
+
 def _lan_candidates():
+    if _LAN_CAND_CACHE["data"] is not None and time.time() - _LAN_CAND_CACHE["ts"] < 60:
+        return list(_LAN_CAND_CACHE["data"])
     found = []
 
     def add(ip, name=""):
@@ -499,6 +515,8 @@ def _lan_candidates():
                     add(item.get("IPAddress"), item.get("InterfaceAlias") or "")
         except Exception:
             pass
+    _LAN_CAND_CACHE["ts"] = time.time()
+    _LAN_CAND_CACHE["data"] = list(found)
     return found
 
 
@@ -7909,7 +7927,8 @@ class Handler(BaseHTTPRequestHandler):
                      "-c", "copy", "-an", "-flush_packets", "1",
                      "-f", "mpegts", "pipe:1"],
                     stdin=proc.stdout, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL)
+                    stderr=subprocess.DEVNULL,
+                    creationflags=0x08000000 if os.name == "nt" else 0)
             except Exception as exc:
                 LOG.warning("bridge ffmpeg spawn failed: %s", exc)
                 try:
