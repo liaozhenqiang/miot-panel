@@ -1,0 +1,111 @@
+[
+  {
+    "title": "米家面板 / MIoT Panel",
+    "desc": "开源的米家智能家居触屏面板：设备、摄像头、音乐与 AI 音箱。",
+    "url": "index.html",
+    "headings": [
+      "功能",
+      "支持平台",
+      "快速开始",
+      "下载最新版本",
+      "常见问题"
+    ],
+    "keywords": "米家 小米 智能家居 面板 触屏 玩客云 树莓派 docker 摄像头 音乐"
+  },
+  {
+    "title": "快速开始",
+    "desc": "下载、安装、设置 PIN 和登录小米账号，三步把面板跑起来。",
+    "url": "guide/quickstart.html",
+    "headings": [
+      "下载",
+      "Windows 安装",
+      "Linux / 玩客云安装",
+      "Docker / NAS 安装",
+      "首次设置",
+      "升级与备份"
+    ],
+    "keywords": "quickstart 下载、安装、设置 PIN 和登录小米账号，三步把面板跑起来。"
+  },
+  {
+    "title": "面板与设备",
+    "desc": "设备卡片、通用控件、排版主题、自然语言、PWA 和 Android 客户端。",
+    "url": "guide/devices.html",
+    "headings": [
+      "面板与设备卡片",
+      "排版、主题与旋转",
+      "自然语言与音箱",
+      "PWA、Android 与局域网发现"
+    ],
+    "keywords": "devices 设备卡片、通用控件、排版主题、自然语言、PWA 和 Android 客户端。"
+  },
+  {
+    "title": "摄像头",
+    "desc": "摄像头组件安装、播放、清晰度、云台和跨网段远程 go2rtc。",
+    "url": "guide/camera.html",
+    "headings": [
+      "安装摄像头组件",
+      "摄像头页",
+      "跨网段 / 远程 go2rtc",
+      "常见检查"
+    ],
+    "keywords": "camera 摄像头组件安装、播放、清晰度、云台和跨网段远程 go2rtc。"
+  },
+  {
+    "title": "音乐与 AI",
+    "desc": "连接 Songloft / go-music-dl、绑定小爱音箱、多房间和 AI 对话。",
+    "url": "guide/music.html",
+    "headings": [
+      "连接音乐中心",
+      "音箱与多房间",
+      "AI 对话与 TTS",
+      "在线音源"
+    ],
+    "keywords": "music 连接 Songloft / go-music-dl、绑定小爱音箱、多房间和 AI 对话。"
+  },
+  {
+    "title": "后台与安全",
+    "desc": "后台分区、PIN、家庭过滤、局域网、更新、备份迁移和安全建议。",
+    "url": "guide/admin.html",
+    "headings": [
+      "概览与分区",
+      "PIN 与设备访问",
+      "家庭过滤与局域网",
+      "主题与排版",
+      "更新、备份与迁移"
+    ],
+    "keywords": "admin 后台分区、PIN、家庭过滤、局域网、更新、备份迁移和安全建议。"
+  },
+  {
+    "title": "常见问题",
+    "desc": "打不开、PIN、设备、摄像头、音乐、Docker 和 armv7 的排查。",
+    "url": "guide/faq.html",
+    "headings": [
+      "打不开面板",
+      "忘记 PIN",
+      "设备显示不完整",
+      "摄像头黑屏 / 组件未就绪",
+      "音乐中心连不上",
+      "Windows 弹防火墙 / 黑窗",
+      "Docker 升级后数据没了",
+      "armv7 性能",
+      "隐私"
+    ],
+    "keywords": "faq 打不开、PIN、设备、摄像头、音乐、Docker 和 armv7 的排查。"
+  },
+  {
+    "title": "更新日志",
+    "desc": "米家面板 v0.7.26 及历史版本的功能与修复记录。",
+    "url": "guide/changelog.html",
+    "headings": [
+      "v0.7.26 2026-11-01",
+      "v0.7.25 2026-10-30",
+      "v0.7.22 2026-10-30",
+      "v0.7.20 2026-10-30",
+      "v0.7.17 2026-10-29",
+      "v0.7.12 2026-10-29",
+      "v0.7.0 2026-10-28",
+      "v0.3.0 2026-10-26"
+    ],
+    "keywords": "changelog 米家面板 v0.7.26 及历史版本的功能与修复记录。"
+  }
+]

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>常见问题 · 米家面板文档</title>
+
+<meta name="description" content="打不开、PIN、设备、摄像头、音乐、Docker 和 armv7 的排查。">
+<link rel="canonical" href="https://liaozhenqiang.github.io/miot-panel/guide/faq.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="米家面板">
+<meta property="og:title" content="常见问题 · 米家面板文档">
+<meta property="og:description" content="打不开、PIN、设备、摄像头、音乐、Docker 和 armv7 的排查。">
+<meta property="og:url" content="https://liaozhenqiang.github.io/miot-panel/guide/faq.html">
+<meta property="og:image" content="https://liaozhenqiang.github.io/miot-panel/assets/hero.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ff6900">
+<link rel="icon" href="../assets/logo.png">
+<script>(function(){try{var t=localStorage.getItem("miot-docs-theme");if(!t){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="faq">
+
+<header class="navbar">
+  <div class="container nav-inner">
+    <a class="brand" href="../index.html">
+      <img src="../assets/logo.png" alt="miot-panel logo">
+      <span><span class="name">米家面板</span><span class="sub">MIOT Panel</span></span>
+    </a>
+    <nav class="nav-links" aria-label="主导航"><a class="nav-link" href="../index.html">首页</a><a class="nav-link" href="../guide/quickstart.html">快速开始</a><a class="nav-link active" href="../guide/devices.html">使用指南</a><a class="nav-link" href="../guide/changelog.html">更新日志</a></nav>
+    <div class="nav-actions">
+      <button class="search-trigger js-search-open" type="button" aria-label="搜索文档">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>搜索文档</span><kbd>/</kbd>
+      </button>
+      <button class="icon-btn js-theme-toggle" type="button" aria-label="切换明暗主题">
+        <span class="js-theme-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span><span class="js-theme-moon" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"/></svg></span>
+      </button>
+      <a class="icon-btn" href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3.2-.4 6.5-1.6 6.5-7.2A5.6 5.6 0 0 0 20 4.6 5.2 5.2 0 0 0 19.9.8S18.6.4 16 2.2a13.4 13.4 0 0 0-7 0C6.4.4 5.1.8 5.1.8A5.2 5.2 0 0 0 5 4.6a5.6 5.6 0 0 0-1.5 3.9c0 5.5 3.3 6.8 6.5 7.2A3.4 3.4 0 0 0 9 18.3V22"/></svg></a>
+      <a class="btn primary nav-download" href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">下载</a>
+      <button class="icon-btn mobile-menu-btn js-mobile-menu" type="button" aria-label="打开目录" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    </div>
+  </div>
+</header>
+
+
+<div class="search-overlay" role="dialog" aria-modal="true" aria-label="搜索文档">
+  <div class="search-panel">
+    <div class="search-top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input class="search-input" type="text" placeholder="搜索功能、安装、配置…" autocomplete="off"><kbd>Esc</kbd></div>
+    <div class="search-results"></div>
+    <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 打开</span><span><kbd>/</kbd> 或 <kbd>Ctrl</kbd>+<kbd>K</kbd> 搜索</span></div>
+  </div>
+</div>
+
+
+<div class="docs-shell">
+  <aside class="sidebar" aria-label="文档目录"><div class="sidebar-group"><div class="sidebar-title">开始</div><a class="sidebar-link" href="../guide/quickstart.html"><span class="s-dot"></span>快速开始</a></div><div class="sidebar-group"><div class="sidebar-title">使用</div><a class="sidebar-link" href="../guide/devices.html"><span class="s-dot"></span>面板与设备</a><a class="sidebar-link" href="../guide/camera.html"><span class="s-dot"></span>摄像头</a><a class="sidebar-link" href="../guide/music.html"><span class="s-dot"></span>音乐与 AI</a><a class="sidebar-link" href="../guide/admin.html"><span class="s-dot"></span>后台与安全</a></div><div class="sidebar-group"><div class="sidebar-title">帮助</div><a class="sidebar-link active" href="../guide/faq.html"><span class="s-dot"></span>常见问题</a><a class="sidebar-link" href="../guide/changelog.html"><span class="s-dot"></span>更新日志</a></div></aside>
+  <main class="content">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="../guide/quickstart.html">文档</a><span>/</span><span>常见问题</span></div>
+    <h1>常见问题</h1>
+    <p class="page-desc">打不开、PIN、设备、摄像头、音乐、Docker 和 armv7 的排查。</p>
+    
+<h2 id="h-1">打不开面板</h2>
+<p>确认服务/容器在运行，端口没有被其他程序占用；Windows 查看托盘或安装目录，Linux 运行 <code>systemctl status miot-cloud</code>，Docker 查看 <code>docker logs</code>。默认端口：Windows 8080，Linux/Docker 常见 80。</p>
+<h2 id="h-2">忘记 PIN</h2>
+<p>PIN 只保存在本机配置中，无法从云端找回。可以在设备上删除/重置配置重新进入首次向导；如果只是要换 PIN，且仍能登录后台，直接到「安全与维护」修改即可。删除配置会同时失去本机登录态，请先导出备份。</p>
+<h2 id="h-3">设备显示不完整</h2>
+<p>检查小米账号是否登录、家庭过滤是否只匹配了另一个家庭、设备是否在线。传感器没有云端数据、纯 BLE 设备或账号下不匹配的设备不会显示。</p>
+<h2 id="h-4">摄像头黑屏 / 组件未就绪</h2>
+<p>先到摄像头页安装或重启组件，确认 1984、8554 端口未被占用，再检查防火墙。跨网段时填写远程 go2rtc；仍然黑屏时查看摄像头是否在线、编码是否被面板支持。</p>
+<h2 id="h-5">音乐中心连不上</h2>
+<p>确认 Songloft / go-music-dl 正在运行、地址和端口可从面板访问、管理员凭据正确；Docker 容器连接宿主机上的音乐中心时不要填 127.0.0.1，应填宿主机的局域网 IP。</p>
+<h2 id="h-6">Windows 弹防火墙 / 黑窗</h2>
+<p>新版已统一隐藏控制台窗口；摄像头首次连接时允许 <code>go2rtc.exe</code>、<code>ffmpeg.exe</code> 的局域网访问。若仍被拦截，到 Windows 防火墙放行对应程序或重新运行安装器的防火墙配置。</p>
+<h2 id="h-7">Docker 升级后数据没了</h2>
+<p>升级容器时没有保留数据卷。面板数据在容器内 <code>/data</code>，请挂载固定卷/目录；升级前也可以从后台导出迁移包。</p>
+<h2 id="h-8">armv7 性能</h2>
+<p>玩客云等 armv7 设备使用包内的预编译轮子，不需要现场编译。摄像头转码和多路播放会占用 CPU，建议优先使用流畅档位并减少同时播放路数。</p>
+<h2 id="h-9">隐私</h2>
+<p>面板只在你的设备上保存小米登录态、PIN 哈希、设备缓存和配置；不会把账号、设备 Token、摄像头画面或 AI Key 上传到第三方。导出的迁移包包含敏感凭据，请妥善保存。</p>
+
+    <div class="page-actions">
+      <a class="btn sm" href="https://github.com/liaozhenqiang/miot-panel/blob/main/docs/guide/faq.html" target="_blank" rel="noopener">在 GitHub 上编辑此页</a>
+      <a class="btn sm ghost" href="#">回到顶部</a>
+    </div>
+    <div class="prev-next"><a href="../guide/admin.html"><span class="dir">上一篇</span><span>后台与安全</span></a><a class="next" href="../guide/changelog.html"><span class="dir">下一篇</span><span>更新日志</span></a></div>
+  </main>
+  <aside class="outline" aria-label="本页目录"><div class="outline-title">本页目录</div></aside>
+</div>
+<div class="sidebar-mask"></div>
+
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div>
+      <div class="f-brand"><img src="../assets/logo.png" alt="">米家面板 / MIoT Panel</div>
+      <div style="margin-top:6px">把米家设备变成一块全天候触屏墙面板。MIT License · 文档更新 2026-11-01</div>
+    </div>
+    <div class="f-links">
+      <a href="../guide/quickstart.html">快速开始</a>
+      <a href="../guide/devices.html">使用指南</a>
+      <a href="../guide/faq.html">常见问题</a>
+      <a href="../guide/changelog.html">更新日志</a>
+      <a href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script defer src="../assets/app.js"></script>
+</body>
+</html>

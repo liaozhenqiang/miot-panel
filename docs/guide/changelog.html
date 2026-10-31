@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>更新日志 · 米家面板文档</title>
+
+<meta name="description" content="米家面板 v0.7.26 及历史版本的功能与修复记录。">
+<link rel="canonical" href="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="米家面板">
+<meta property="og:title" content="更新日志 · 米家面板文档">
+<meta property="og:description" content="米家面板 v0.7.26 及历史版本的功能与修复记录。">
+<meta property="og:url" content="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
+<meta property="og:image" content="https://liaozhenqiang.github.io/miot-panel/assets/hero.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ff6900">
+<link rel="icon" href="../assets/logo.png">
+<script>(function(){try{var t=localStorage.getItem("miot-docs-theme");if(!t){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="changelog">
+
+<header class="navbar">
+  <div class="container nav-inner">
+    <a class="brand" href="../index.html">
+      <img src="../assets/logo.png" alt="miot-panel logo">
+      <span><span class="name">米家面板</span><span class="sub">MIOT Panel</span></span>
+    </a>
+    <nav class="nav-links" aria-label="主导航"><a class="nav-link" href="../index.html">首页</a><a class="nav-link" href="../guide/quickstart.html">快速开始</a><a class="nav-link" href="../guide/devices.html">使用指南</a><a class="nav-link active" href="../guide/changelog.html">更新日志</a></nav>
+    <div class="nav-actions">
+      <button class="search-trigger js-search-open" type="button" aria-label="搜索文档">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>搜索文档</span><kbd>/</kbd>
+      </button>
+      <button class="icon-btn js-theme-toggle" type="button" aria-label="切换明暗主题">
+        <span class="js-theme-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span><span class="js-theme-moon" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"/></svg></span>
+      </button>
+      <a class="icon-btn" href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3.2-.4 6.5-1.6 6.5-7.2A5.6 5.6 0 0 0 20 4.6 5.2 5.2 0 0 0 19.9.8S18.6.4 16 2.2a13.4 13.4 0 0 0-7 0C6.4.4 5.1.8 5.1.8A5.2 5.2 0 0 0 5 4.6a5.6 5.6 0 0 0-1.5 3.9c0 5.5 3.3 6.8 6.5 7.2A3.4 3.4 0 0 0 9 18.3V22"/></svg></a>
+      <a class="btn primary nav-download" href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">下载</a>
+      <button class="icon-btn mobile-menu-btn js-mobile-menu" type="button" aria-label="打开目录" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    </div>
+  </div>
+</header>
+
+
+<div class="search-overlay" role="dialog" aria-modal="true" aria-label="搜索文档">
+  <div class="search-panel">
+    <div class="search-top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input class="search-input" type="text" placeholder="搜索功能、安装、配置…" autocomplete="off"><kbd>Esc</kbd></div>
+    <div class="search-results"></div>
+    <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 打开</span><span><kbd>/</kbd> 或 <kbd>Ctrl</kbd>+<kbd>K</kbd> 搜索</span></div>
+  </div>
+</div>
+
+
+<div class="docs-shell">
+  <aside class="sidebar" aria-label="文档目录"><div class="sidebar-group"><div class="sidebar-title">开始</div><a class="sidebar-link" href="../guide/quickstart.html"><span class="s-dot"></span>快速开始</a></div><div class="sidebar-group"><div class="sidebar-title">使用</div><a class="sidebar-link" href="../guide/devices.html"><span class="s-dot"></span>面板与设备</a><a class="sidebar-link" href="../guide/camera.html"><span class="s-dot"></span>摄像头</a><a class="sidebar-link" href="../guide/music.html"><span class="s-dot"></span>音乐与 AI</a><a class="sidebar-link" href="../guide/admin.html"><span class="s-dot"></span>后台与安全</a></div><div class="sidebar-group"><div class="sidebar-title">帮助</div><a class="sidebar-link" href="../guide/faq.html"><span class="s-dot"></span>常见问题</a><a class="sidebar-link active" href="../guide/changelog.html"><span class="s-dot"></span>更新日志</a></div></aside>
+  <main class="content">
+    <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="../guide/quickstart.html">文档</a><span>/</span><span>更新日志</span></div>
+    <h1>更新日志</h1>
+    <p class="page-desc">米家面板 v0.7.26 及历史版本的功能与修复记录。</p>
+    
+<h2 id="h-1">v0.7.26 <span class="pgh-date">2026-11-01</span></h2>
+<ul>
+<li>后台摄像头板块按当前平台显示可用状态与提示，状态和文案更准确。</li>
+<li>远程摄像头服务 / 云台转发说明更清晰；新增共享 go2rtc 地址。</li>
+<li>摄像头页来源标注修正为实际类型。</li>
+<li>更新 GitHub 文档，清理安装包与发布说明中的技术细节。</li>
+</ul>
+<h2 id="h-2">v0.7.25 <span class="pgh-date">2026-10-30</span></h2>
+<ul>
+<li>修复 Windows 面板刷新后台时弹 PowerShell 黑窗；所有子进程统一隐藏控制台。</li>
+<li>局域网地址查询增加 60 秒缓存，后台刷新更快。</li>
+</ul>
+<h2 id="h-3">v0.7.22 <span class="pgh-date">2026-10-30</span></h2>
+<ul>
+<li>新增自检诊断、口令加密迁移包、组件看门狗、自然语言控制和使用习惯排序。</li>
+</ul>
+<h2 id="h-4">v0.7.20 <span class="pgh-date">2026-10-30</span></h2>
+<ul>
+<li>新增极光、纸感两套结构级主题；补充平板/横屏栅格。</li>
+<li>音乐中心跨平台一键安装，自动跟随上游最新版。</li>
+</ul>
+<h2 id="h-5">v0.7.17 <span class="pgh-date">2026-10-29</span></h2>
+<ul>
+<li>排版改为横 × 竖自定义；新增默认米家主题；后台分区切换。</li>
+<li>摄像头页同步主题，设备显示与改名移动到音乐中心之前。</li>
+</ul>
+<h2 id="h-6">v0.7.12 <span class="pgh-date">2026-10-29</span></h2>
+<ul>
+<li>Linux 包按架构拆分，内置预编译轮子；armv7 不再需要 gcc 现场编译。</li>
+<li>新增 Android 客户端自动发现、原生 PIN 和 WebView 兼容层。</li>
+</ul>
+<h2 id="h-7">v0.7.0 <span class="pgh-date">2026-10-28</span></h2>
+<ul>
+<li>摄像头组件扩展到 Windows / Linux / macOS / Docker；新增 UDP 37020 局域网发现和 Android 客户端 1.0.0。</li>
+</ul>
+<h2 id="h-8">v0.3.0 <span class="pgh-date">2026-10-26</span></h2>
+<ul>
+<li>跨平台版：拆分程序与数据目录，支持 Windows / Linux / Docker 多架构；新增 PWA。</li>
+</ul>
+
+    <div class="page-actions">
+      <a class="btn sm" href="https://github.com/liaozhenqiang/miot-panel/blob/main/docs/guide/changelog.html" target="_blank" rel="noopener">在 GitHub 上编辑此页</a>
+      <a class="btn sm ghost" href="#">回到顶部</a>
+    </div>
+    <div class="prev-next"><a href="../guide/faq.html"><span class="dir">上一篇</span><span>常见问题</span></a></div>
+  </main>
+  <aside class="outline" aria-label="本页目录"><div class="outline-title">本页目录</div></aside>
+</div>
+<div class="sidebar-mask"></div>
+
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div>
+      <div class="f-brand"><img src="../assets/logo.png" alt="">米家面板 / MIoT Panel</div>
+      <div style="margin-top:6px">把米家设备变成一块全天候触屏墙面板。MIT License · 文档更新 2026-11-01</div>
+    </div>
+    <div class="f-links">
+      <a href="../guide/quickstart.html">快速开始</a>
+      <a href="../guide/devices.html">使用指南</a>
+      <a href="../guide/faq.html">常见问题</a>
+      <a href="../guide/changelog.html">更新日志</a>
+      <a href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script defer src="../assets/app.js"></script>
+</body>
+</html>
