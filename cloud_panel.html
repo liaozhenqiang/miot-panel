@@ -1078,7 +1078,7 @@ function toast(msg,err){
   el.textContent=msg;el.className='msg show'+(err?' err':'');
   clearTimeout(el._t);el._t=setTimeout(function(){el.className='msg';},2500);
 }
-var THEME_IDS=['mijia','dark','light','apple','flyme','cyber','morandi','pixel'];
+var THEME_IDS=['mijia','dark','light','apple','flyme','cyber','morandi','pixel','aurora','paper'];
 var THEME_LABELS={mijia:'米家',dark:'经典黑夜',light:'经典白天',apple:'苹果风',flyme:'魅族风',cyber:'赛博霓虹',morandi:'莫兰迪',pixel:'像素终端',aurora:'极光',paper:'纸感'};
 function applyTheme(t){
   if(THEME_IDS.indexOf(t)<0)t='mijia';

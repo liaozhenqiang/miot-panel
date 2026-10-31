@@ -1,0 +1,8 @@
+{
+  "version": "0.7.26",
+  "released": "2026-11-01",
+  "notes": "后台摄像头板块按当前平台显示可用状态与提示；远程摄像头服务/云台转发说明更清晰；摄像头页来源标注修正。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.26-update.tar.gz",
+  "sha256": "1c233b4b9921769966435861b47cd42e7455baeb6beec84f969f8dd077ed30f3",
+  "size": 2989017
+}

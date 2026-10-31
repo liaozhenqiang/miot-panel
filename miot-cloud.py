@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.25"
+APP_VERSION = "0.7.26"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -309,6 +309,10 @@ DEFAULT_CONFIG = {
     "renames": {},
     "hide_cursor": "auto",
     "p2p_bridge": BRIDGE_MODE_DEFAULT,
+    "bridge_share": False,
+    "bridge_share_token": "",
+    "bridge_relay_url": "",
+    "bridge_relay_token": "",
     "xiaomi_viewer_dir": "",
     "speaker_panel_enabled": True,
     "speaker_text_enabled": True,
@@ -363,6 +367,11 @@ def _normalize_config(data):
     out["hide_cursor"] = cursor if cursor in ("auto", "always", "never") else "auto"
     bridge = str(src.get("p2p_bridge") or BRIDGE_MODE_DEFAULT).lower()
     out["p2p_bridge"] = bridge if bridge in ("auto", "always", "off") else BRIDGE_MODE_DEFAULT
+    out["bridge_share"] = src.get("bridge_share", False) is True
+    out["bridge_share_token"] = str(src.get("bridge_share_token") or "")[:80]
+    _relay = str(src.get("bridge_relay_url") or "").strip().rstrip("/")[:500]
+    out["bridge_relay_url"] = _relay if _relay.startswith(("http://", "https://")) else ""
+    out["bridge_relay_token"] = str(src.get("bridge_relay_token") or "")[:80]
     out["xiaomi_viewer_dir"] = str(src.get("xiaomi_viewer_dir") or "").strip()[:500]
     for key in ("speaker_panel_enabled", "speaker_text_enabled",
                 "speaker_voice_enabled"):
@@ -2591,7 +2600,7 @@ def ensure_cameras(force=False):
                 item["error"] = "没有局域网地址"
                 blocked = True
             elif not ip and not remote:
-                item["note"] = "没有局域网地址，将尝试电脑版 P2P 桥接"
+                item["note"] = "没有局域网地址，将尝试 P2P 桥接"
             if bridge and not blocked and (
                     bridge_mode == "always"
                     or (not remote and (not ip or not _lan_reachable(ip)))):
@@ -2622,7 +2631,11 @@ def ensure_cameras(force=False):
                                 item["quality"] = CAM_QUALITY.get(did) or "sd"
                                 item["source"] = "bridge"
                                 item["ptz"] = True
-                                item["note"] = "电脑版 P2P 桥接（可异地）"
+                                item["note"] = {
+                                    "win": "电脑版 P2P 桥接（可异地）",
+                                    "wine": "Wine P2P 桥接（可异地）",
+                                    "native": "本机原生 P2P 桥接（可异地）",
+                                }.get((bridge or {}).get("kind"), "P2P 桥接（可异地）")
                                 item["error"] = ""
                                 items.append(item)
                                 continue
@@ -5627,22 +5640,27 @@ def _bridge_token_file():
 
 
 def _bridge_status():
+    native_dir = ""
     if os.name == "nt":
         kind = "win"
         host = _bridge_ensure_host()
         python = ""
         helper = host
     else:
-        python, helper = _wine_helper_paths()
-        host = _wine_bin()
-        kind = "wine" if (host and python and helper) else ""
+        native_dir, native_helper = _native_helper_paths()
+        if native_dir and _native_platform():
+            kind, host, python, helper = "native", native_helper, "", native_helper
+        else:
+            python, helper = _wine_helper_paths()
+            host = _wine_bin()
+            kind = "wine" if (host and python and helper) else ""
     platform_ok = bool(kind)
-    dll_dir = _bridge_dll_dir()
+    dll_dir = native_dir if kind == "native" else _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin() if platform_ok else ""
     reasons = []
     if not platform_ok:
         reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）" if os.name == "nt"
-                       else "当前镜像没有 wine 桥接（P2P 桥接仅 amd64 镜像提供）")
+                       else "缺少桥接程序（wine 或 camera-stack/native-arm/miss-host-arm）")
     if not dll_dir:
         reasons.append("桥接组件未就绪，请更新到完整安装包")
     if not ffmpeg:
@@ -5665,6 +5683,10 @@ def _bridge_status():
         "dlls": list(BRIDGE_DLLS),
         "job": dict(BRIDGE_JOB),
         "innoextract": bool(os.path.isfile(os.path.join(APP_DIR, "tools", "innoextract.exe"))),
+        "share": CONFIG.get("bridge_share") is True,
+        "share_token": CONFIG.get("bridge_share_token") or "",
+        "relay_url": CONFIG.get("bridge_relay_url") or "",
+        "relay_set": bool(CONFIG.get("bridge_relay_url") and CONFIG.get("bridge_relay_token")),
     }
 
 
@@ -5759,6 +5781,43 @@ def _wine_helper_paths():
     return "", ""
 
 
+def _native_helper_paths():
+    """ARMv7 Linux native bridge: vendor libmiss + uClibc runtime under camera-stack/native-arm."""
+    base = os.path.join(ROOT, "camera-stack", "native-arm")
+    helper = os.path.join(base, "miss-host-arm")
+    need = ("ld-uClibc.so.0", "libmiss.so", "libsodium.so.18",
+            "libmbedcrypto.so.3", "libmbedtls.so.13", "libmbedx509.so.1",
+            "libjson-c.so.5")
+    try:
+        if (os.path.isfile(helper) and os.access(helper, os.X_OK)
+                and all(os.path.isfile(os.path.join(base, n)) for n in need)):
+            return base, helper
+    except Exception:
+        pass
+    return "", ""
+
+
+def _native_platform():
+    if os.name == "nt":
+        return False
+    try:
+        import platform
+        machine = (platform.machine() or "").lower()
+    except Exception:
+        machine = ""
+    return machine in ("armv7l", "armv6l", "armv8l", "arm")
+
+
+def _native_bridge_init():
+    try:
+        base, helper = _native_helper_paths()
+        if base and helper and _native_platform():
+            path = _bridge_token_file()
+            LOG.info("native ARM bridge ready (%s, token=%s)", base, bool(path))
+    except Exception as exc:
+        LOG.warning("native bridge init failed: %s", str(exc)[:160])
+
+
 def _drain_pipe(pipe, did):
     try:
         for line in iter(pipe.readline, b""):
@@ -5778,17 +5837,22 @@ def _bridge_prepare():
     if (CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT) == "off":
         return None
     kind, host, python, helper = "win", "", "", ""
+    native_dir = ""
     if os.name == "nt":
         host = _bridge_ensure_host()
         if not host:
             return None
     else:
-        wine = _wine_bin()
-        python, helper = _wine_helper_paths()
-        if not (wine and python and helper):
-            return None
-        kind, host = "wine", wine
-    dll_dir = _bridge_dll_dir()
+        native_dir, native_helper = _native_helper_paths()
+        if native_dir and _native_platform():
+            kind, host = "native", native_helper
+        else:
+            wine = _wine_bin()
+            python, helper = _wine_helper_paths()
+            if not (wine and python and helper):
+                return None
+            kind, host = "wine", wine
+    dll_dir = native_dir if kind == "native" else _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin()
     token_file = _bridge_token_file() if (host and dll_dir and ffmpeg) else ""
     if not (host and dll_dir and ffmpeg and token_file):
@@ -5847,6 +5911,26 @@ def _bridge_ctrl_live(did, max_age=6.0):
         return True
 
 
+def _bridge_relay():
+    url = str(CONFIG.get("bridge_relay_url") or "").rstrip("/")
+    token = str(CONFIG.get("bridge_relay_token") or "")
+    return (url, token) if url and token else ("", "")
+
+
+def _bridge_relay_ptz(relay, token, did, op):
+    """把云台命令转发给有桥接的那台面板。"""
+    try:
+        req = urllib.request.Request(
+            relay + "/api/camera/relay_ptz",
+            data=json.dumps({"token": token, "did": did, "operation": op}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            return bool(json.loads(resp.read() or b"{}").get("ok"))
+    except Exception as exc:
+        LOG.warning("bridge relay ptz failed: %s", str(exc)[:120])
+        return False
+
+
 def _camera_known(did):
     with CAM_LOCK:
         items = CAM_CACHE.get("items") or []
@@ -5863,9 +5947,13 @@ def _camera_item(did):
 
 def _transcode_src(did):
     """面板转码档位：流畅 640x360 / 高清 720p（改动后需要重新注册 go2rtc 流）。"""
+    # go2rtc 内置 ffmpeg 读 RTSP 默认 5 秒超时；P2P 桥接首帧可能更慢，046 机型会超时。
+    tail = "#timeout=15000000"
     if (CAM_QUALITY.get(str(did)) or "sd") == "hd":
-        return "ffmpeg:cam_%s#video=h264#width=1280#height=720#bitrate=2500k" % did
-    return "ffmpeg:cam_%s#video=h264#width=640#height=360#bitrate=600k" % did
+        return ("ffmpeg:cam_%s#video=h264#width=1280#height=720#bitrate=2500k"
+                % did) + tail
+    return ("ffmpeg:cam_%s#video=h264#width=640#height=360#bitrate=600k"
+            % did) + tail
 
 
 def _bridge_src(bridge, did, model):
@@ -5876,6 +5964,13 @@ def _bridge_src(bridge, did, model):
 
 def _bridge_host_args(bridge, did, model):
     log = _bridge_log_path(bridge, did)
+    if bridge.get("kind") == "native":
+        return [bridge["host"],
+                "--did", str(did), "--model", str(model),
+                "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
+                "--token-file", bridge["token_file"],
+                "--log", log,
+                "--parent", str(os.getpid())]
     if bridge.get("kind") == "wine":
         return [bridge["host"], bridge["python"], bridge["helper"],
                 "--did", str(did), "--model", str(model),
@@ -6146,9 +6241,10 @@ def _camera_start():
                                % (port, _port_owner_text(port) or "其它程序"))
     ff_bin = _camera_ffmpeg_bin()
     os.makedirs(paths["root"], exist_ok=True)
-    config = ('api:\n  listen: "127.0.0.1:1984"\n'
-              'rtsp:\n  listen: "127.0.0.1:8554"\n'
-              'webrtc:\n  listen: "127.0.0.1:8555"\n')
+    share_host = "0.0.0.0" if CONFIG.get("bridge_share") is True else "127.0.0.1"
+    config = ("api:\n  listen: %s:1984\n" % share_host
+              + "rtsp:\n  listen: %s:8554\n" % share_host
+              + "webrtc:\n  listen: %s:8555\n" % share_host)
     if ff_bin:
         config += 'ffmpeg:\n  bin: %s\n' % json.dumps(ff_bin)
     with open(paths["config"], "w", encoding="utf-8") as f:
@@ -7429,12 +7525,15 @@ class Handler(BaseHTTPRequestHandler):
             self.api_device_unlock(body)
             return
         if not (u.path.startswith(("/api/admin/", "/api/auth/"))
-                or u.path in ("/api/camera/miss_rpc", "/api/camera/bridge_ctrl")):
+                or u.path in ("/api/camera/miss_rpc", "/api/camera/bridge_ctrl",
+                              "/api/camera/relay_ptz")):
             if not _device_authed(self):
                 self._send(401, {"ok": False, "unlock": True,
                                  "error": "此设备需要先输入 PIN"})
                 return
-        if u.path == "/api/camera/miss_rpc":
+        if u.path == "/api/camera/relay_ptz":
+            self.api_camera_relay_ptz(body)
+        elif u.path == "/api/camera/miss_rpc":
             self.api_camera_miss_rpc(body)
         elif u.path == "/api/camera/bridge_ctrl":
             self.api_camera_bridge_ctrl(body)
@@ -7829,13 +7928,53 @@ class Handler(BaseHTTPRequestHandler):
             self._send(429, {"ok": False, "error": "操作太频繁，慢一点"})
             return
         if not _bridge_ctrl_live(did):
-            self._send(409, {"ok": False, "error": "这台还没在拉流，先打开画面再控制"})
+            relay, rtoken = _bridge_relay()
+            if relay and _bridge_relay_ptz(relay, rtoken, did, op):
+                self._send(200, {"ok": True, "did": did, "operation": op, "via": "relay"})
+                return
+            self._send(409, {"ok": False,
+                             "error": "这台还没在拉流，先打开画面再控制"
+                                      if not relay else "本机没有桥接，远程桥接面板也没在拉这台"})
             return
         if not _bridge_ctrl_enqueue(did, MISS_CMD_MOTOR,
                                     ('{"operation":%d}' % op).encode("ascii")):
             self._send(429, {"ok": False, "error": "控制队列已满，稍后再试"})
             return
         self._send(200, {"ok": True, "did": did, "operation": op})
+
+    def api_camera_relay_ptz(self, body):
+        """给其他面板转发云台：token 鉴权，不要求 device cookie。"""
+        body = body or {}
+        expected = str(CONFIG.get("bridge_share_token") or "")
+        token = str(body.get("token") or "")
+        if (CONFIG.get("bridge_share") is not True or not expected or not token
+                or not hmac.compare_digest(token, expected)):
+            self._send(403, {"ok": False, "error": "桥接共享已关闭或令牌不正确"})
+            return
+        peer = self.client_address[0] if self.client_address else "?"
+        if not _rate_ok("relayptz:" + peer, 60, 10.0):
+            self._send(429, {"ok": False, "error": "操作太频繁"})
+            return
+        did = str(body.get("did") or "")[:32]
+        try:
+            op = int(body.get("operation"))
+        except (TypeError, ValueError):
+            op = 0
+        if not did or op not in (1, 2, 3, 4):
+            self._send(400, {"ok": False, "error": "参数不对"})
+            return
+        if not _camera_known(did):
+            self._send(404, {"ok": False, "error": "本机没有这台摄像头"})
+            return
+        if not _bridge_ctrl_live(did):
+            self._send(409, {"ok": False, "error": "本机没有在拉这台摄像头"})
+            return
+        if not _bridge_ctrl_enqueue(did, MISS_CMD_MOTOR,
+                                    ('{"operation":%d}' % op).encode("ascii")):
+            self._send(429, {"ok": False, "error": "控制队列已满"})
+            return
+        LOG.info("relay ptz from=%s did=%s op=%s", peer, did, op)
+        self._send(200, {"ok": True})
 
     def api_camera_miss_rpc(self, body):
         """本地桥接进程专用：用面板登录态代发小米云端 RPC，只允许回环 + 临时 token。"""
@@ -7900,19 +8039,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         args = _bridge_host_args(bridge, did, model)
         flags = 0x08000000 if os.name == "nt" else 0
-        wine_mode = bridge.get("kind") == "wine"
+        pipe_mode = bridge.get("kind") in ("wine", "native")
         try:
             proc = subprocess.Popen(args,
-                                    stdin=subprocess.PIPE if wine_mode else subprocess.DEVNULL,
+                                    stdin=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
                                     stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE if wine_mode else subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
                                     creationflags=flags)
         except Exception as exc:
             LOG.warning("bridge spawn failed: %s", exc)
             self._send(500, {"ok": False, "error": "桥接启动失败"})
             return
         ff = None
-        if wine_mode:
+        if pipe_mode:
             try:
                 proc.stdin.close()
             except Exception:
@@ -8462,12 +8601,38 @@ class Handler(BaseHTTPRequestHandler):
     def api_admin_p2p_bridge_save(self, body):
         if not self._admin_require():
             return
-        mode = str((body or {}).get("mode") or "auto").lower()
-        if mode not in ("auto", "always", "off"):
-            self._send(400, {"ok": False, "msg": "模式不合法"})
+        body = body or {}
+        updates = {}
+        if "mode" in body:
+            mode = str(body.get("mode") or "auto").lower()
+            if mode not in ("auto", "always", "off"):
+                self._send(400, {"ok": False, "msg": "模式不合法"})
+                return
+            updates["p2p_bridge"] = mode
+        if "relay_url" in body:
+            url = str(body.get("relay_url") or "").strip().rstrip("/")[:500]
+            if url and not url.startswith(("http://", "https://")):
+                self._send(400, {"ok": False, "msg": "远程桥接地址要以 http:// 开头"})
+                return
+            updates["bridge_relay_url"] = url
+        if "relay_token" in body:
+            updates["bridge_relay_token"] = str(body.get("relay_token") or "").strip()[:80]
+        if "share" in body:
+            updates["bridge_share"] = body.get("share") is True
+            if updates["bridge_share"] and not CONFIG.get("bridge_share_token"):
+                updates["bridge_share_token"] = secrets.token_urlsafe(18)
+        if body.get("regen_token") is True:
+            updates["bridge_share_token"] = secrets.token_urlsafe(18)
+        if not updates:
+            self._send(400, {"ok": False, "msg": "没有要保存的设置"})
             return
-        save_config({"p2p_bridge": mode})
+        save_config(updates)
         CAM_CACHE.update(ts=0, items=[])
+        if "bridge_share" in updates:
+            try:
+                _camera_start()   # 监听地址变了，重启 go2rtc
+            except Exception as exc:
+                LOG.warning("camera restart after share change: %s", str(exc)[:120])
         self._send(200, _bridge_status())
 
     def api_admin_update_upload(self):
@@ -10689,6 +10854,7 @@ def main():
         _run_update_worker(sys.argv[idx + 1:])
         return
     _load_caches()
+    _native_bridge_init()
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, _reexec_for_update)
     try:

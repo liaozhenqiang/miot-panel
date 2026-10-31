@@ -453,17 +453,17 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       <div class="row">
         <input id="go2rtcUrl" placeholder="http://192.168.1.10:1984" style="max-width:360px">
         <button onclick="saveGo2rtc()">保存并检测</button>
-        <button onclick="suggestGo2rtc()">使用音乐中心主机</button>
+        <button onclick="suggestGo2rtc()">使用音乐中心所在主机</button>
       </div>
-      <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；留空则使用本机自动安装的 go2rtc（仅监听 127.0.0.1，由面板代理播放）。远程 go2rtc 需自行限制来源/认证。</div>
+      <div class="hint">本机与摄像头不在同一网段时（例如 Windows 在 192.168.1.x、摄像头在 192.168.0.x），填写玩客云或同网段设备的 go2rtc 地址；对方面板需开启「桥接共享」或自行让 go2rtc 监听局域网。留空则使用本机自动安装的 go2rtc（仅监听 127.0.0.1，由面板代理播放）。远程 go2rtc 需自行限制来源/认证。</div>
       <div class="msg" id="go2rtcMsg"></div>
       <div class="sep"></div>
       <h3 style="margin:18px 0 6px;font-size:16px">异地摄像头：P2P 桥接</h3>
-      <div class="sub">Windows 面板与 amd64 Docker 镜像内置 P2P 桥接，可直连异地摄像头、不再依赖远程 go2rtc；arm/玩客云镜像没有这条通道。桥接只在播放时启动，请使用自己的账号和设备。</div>
+      <div class="sub" id="bridgeIntro">面板会在支持时使用本机 P2P 桥接访问异地摄像头；桥接只在播放时启动，请使用自己的账号和设备。</div>
       <div class="row" id="bridgeStatus" style="margin-bottom:8px"><span class="hint">正在检测…</span></div>
       <div class="row" style="margin-top:10px">
         <select id="bridgeMode" style="max-width:380px">
-          <option value="auto">自动：局域网直连，异地向 P2P 桥接</option>
+          <option value="auto">自动：局域网直连，异地走 P2P 桥接</option>
           <option value="always">始终使用 P2P 桥接（含本地摄像头）</option>
           <option value="off">关闭桥接（只用 go2rtc）</option>
         </select>
@@ -472,6 +472,26 @@ pre{background:#0f172a;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
       </div>
       <div class="msg" id="bridgeMsg"></div>
       <div class="hint" id="bridgeHint"></div>
+      <div class="sep"></div>
+      <h3 style="margin:18px 0 6px;font-size:16px">桥接共享 / 云台转发</h3>
+      <div class="sub">本机没有 P2P 桥接时，可以借一台有桥接的面板：在有桥接的那台开启「桥接共享」，把它的 go2rtc 地址填到上面的「远程摄像头服务」（视频），再把它的面板地址和共享令牌填到下面「远程云台转发」（仅云台控制）。共享会同时让 go2rtc 在局域网监听 1984，请只在可信局域网开启。</div>
+      <div class="row" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="bridgeShare" style="width:auto"> 允许其他面板使用本机 go2rtc / 云台转发</label>
+        <button onclick="saveBridgeShare()">保存共享设置</button>
+        <button onclick="regenBridgeToken()">重新生成令牌</button>
+      </div>
+      <div class="grid" style="margin-top:8px">
+        <div><label>共享令牌（云台转发用，给对方面板填）</label><input id="bridgeToken" readonly placeholder="未开启"></div>
+        <div><label>共享 go2rtc 地址（给对方面板填）</label><input id="bridgeGo2rtc" readonly placeholder="开启共享后显示"></div>
+      </div>
+      <div class="sep"></div>
+      <label>远程云台转发（仅云台；视频请用上面的远程 go2rtc）</label>
+      <div class="hint">本机没有 P2P 桥接时，先在上面填有桥接面板的 go2rtc 地址播放视频；这里只把云台按键转发给那台面板。</div>
+      <div class="grid">
+        <div><label>面板地址</label><input id="relayUrl" placeholder="http://192.168.1.10:8080"></div>
+        <div><label>对方的共享令牌</label><input id="relayToken" placeholder="在有桥接的面板上生成"></div>
+      </div>
+      <div class="row" style="margin-top:8px"><button onclick="saveBridgeRelay()">保存云台转发</button><span class="hint" id="relayHint"></span></div>
     </section>
 
     <div class="twoCols" id="secSecurity">
@@ -1500,19 +1520,46 @@ async function loadBridge(){
     var r=await api('/api/admin/p2p_bridge/status');
     if(r.status!==200||!r.data)return;
     var d=r.data||{};
+    var kind=d.kind||'';
+    var kindLabel={win:'Windows',wine:'Wine（amd64）',native:'ARM 原生'}[kind]||'无桥接';
     var el=$('bridgeStatus');
     if(el){
-      el.innerHTML='<span class="pill '+(d.platform_ok?'ok':'off')+'">'+(d.platform_ok?'Windows':'非 Windows')+'</span>'
+      el.innerHTML='<span class="pill '+(kind?'ok':'off')+'">'+kindLabel+'</span>'
         +'<span class="pill '+(d.helper_ok?'ok':'off')+'">桥接程序</span>'
         +'<span class="pill '+(d.dll_ok?'ok':'off')+'">桥接组件</span>'
         +'<span class="pill '+(d.ffmpeg_ok?'ok':'off')+'">ffmpeg</span>';
+    }
+    if($('bridgeIntro')){
+      $('bridgeIntro').textContent = kind==='native'
+        ? '本机 ARM 原生 P2P 桥接已可用，可直连异地摄像头、不再依赖远程 go2rtc。桥接只在播放时启动，请使用自己的账号和设备。'
+        : kind==='win'
+          ? 'Windows 面板内置 P2P 桥接，可直连异地摄像头、不再依赖远程 go2rtc。桥接只在播放时启动，请使用自己的账号和设备。'
+          : kind==='wine'
+            ? '当前面板通过 Wine 使用官方 Windows 桥接组件，可直连异地摄像头、不再依赖远程 go2rtc。桥接只在播放时启动，请使用自己的账号和设备。'
+            : '当前平台没有内置 P2P 桥接；可在上方填写远程 go2rtc，或借一台有桥接的面板（见下方）。';
     }
     if($('bridgeMode'))$('bridgeMode').value=d.mode||'auto';
     if($('bridgeMsg')){
       $('bridgeMsg').textContent=d.available?'已就绪：异地摄像头将走 P2P 直连。':('未就绪：'+(d.reasons||[]).join('；'));
       $('bridgeMsg').style.color=d.available?'var(--ok)':'';
     }
-    if($('bridgeHint'))$('bridgeHint').textContent=d.platform_ok?'桥接组件随面板内置，无需额外安装；如无法播放请先安装 ffmpeg。':'当前镜像没有 wine 桥接（P2P 桥接仅 Windows 与 amd64 镜像提供）；arm/玩客云请继续使用远程 go2rtc。';
+    if($('bridgeHint')){
+      $('bridgeHint').textContent = kind==='native'
+        ? '原生桥接组件已就绪；如无法播放请检查 ffmpeg。'
+        : kind==='win'
+          ? '桥接组件随 Windows 面板内置，无需额外安装；如无法播放请先安装 ffmpeg。'
+          : kind==='wine'
+            ? 'Wine 桥接已就绪；如无法播放请先安装 ffmpeg。'
+            : '当前平台没有内置 P2P 桥接；可用远程 go2rtc 或借有桥接的面板。';
+    }
+    if($('bridgeShare'))$('bridgeShare').checked=!!d.share;
+    if($('bridgeToken'))$('bridgeToken').value=d.share_token||'';
+    if($('bridgeGo2rtc')){
+      var lan=(state&&state.config&&state.config.lan_ip)||(lanInfo&&lanInfo.lan_ip)||location.hostname||'设备IP';
+      $('bridgeGo2rtc').value=d.share?('http://'+lan+':1984'):'';
+    }
+    if(document.activeElement!==$('relayUrl'))$('relayUrl').value=d.relay_url||'';
+    if($('relayHint'))$('relayHint').textContent=d.relay_set?'已配置云台转发':'未配置云台转发';
   }catch(e){}
 }
 async function saveBridge(){
@@ -1520,6 +1567,26 @@ async function saveBridge(){
   var r=await api('/api/admin/p2p_bridge/save',{mode:mode});
   if(r.status!==200||!r.data||!r.data.ok){toast((r.data&&r.data.msg)||'保存失败',true);return;}
   toast('桥接设置已保存');loadBridge();
+}
+async function saveBridgeShare(){
+  var share=!!($('bridgeShare')&&$('bridgeShare').checked);
+  var r=await api('/api/admin/p2p_bridge/save',{share:share});
+  if(r.status!==200||!r.data||!r.data.ok){toast((r.data&&r.data.msg)||'保存失败',true);return;}
+  toast(share?'已开启桥接共享（go2rtc 已对外监听，云台转发令牌已生成）':'已关闭桥接共享');
+  setTimeout(loadBridge,1500);
+}
+async function regenBridgeToken(){
+  if(!confirm('重新生成令牌？另一台面板要填新令牌才能继续控制云台。'))return;
+  var r=await api('/api/admin/p2p_bridge/save',{regen_token:true});
+  if(r.status!==200||!r.data||!r.data.ok){toast((r.data&&r.data.msg)||'生成失败',true);return;}
+  toast('令牌已更新');loadBridge();
+}
+async function saveBridgeRelay(){
+  var url=($('relayUrl').value||'').trim(),token=($('relayToken').value||'').trim();
+  var r=await api('/api/admin/p2p_bridge/save',{relay_url:url,relay_token:token});
+  if(r.status!==200||!r.data||!r.data.ok){toast((r.data&&r.data.msg)||'保存失败',true);return;}
+  toast(url&&token?'已保存云台转发，本机云台会转发到那台面板':'已清空云台转发');
+  $('relayToken').value='';loadBridge();
 }
 async function loadCustomPages(){
   var r=await api('/api/admin/pages');
@@ -1780,7 +1847,7 @@ function suggestGo2rtc(){
   try{
     var host=new URL(u).hostname;
     $('go2rtcUrl').value='http://'+host+':1984';
-    $('go2rtcMsg').textContent='已填入音乐中心所在主机的 go2rtc 地址，点“保存并检测”确认';
+    $('go2rtcMsg').textContent='已填入音乐中心所在主机的 go2rtc 地址；如对方未开启桥接共享/未监听局域网，请先在那台后台开启后再检测';
   }catch(e){$('go2rtcMsg').textContent='音乐中心地址无法解析';}
 }
 async function changePin(){
