@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.27"
+APP_VERSION = "0.7.28"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -363,6 +363,9 @@ def _normalize_config(data):
     renames = src.get("renames") if isinstance(src.get("renames"), dict) else {}
     out["renames"] = {str(k): str(v)[:40] for k, v in list(renames.items())[:500]
                       if str(v).strip()}
+    codecs = src.get("camera_codec") if isinstance(src.get("camera_codec"), dict) else {}
+    out["camera_codec"] = {str(k): str(v) for k, v in list(codecs.items())[:200]
+                           if str(v) in ("h264", "hevc")}
     cursor = str(src.get("hide_cursor") or "auto")
     out["hide_cursor"] = cursor if cursor in ("auto", "always", "never") else "auto"
     bridge = str(src.get("p2p_bridge") or BRIDGE_MODE_DEFAULT).lower()
@@ -2640,7 +2643,8 @@ def ensure_cameras(force=False):
                 continue
             item = {"did": did, "name": dev.get("name") or "摄像头",
                     "model": model, "online": bool(dev.get("isOnline")),
-                    "ip": ip, "stream": "", "error": "", "note": "", "source": ""}
+                    "ip": ip, "stream": "", "error": "", "note": "", "source": "",
+                    "direct": False, "codec": CAM_CODEC.get(did) or ""}
             blocked = False
             use_bridge = False
             if not item["online"]:
@@ -2670,32 +2674,26 @@ def ensure_cameras(force=False):
                         blocked = True
             if use_bridge:
                 try:
-                    src = _bridge_src(bridge, did, model)
-                    ok, err = _go2rtc_put("cam_" + did, src)
-                    if ok:
-                        if transcode:
-                            tsrc = _transcode_src(did)
-                            ok2, err2 = _go2rtc_put("cam_%s_h264" % did, tsrc)
-                            if ok2:
-                                item["stream"] = "cam_%s_h264" % did
-                                item["quality"] = CAM_QUALITY.get(did) or "sd"
-                                item["source"] = "bridge"
-                                item["ptz"] = True
-                                item["note"] = {
-                                    "win": "电脑版 P2P 桥接（可异地）",
-                                    "wine": "Wine P2P 桥接（可异地）",
-                                    "native": "本机原生 P2P 桥接（可异地）",
-                                    "qemu": "Linux amd64 P2P 桥接（QEMU ARM）",
-                                }.get((bridge or {}).get("kind"), "P2P 桥接（可异地）")
-                                item["error"] = ""
-                                items.append(item)
-                                continue
-                            item["error"] = "转码流注册失败"
-                        else:
-                            item["error"] = "未安装 ffmpeg，无法转码播放"
-                    else:
-                        item["error"] = "P2P 桥接注册失败"
+                    stream, err = _camera_register(did, _bridge_src(bridge, did, model), transcode)
+                    if stream:
+                        item["stream"] = stream
+                        item["direct"] = not stream.endswith("_h264")
+                        if not item["direct"]:
+                            item["quality"] = CAM_QUALITY.get(did) or "sd"
+                        item["source"] = "bridge"
+                        item["ptz"] = True
+                        item["note"] = {
+                            "win": "电脑版 P2P 桥接（可异地）",
+                            "wine": "Wine P2P 桥接（可异地）",
+                            "native": "本机原生 P2P 桥接（可异地）",
+                            "qemu": "Linux amd64 P2P 桥接（QEMU ARM）",
+                        }.get((bridge or {}).get("kind"), "P2P 桥接（可异地）")
+                        item["error"] = ""
+                        items.append(item)
+                        continue
+                    if "未安装 ffmpeg" not in err:
                         LOG.warning("camera %s bridge register failed: %s", did, err)
+                    item["error"] = err
                 except Exception as e:
                     item["error"] = str(e)[:120]
                     LOG.warning("camera %s bridge failed: %s", did, e)
@@ -2707,20 +2705,15 @@ def ensure_cameras(force=False):
                 item["note"] = rtsp_broken
             if not blocked and ip:
                 try:
-                    src = _camera_p2p_url(c, did, model, ip)
-                    ok, err = _go2rtc_put("cam_" + did, src)
-                    if not ok:
-                        raise RuntimeError(err)
-                    if transcode:
-                        tsrc = _transcode_src(did)
-                        ok, err = _go2rtc_put("cam_%s_h264" % did, tsrc)
-                        if ok:
-                            item["stream"] = "cam_%s_h264" % did
+                    stream, err = _camera_register(did, _camera_p2p_url(c, did, model, ip),
+                                                   transcode)
+                    if stream:
+                        item["stream"] = stream
+                        item["direct"] = not stream.endswith("_h264")
+                        if not item["direct"]:
                             item["quality"] = CAM_QUALITY.get(did) or "sd"
-                        else:
-                            item["error"] = "转码流注册失败"
                     else:
-                        item["error"] = "未安装 ffmpeg，无法转码播放"
+                        item["error"] = err
                 except Exception as e:
                     item["error"] = str(e)[:120]
                     LOG.warning("camera %s failed: %s", did, e)
@@ -6137,6 +6130,254 @@ def _transcode_src(did):
             % did) + tail
 
 
+TS_VIDEO_H264 = 0x1B
+TS_VIDEO_HEVC = 0x24
+TS_TYPES_SEEN = (0x02, 0x03, 0x04, 0x06, 0x0F, 0x11, 0x1B, 0x1C, 0x24)
+CAM_CODEC = dict(CONFIG.get("camera_codec") or {})   # did -> h264/hevc，决定能不能免转码直连
+CAM_CODEC_LOCK = threading.Lock()
+CAM_CODEC_NEXT = {}
+CAM_CODEC_BUSY = set()
+
+
+def _ts_packets(chunk):
+    """按 188 字节切 TS 包，返回 (pid, 段表数据)；一次失步就停，避免拿垃圾当表格。"""
+    offset = -1
+    for candidate in range(min(188, len(chunk) - 377)):
+        if (chunk[candidate] == 0x47 and chunk[candidate + 188] == 0x47
+                and chunk[candidate + 376] == 0x47):
+            offset = candidate          # 从流中间切入，先找三个连续包头
+            break
+    if offset < 0:
+        return []
+    out = []
+    for pos in range(offset, len(chunk) - 187, 188):
+        pkt = chunk[pos:pos + 188]
+        if pkt[0] != 0x47:
+            break
+        afc = pkt[3] & 0x30
+        if afc in (0x00, 0x20) or not (pkt[1] & 0x40):     # 无负载 / 非段起始
+            continue
+        head = 5 + pkt[4] if afc in (0x20, 0x30) else 4
+        if head > 186:
+            continue
+        body = pkt[head:]
+        start = 1 + body[0]                                # section pointer
+        if start >= len(body):
+            continue
+        out.append((((pkt[1] & 0x1F) << 8) | pkt[2], body[start:]))
+    return out
+
+
+def _pmt_stream_types(table, end):
+    """列出 PMT 里的码流类型；起点用模式匹配，各家封装器写的头部字节数不一样。"""
+    for start in range(10, max(10, end - 4)):
+        if (table[start] in TS_TYPES_SEEN and (table[start + 1] & 0xE0) == 0xE0
+                and (table[start + 3] & 0xF0) == 0xF0):
+            types = []
+            i = start
+            while (i + 5 <= end and (table[i + 1] & 0xE0) == 0xE0
+                   and (table[i + 3] & 0xF0) == 0xF0):
+                types.append(table[i])
+                i += 5 + (((table[i + 3] & 0x0F) << 8) | table[i + 4])
+            return types
+    return []
+
+
+def _ts_video_codec(chunk):
+    """在 TS 里找 PMT 读视频轨编码，不需要 ffmpeg。"""
+    if len(chunk) < 188 * 3:
+        return ""
+    for _pid, table in _ts_packets(chunk):
+        if table[0] != 0x02 or len(table) < 16:
+            continue
+        section = ((table[1] & 0x0F) << 8) | table[2]
+        end = min(len(table), 3 + section - 4)
+        types = _pmt_stream_types(table, end)
+        if TS_VIDEO_H264 in types:
+            return "h264"
+        if TS_VIDEO_HEVC in types:
+            return "hevc"
+    return ""
+
+
+def _camera_codec_learn(did, codec):
+    if codec not in ("h264", "hevc"):
+        return
+    with CAM_CODEC_LOCK:
+        if CAM_CODEC.get(str(did)) == codec:
+            return
+        CAM_CODEC[str(did)] = codec
+        snapshot = dict(CAM_CODEC)
+    save_config({"camera_codec": snapshot})
+    LOG.info("camera codec detected did=%s codec=%s", did, codec)
+    _camera_cache_expire()
+
+
+def _camera_codec_probe(did, hold=6.0, limit=2_000_000):
+    """拉一段 go2rtc 的 TS 判编码；读满 hold 秒顺带把流预热，播放器接上就是秒开。"""
+    url = (_go2rtc_base() + "/api/stream.ts?"
+           + urllib.parse.urlencode({"src": "cam_%s" % did}))
+    buf = b""
+    codec = ""
+    deadline = time.time() + hold
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            read = getattr(resp, "read1", None) or resp.read
+            while time.time() < deadline and len(buf) < limit:
+                try:
+                    chunk = read(65536)
+                except Exception:
+                    break
+                if not chunk:
+                    break
+                buf += chunk
+                if not codec:
+                    codec = _ts_video_codec(buf[-262144:])
+                    if codec:
+                        _camera_codec_learn(did, codec)
+    except Exception as exc:
+        LOG.debug("camera codec probe failed: %s", str(exc)[:120])
+    if not codec and buf:
+        codec = _ts_video_codec(buf[-262144:])
+        if codec:
+            _camera_codec_learn(did, codec)
+    LOG.info("camera codec probe did=%s bytes=%d codec=%s", did, len(buf), codec or "-")
+    return codec
+
+
+def _camera_codec_probe_async(did):
+    did = str(did)
+    with CAM_CODEC_LOCK:
+        if did in CAM_CODEC_BUSY or time.time() < CAM_CODEC_NEXT.get(did, 0):
+            return
+        CAM_CODEC_BUSY.add(did)
+
+    def run():
+        try:
+            if not _camera_codec_probe(did):
+                with CAM_CODEC_LOCK:
+                    CAM_CODEC_NEXT[did] = time.time() + 600
+        finally:
+            with CAM_CODEC_LOCK:
+                CAM_CODEC_BUSY.discard(did)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+SNAPSHOT_TTL = 45                  # 45 秒内的缓存直接用，不再找 go2rtc 要帧
+SNAPSHOT_MAX = 4 * 1024 * 1024
+SNAPSHOT_LOCK = threading.Lock()
+
+
+def _camera_snapshot_file(did):
+    safe = re.sub(r"[^0-9A-Za-z._-]", "", str(did)) or "camera"
+    return os.path.join(_camera_paths()["root"], "snapshots", safe + ".jpg")
+
+
+def _camera_snapshot_read(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def _camera_snapshot_cached(did):
+    """TTL 内的缓存快照；命中就不用限流，也不会去打扰 go2rtc。"""
+    path = _camera_snapshot_file(did)
+    try:
+        if time.time() - os.path.getmtime(path) >= SNAPSHOT_TTL:
+            return b""
+    except OSError:
+        return b""
+    return _camera_snapshot_read(path)
+
+
+def _camera_snapshot(did, refresh=False):
+    """最近一帧画面：先给本地缓存，没有才让 go2rtc 抓一帧（这一步要 ffmpeg）。"""
+    path = _camera_snapshot_file(did)
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        age = None
+    if age is not None and age < SNAPSHOT_TTL and not refresh:
+        return _camera_snapshot_read(path)
+    data = b""
+    if _camera_go2rtc_ok():
+        url = _go2rtc_base() + "/api/frame.jpeg?src=" + urllib.parse.quote("cam_%s" % did)
+        try:
+            req = urllib.request.Request(url,
+                                         headers={"User-Agent": "%s/%s" % (APP_NAME, APP_VERSION)})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                got = resp.read(SNAPSHOT_MAX)
+            if got[:2] == b"\xff\xd8" and len(got) > 512:
+                data = got
+        except Exception as exc:
+            LOG.debug("camera snapshot fetch failed: %s", str(exc)[:120])
+    if data:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with SNAPSHOT_LOCK:
+                tmp = path + ".tmp"
+                with open(tmp, "wb") as f:
+                    f.write(data)
+                os.replace(tmp, path)
+        except OSError:
+            pass
+        return data
+    return _camera_snapshot_read(path)        # 抓不到就退回上一帧，不给黑屏
+
+
+def _camera_play_src(did, transcode_ready):
+    """H.264 直接播原始流（省掉一整趟解码再编码）；HEVC/未知编码或用户点名清晰度才转码。"""
+    did = str(did)
+    with CAM_CODEC_LOCK:
+        codec = CAM_CODEC.get(did) or ""
+    if codec == "h264" and (not CAM_QUALITY.get(did) or not transcode_ready):
+        return "cam_%s" % did
+    if transcode_ready:
+        return "cam_%s_h264" % did
+    return ""
+
+
+def _camera_ready_payload(did, name, names, recovered=False):
+    """ensure 的回复：编码已知就顺手换成免转码的那一路，并安排一次编码探测。"""
+    payload = {"ok": True, "ready": True, "src": name}
+    if recovered:
+        payload["recovered"] = True
+    if not did:
+        return payload
+    ready = bool(_camera_ffmpeg_bin()) or bool(_camera_external_go2rtc())
+    pick = _camera_play_src(did, ready)
+    if pick and pick.endswith("_h264") and pick not in names:
+        if _go2rtc_put(pick, _transcode_src(did))[0]:
+            names = set(names) | {pick}
+    if pick and pick in names:
+        payload["src"] = pick
+        payload["direct"] = not pick.endswith("_h264")
+    if not CAM_QUALITY.get(did):
+        _camera_codec_probe_async(did)
+    return payload
+
+
+def _camera_register(did, raw_src, transcode):
+    """注册原始流；只有确实要转码时才注册转码流。返回 (播放流名, 错误)。"""
+    did = str(did)
+    ok, err = _go2rtc_put("cam_" + did, raw_src)
+    if not ok:
+        return "", err or "流注册失败"
+    pick = _camera_play_src(did, transcode)
+    if pick.endswith("_h264"):
+        ok2, err2 = _go2rtc_put("cam_%s_h264" % did, _transcode_src(did))
+        if not ok2:
+            return "", err2 or "转码流注册失败"
+        return pick, ""
+    if pick:
+        return pick, ""
+    return "", "未安装 ffmpeg，无法转码播放"
+
+
 def _bridge_src(bridge, did, model):
     q = urllib.parse.urlencode({"did": did, "model": model,
                                 "sig": _bridge_sig(did, model)})
@@ -7676,6 +7917,8 @@ class Handler(BaseHTTPRequestHandler):
             self.api_camera_ensure(u)
         elif u.path == "/api/camera_state":
             self.api_camera_state(u)
+        elif u.path == "/api/camera/snapshot":
+            self.api_camera_snapshot(u)
         elif u.path == "/api/camera/bridge_stream":
             self.api_camera_bridge_stream(u)
         elif u.path == "/api/camera/setup_state":
@@ -8338,6 +8581,9 @@ class Handler(BaseHTTPRequestHandler):
         if not name.startswith("cam_"):
             self._send(400, {"ok": False, "ready": False, "error": "流名不合法"})
             return
+        did = name[len("cam_"):]
+        if did.endswith("_h264"):
+            did = did[:-len("_h264")]
         if not _camera_external_go2rtc() and not _camera_rtsp_ok():
             state = _camera_state_read()
             if state.get("installed") and not state.get("disabled"):
@@ -8349,11 +8595,8 @@ class Handler(BaseHTTPRequestHandler):
                         LOG.warning("camera ensure start failed: %s", str(exc)[:160])
         ready, names = _go2rtc_stream_names()
         if ready and name in names:
-            self._send(200, {"ok": True, "ready": True})
+            self._send(200, _camera_ready_payload(did, name, names))
             return
-        did = name[len("cam_"):]
-        if did.endswith("_h264"):
-            did = did[:-len("_h264")]
         reason = ""
         try:
             _camera_cache_expire()
@@ -8366,7 +8609,7 @@ class Handler(BaseHTTPRequestHandler):
             reason = str(exc)[:160]
         ready, names = _go2rtc_stream_names()
         if ready and name in names:
-            self._send(200, {"ok": True, "ready": True, "recovered": True})
+            self._send(200, _camera_ready_payload(did, name, names, recovered=True))
             return
         self._send(200, {"ok": False, "ready": False,
                          "error": reason or "摄像头流未就绪，请点“刷新”重试"})
@@ -8388,6 +8631,27 @@ class Handler(BaseHTTPRequestHandler):
                              "consumers": len(cons)})
         except Exception:
             self._send(200, {"ok": False, "active": False, "consumers": 0})
+
+    def api_camera_snapshot(self, u=None):
+        """最近一帧的 JPEG，用来垫在真实画面出来之前，避免点开是黑屏。"""
+        q = urllib.parse.parse_qs((u.query if u else "") or "")
+        did = (q.get("did") or [""])[0].strip()[:32]
+        refresh = (q.get("refresh") or [""])[0] in ("1", "true", "yes")
+        if not did or not _camera_known(did):
+            self._send(404, {"ok": False, "error": "没有这台摄像头"})
+            return
+        peer = self.client_address[0] if self.client_address else "?"
+        data = b"" if refresh else _camera_snapshot_cached(did)
+        if not data:
+            # 只有真去 go2rtc 抓帧才限流，45 秒内的缓存复用不计数
+            if not _rate_ok("snap:" + peer, 60, 60, 0.1):
+                self._send(429, {"ok": False, "error": "刷新太快，稍等一下"})
+                return
+            data = _camera_snapshot(did, refresh=refresh)
+        if not data:
+            self._send(404, {"ok": False, "error": "还没有画面"})
+            return
+        self._send(200, data, "image/jpeg")
 
     def api_camera_setup_state(self):
         payload = _camera_setup_payload()

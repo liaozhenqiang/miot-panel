@@ -289,3 +289,173 @@ def test_stale_sensor_cache_refetches_and_saves_props(tmp_path, monkeypatch):
     assert props and props[0]["key"] == "temp"
     assert props[0]["unit"] == "°C"
     assert json.loads(cache.read_text(encoding="utf-8"))["test.sensor"]
+
+
+def _ts_packet(pid, payload, adapt_len=0):
+    head = bytearray([0x47, 0x40 | (pid >> 8), pid & 0xFF, 0x30 if adapt_len else 0x10])
+    if adapt_len:
+        head.append(adapt_len)
+        head += bytearray([0x00] * adapt_len)
+    body = bytearray([0x00]) + bytearray(payload)          # section pointer + table
+    pkt = bytes(head) + bytes(body)
+    return pkt + b"\xff" * (188 - len(pkt))
+
+
+def _ts_capture(video_type):
+    pat = [0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x04, 0x00, 0x01, 0xE0, 0x10, 0, 0, 0, 0]
+    pmt = [0x02, 0xB0, 0x10, 0x00, 0x01, 0xC1, 0xE1, 0x01, 0xF0, 0x00,
+           video_type, 0xE1, 0x01, 0xF0, 0x00, 0, 0, 0, 0]
+    return _ts_packet(0, pat) + _ts_packet(16, pmt, adapt_len=3) + _ts_packet(16, [0x00] * 40)
+
+
+def test_ts_video_codec_detects_h264():
+    assert miot._ts_video_codec(_ts_capture(miot.TS_VIDEO_H264)) == "h264"
+
+
+def test_ts_video_codec_resyncs_mid_stream():
+    # 从流中间截断时包头不在 0 偏移，必须自己找回步长
+    stream = _ts_capture_go2rtc(miot.TS_VIDEO_H264)
+    assert miot._ts_video_codec(b"\x12\x34\x56" + stream) == "h264"
+
+
+def _ts_capture_go2rtc(video_type):
+    """go2rtc 的写法：PAT 的 following_len 是 0，PMT 的 program_info_length 写成 0xFFFF。"""
+    pat = [0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x01, 0xF0, 0x00, 0, 0, 0, 0]
+    pmt = [0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xFF, 0xFF, 0xF0, 0x00,
+           video_type, 0xE1, 0x00, 0xF0, 0x00, 0, 0, 0, 0]
+    return _ts_packet(0, pat) + _ts_packet(4096, pmt) + _ts_packet(256, [0x00] * 60)
+
+
+def test_ts_video_codec_handles_go2rtc_pmt_quirk():
+    assert miot._ts_video_codec(_ts_capture_go2rtc(miot.TS_VIDEO_H264)) == "h264"
+    assert miot._ts_video_codec(_ts_capture_go2rtc(miot.TS_VIDEO_HEVC)) == "hevc"
+
+
+def test_ts_video_codec_detects_hevc():
+    assert miot._ts_video_codec(_ts_capture(miot.TS_VIDEO_HEVC)) == "hevc"
+
+
+def test_ts_video_codec_returns_empty_on_junk():
+    assert miot._ts_video_codec(b"not a transport stream at all") == ""
+    assert miot._ts_video_codec(_ts_packet(7, [0x00] * 100)) == ""
+
+
+def test_camera_snapshot_serves_fresh_cache_without_go2rtc(tmp_path, monkeypatch):
+    root = tmp_path / "camera-stack"
+    (root / "snapshots").mkdir(parents=True)
+    monkeypatch.setattr(miot, "_camera_paths",
+                        lambda: {"root": str(root)})
+    jpg = b"\xff\xd8" + b"frame" * 200
+    (root / "snapshots" / "77.jpg").write_bytes(jpg)
+    called = []
+    monkeypatch.setattr(miot, "_camera_go2rtc_ok", lambda: called.append(1) or True)
+    assert miot._camera_snapshot("77") == jpg
+    assert called == []                      # 45 秒内的缓存不该再去抓帧
+
+
+def test_camera_snapshot_fetches_and_caches(tmp_path, monkeypatch):
+    root = tmp_path / "camera-stack"
+    root.mkdir()
+    monkeypatch.setattr(miot, "_camera_paths", lambda: {"root": str(root)})
+    monkeypatch.setattr(miot, "_camera_go2rtc_ok", lambda: True)
+    monkeypatch.setattr(miot, "_go2rtc_base", lambda: "http://127.0.0.1:1984")
+    jpg = b"\xff\xd8" + b"x" * 3000
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, *a):
+            return jpg
+
+    seen = []
+    monkeypatch.setattr(miot.urllib.request, "urlopen",
+                        lambda req, *a, **k: seen.append(req.full_url) or Resp())
+    assert miot._camera_snapshot("88") == jpg
+    assert "cam_88" in seen[0]
+    assert (root / "snapshots" / "88.jpg").read_bytes() == jpg
+
+
+def test_camera_snapshot_falls_back_to_last_frame(tmp_path, monkeypatch):
+    root = tmp_path / "camera-stack"
+    (root / "snapshots").mkdir(parents=True)
+    monkeypatch.setattr(miot, "_camera_paths", lambda: {"root": str(root)})
+    stale = b"\xff\xd8" + b"old" * 400
+    (root / "snapshots" / "99.jpg").write_bytes(stale)
+    monkeypatch.setattr(miot, "_camera_go2rtc_ok", lambda: True)
+    monkeypatch.setattr(miot, "_go2rtc_base", lambda: "http://127.0.0.1:1984")
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, *a):
+            return b"<html>ffmpeg missing</html>"      # 不是 JPEG
+
+    monkeypatch.setattr(miot.urllib.request, "urlopen", lambda *a, **k: Resp())
+    assert miot._camera_snapshot("99", refresh=True) == stale
+    assert (root / "snapshots" / "99.jpg").read_bytes() == stale
+
+
+def test_camera_codec_config_round_trip(tmp_path, monkeypatch):
+    cfg = tmp_path / "cloud_config.json"
+    monkeypatch.setattr(miot, "CONFIG_FILE", str(cfg))
+    miot.CONFIG["camera_codec"] = {"12": "h264", "13": "hevc", "14": "bogus"}
+    miot.save_config({"camera_codec": {"12": "h264", "13": "hevc", "14": "bogus"}})
+    saved = json.loads(cfg.read_text(encoding="utf-8"))
+    assert saved["camera_codec"] == {"12": "h264", "13": "hevc"}   # 只认两种编码
+    assert miot._normalize_config({})["camera_codec"] == {}
+
+
+def test_camera_play_src_prefers_direct_for_h264():
+    cam, quality = dict(miot.CAM_CODEC), dict(miot.CAM_QUALITY)
+    try:
+        miot.CAM_CODEC["1"] = "h264"
+        miot.CAM_CODEC["2"] = "hevc"
+        assert miot._camera_play_src("1", True) == "cam_1"
+        assert miot._camera_play_src("2", True) == "cam_2_h264"
+        assert miot._camera_play_src("3", True) == "cam_3_h264"       # 未知编码保守走转码
+        miot.CAM_QUALITY["1"] = "hd"
+        assert miot._camera_play_src("1", True) == "cam_1_h264"       # 点名清晰度就要转码
+        assert miot._camera_play_src("3", False) == ""
+        assert miot._camera_play_src("1", False) == "cam_1"
+    finally:
+        miot.CAM_CODEC.clear(), miot.CAM_QUALITY.clear()
+        miot.CAM_CODEC.update(cam), miot.CAM_QUALITY.update(quality)
+
+
+def test_camera_ready_payload_switches_to_direct_when_registered(monkeypatch):
+    cam, quality = dict(miot.CAM_CODEC), dict(miot.CAM_QUALITY)
+    probed = []
+    monkeypatch.setattr(miot, "_camera_ffmpeg_bin", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(miot, "_camera_external_go2rtc", lambda: "")
+    monkeypatch.setattr(miot, "_go2rtc_put", lambda *a: (True, ""))
+    monkeypatch.setattr(miot, "_camera_codec_probe_async", probed.append)
+    try:
+        miot.CAM_CODEC.clear()
+        miot.CAM_CODEC["5"] = "h264"
+        miot.CAM_QUALITY.clear()
+        got = miot._camera_ready_payload("5", "cam_5_h264", {"cam_5", "cam_5_h264"})
+        assert got["src"] == "cam_5" and got["direct"] is True
+        assert probed == ["5"]
+        # 未知编码时保持原样，并且会安排一次探测
+        miot.CAM_CODEC.clear()
+        got = miot._camera_ready_payload("6", "cam_6_h264", {"cam_6", "cam_6_h264"})
+        assert got["src"] == "cam_6_h264" and got.get("direct") is False
+        assert probed == ["5", "6"]
+        # 用户选了清晰度就不再自动切回直连
+        miot.CAM_CODEC["7"] = "h264"
+        miot.CAM_QUALITY["7"] = "sd"
+        got = miot._camera_ready_payload("7", "cam_7", {"cam_7", "cam_7_h264"})
+        assert got["src"] == "cam_7_h264"
+        assert probed == ["5", "6"]                      # 已选档位不重复探测
+    finally:
+        miot.CAM_CODEC.clear(), miot.CAM_QUALITY.clear()
+        miot.CAM_CODEC.update(cam), miot.CAM_QUALITY.update(quality)
+

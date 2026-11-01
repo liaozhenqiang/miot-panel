@@ -34,6 +34,9 @@ button.btn[disabled]{opacity:.45;pointer-events:none;}
 .camState{font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cam.active .camState{color:#ffb27a;}
 .stage{position:relative;flex:1;min-width:0;background:#000;overflow:hidden;}
+.snap{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:1;}
+.snap[hidden]{display:none;}
+body .loading.snapOn{background:rgba(4,6,10,.34);}
 iframe{display:block;width:100%;height:100%;border:0;background:#000;}
 .loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(4,6,10,.82);z-index:5;}
 .loading[hidden]{display:none;}
@@ -292,6 +295,7 @@ body.theme-paper .ptz{background:radial-gradient(circle at 50% 38%,#20404a,#101c
   <section class="stage">
     <iframe id="player" title="摄像头画面" allow="autoplay"
       sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-presentation"></iframe>
+    <img id="snap" class="snap" alt="" hidden>
     <div class="loading" id="loading">
       <div class="spinner"></div>
       <div class="loadText" id="loadText">正在读取摄像头…</div>
@@ -313,7 +317,7 @@ body.theme-paper .ptz{background:radial-gradient(circle at 50% 38%,#20404a,#101c
       <button type="button" data-q="sd">流畅</button>
       <button type="button" data-q="hd">高清</button>
     </div>
-    <div class="hintBar">本机转码 · 约 1–2 秒延迟</div>
+    <div class="hintBar" id="hintBar">本机转码 · 约 1–2 秒延迟</div>
   </section>
 </div>
 <script>
@@ -328,6 +332,9 @@ var loadText = document.getElementById('loadText');
 var errBox = document.getElementById('errBox');
 var errText = document.getElementById('errText');
 var errSub = document.getElementById('errSub');
+var snap = document.getElementById('snap');
+var hintBar = document.getElementById('hintBar');
+snap.onerror = function () { snap.hidden = true; loading.classList.remove('snapOn'); };
 var listEl = document.getElementById('camList');
 var countEl = document.getElementById('camCount');
 var barHint = document.getElementById('barHint');
@@ -521,6 +528,31 @@ function setLoading(text) {
   if (text) { loadText.textContent = text; loading.hidden = false; }
   else { loading.hidden = true; }
 }
+function showSnap(cam) {
+  // 真实画面要等首帧，先用最近一帧快照垫着，不让用户对着黑屏
+  snap.hidden = true;
+  loading.classList.remove('snapOn');
+  if (!cam || !cam.did) return;
+  var url = '/api/camera/snapshot?did=' + encodeURIComponent(cam.did) + '&t=' + Date.now();
+  var probe = new Image();
+  probe.onload = function () {
+    if (current !== cam) return;
+    snap.src = url;
+    snap.hidden = false;
+    loading.classList.add('snapOn');
+  };
+  probe.src = url;
+}
+function hideSnap() {
+  snap.hidden = true;
+  loading.classList.remove('snapOn');
+}
+function refreshSnap(cam) {
+  // 画面已经通了，顺手更新缓存的快照，下次点开就有垫图
+  if (!cam || !cam.did) return;
+  fetch('/api/camera/snapshot?did=' + encodeURIComponent(cam.did) + '&refresh=1',
+        { cache: 'no-store' }).catch(function () {});
+}
 function showError(text, sub) {
   errText.textContent = text || '画面暂时不可用';
   errSub.textContent = sub || '';
@@ -603,6 +635,8 @@ function setQuality(q) {
     }
     camQuality = q;
     cam.quality = q;
+    cam.direct = false;
+    cam.stream = 'cam_' + cam.did + '_h264';   // 清晰度是转码档位，切回转码流
     syncQuality();
     barHint.textContent = cam.name + ' · 已切到' + (q === 'hd' ? '高清 720p' : '流畅 640×360') + '，正在重连画面…';
     setTimeout(function () {
@@ -630,12 +664,23 @@ function stopPlay() {
   clearInterval(pollTimer); clearTimeout(failTimer);
   pollTimer = null; failTimer = null;
   ptzStop();
+  hideSnap();
   try { player.src = 'about:blank'; } catch (e) {}
 }
 function ensureStream(cam) {
   return fetch('/api/camera_ensure?src=' + encodeURIComponent(cam.stream), { cache: 'no-store' })
     .then(function (r) { return r.json(); })
-    .then(function (d) { return !!(d && d.ok && d.ready); })
+    .then(function (d) {
+      if (d && d.ok && d.ready) {
+        // 面板可能判定这一路可以免转码直连，返回它选好的流名
+        if (d.src && d.src !== cam.stream) {
+          cam.stream = d.src;
+          cam.direct = !!d.direct;
+        }
+        return true;
+      }
+      return false;
+    })
     .catch(function () { return false; });
 }
 function watchStream(cam) {
@@ -655,8 +700,10 @@ function watchStream(cam) {
           pollTimer = null; failTimer = null;
           setLoading('');
           hideError();
+          hideSnap();
+          refreshSnap(cam);
           player.style.visibility = 'visible';   // 确认有数据才显示，避免看到 go2rtc 自己糊的 ffmpeg 报错
-          barHint.textContent = cam.name + ' · 实时画面';
+          barHint.textContent = cam.name + ' · 实时画面' + (cam.direct ? '（直连，未转码）' : '');
           return;
         }
         var waited = Date.now() - started;
@@ -685,7 +732,7 @@ function playCamera(cam) {
   hideError();
   stopPlay();
   syncPtz();
-  camQuality = (cam && cam.quality) || 'sd';
+  camQuality = (cam && cam.quality) || (cam && cam.direct ? '' : 'sd');
   syncQuality();
   if (!cam) return;
   if (!cam.stream) {
@@ -695,7 +742,9 @@ function playCamera(cam) {
   }
   setLoading('正在连接「' + cam.name + '」…');
   barHint.textContent = cam.name + ' · 连接中';
+  hintBar.textContent = cam.direct ? '原始流直连 · 不转码' : '本机转码 · 约 1–2 秒延迟';
   player.style.visibility = 'hidden';
+  showSnap(cam);
   ensureStream(cam).then(function (ok) {
     if (current !== cam) return;
     if (!ok) {
@@ -705,6 +754,10 @@ function playCamera(cam) {
       return;
     }
     player.src = PLAY_BASE + encodeURIComponent(cam.stream) + '&mode=mse,hls';
+    // ensure 可能把这一路换成免转码的原始流，提示和档位跟着更新
+    camQuality = cam.quality || (cam.direct ? '' : camQuality);
+    syncQuality();
+    hintBar.textContent = cam.direct ? '原始流直连 · 不转码' : '本机转码 · 约 1–2 秒延迟';
     watchStream(cam);
   });
 }

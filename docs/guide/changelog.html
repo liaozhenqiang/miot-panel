@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>更新日志 · 米家面板文档</title>
 
-<meta name="description" content="米家面板 v0.7.27 及历史版本的功能与修复记录。">
+<meta name="description" content="米家面板 v0.7.28 及历史版本的功能与修复记录。">
 <link rel="canonical" href="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="米家面板">
 <meta property="og:title" content="更新日志 · 米家面板文档">
-<meta property="og:description" content="米家面板 v0.7.27 及历史版本的功能与修复记录。">
+<meta property="og:description" content="米家面板 v0.7.28 及历史版本的功能与修复记录。">
 <meta property="og:url" content="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
 <meta property="og:image" content="https://liaozhenqiang.github.io/miot-panel/assets/hero.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -57,8 +57,15 @@
   <main class="content">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="../guide/quickstart.html">文档</a><span>/</span><span>更新日志</span></div>
     <h1>更新日志</h1>
-    <p class="page-desc">米家面板 v0.7.27 及历史版本的功能与修复记录。</p>
+    <p class="page-desc">米家面板 v0.7.28 及历史版本的功能与修复记录。</p>
     
+<h2 id="h-latest">v0.7.28 <span class="pgh-date">2026-11-01</span></h2>
+<ul>
+<li>摄像头选流优化：面板直接读视频流的 PMT 判断编码（不依赖 ffmpeg），H.264 走原始流播放，不再多一道解码再编码；HEVC 或主动选「流畅/高清」时才转码。</li>
+<li>弱机（玩客云、路由器、NAS）CPU 占用明显下降，编码结果会记住，重启后依旧生效。</li>
+<li>点开摄像头先用最近一帧画面垫住黑屏，真实画面接上后自动切换；容器实测热缓存 0.4 秒出图、真实画面约 3 秒接上。</li>
+<li>没装 ffmpeg 的机器上，H.264 摄像头现在也能直接播放，不再提示「无法转码播放」。</li>
+</ul>
 <h2 id="h-0">v0.7.27 <span class="pgh-date">2026-11-01</span></h2>
 <ul>
 <li>修复一键安装器：<code>…-installer.run</code> 引导脚本 cd 的目录名与包内实际目录不一致（少一个 <code>v</code>），从 v0.7.20 起 <code>sudo ./…-installer.run</code> 会报 “No such file or directory” 且什么都不装；现在按包内真实目录匹配，Linux 与 Docker 安装器均已容器内重跑。</li>

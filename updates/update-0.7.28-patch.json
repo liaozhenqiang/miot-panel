@@ -1,0 +1,8 @@
+{
+  "version": "0.7.28",
+  "released": "2026-11-01",
+  "notes": "摄像头打开更快：H.264 不再多转一道，点开先给一帧画面。面板自己读视频流的 PMT 判断编码，H.264 直接播原始流，弱机 CPU 明显下降；HEVC 或主动选清晰度时才转码，编码结果会记住；新增最近一帧快照，真实画面接上前不再黑屏等待。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.28-update.tar.gz",
+  "sha256": "4c7cd78b3f9c0b0c8cc86e38051c383fd543322ce7e1df1540e4490a45b1ecba",
+  "size": 2994531
+}
