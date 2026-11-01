@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.26"
+APP_VERSION = "0.7.27"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -441,11 +441,32 @@ def save_config(updates):
 def config_value(key, default=None):
     return CONFIG.get(key, DEFAULT_CONFIG.get(key, default))
 
+def _private_ipv4(value):
+    try:
+        ip = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return False
+    return (ip.version == 4 and ip.is_private and not ip.is_loopback
+            and not ip.is_link_local)
+
+
 def get_lan_ip():
-    """取本机局域网 IPv4，用于生成手机扫码登录的二维码 URL。"""
+    """取本机局域网 IPv4，用于生成手机扫码登录的二维码 URL。
+
+    路由器上访问 8.8.8.8 时源地址是 WAN，所以这里不能直接采用 UDP 探测结果；
+    Linux 优先按网卡名挑 LAN，再看 hostname -I，最后才退回公网地址。
+    """
     override = os.environ.get("MIOT_LAN_IP")
     if override:
         return override.strip()
+    candidates = []
+    public_fallback = ""
+
+    def add(ip):
+        ip = str(ip or "").strip()
+        if _private_ipv4(ip) and ip not in candidates:
+            candidates.append(ip)
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -454,25 +475,54 @@ def get_lan_ip():
         finally:
             s.close()
         if ip and not ip.startswith("127."):
-            return ip
+            if _private_ipv4(ip):
+                add(ip)
+            elif not public_fallback:
+                public_fallback = ip
     except Exception:
         pass
-    if os.name != "nt":
+
+    if os.name != "nt" and not candidates:
+        try:
+            out = subprocess.run(["ip", "-4", "-o", "addr", "show"],
+                                 capture_output=True, text=True, timeout=3).stdout
+            scored = []
+            for line in out.splitlines():
+                m = re.match(r"\d+:\s+([^:]+):.*\binet\s+([0-9.]+)/", line)
+                if not m:
+                    continue
+                name, ip = m.group(1), m.group(2)
+                if not _private_ipv4(ip):
+                    continue
+                score = 0
+                if name.startswith(("lan", "br-lan", "eth", "en", "wlan", "br")):
+                    score += 20
+                if name.startswith(("wan", "ppp", "pppoe")):
+                    score -= 30
+                if name.startswith(("tun", "tap", "sovpn", "docker", "veth", "virbr", "wg")):
+                    score -= 10
+                scored.append((score, ip))
+            for _, ip in sorted(scored, key=lambda item: -item[0]):
+                add(ip)
+        except Exception:
+            pass
         try:
             out = subprocess.run(["hostname", "-I"], capture_output=True,
                                  text=True, timeout=3).stdout.split()
             for ip in out:
-                if ip.startswith("127.") or ":" in ip:
-                    continue
-                return ip
+                add(ip)
         except Exception:
             pass
+
     try:
         for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-            if ip and not ip.startswith("127."):
-                return ip
+            add(ip)
     except Exception:
         pass
+    if candidates:
+        return candidates[0]
+    if public_fallback:
+        return public_fallback
     return "127.0.0.1"
 
 LAN_IP = get_lan_ip()
@@ -2635,6 +2685,7 @@ def ensure_cameras(force=False):
                                     "win": "电脑版 P2P 桥接（可异地）",
                                     "wine": "Wine P2P 桥接（可异地）",
                                     "native": "本机原生 P2P 桥接（可异地）",
+                                    "qemu": "Linux amd64 P2P 桥接（QEMU ARM）",
                                 }.get((bridge or {}).get("kind"), "P2P 桥接（可异地）")
                                 item["error"] = ""
                                 items.append(item)
@@ -4575,7 +4626,7 @@ def _wait_http(url, timeout=25, want_json=False):
     return None
 
 
-def _stack_popen(args, cwd, log_path):
+def _stack_popen(args, cwd, log_path, env=None):
     os.makedirs(cwd, exist_ok=True)
     log = open(log_path, "ab")
     flags = 0
@@ -4586,7 +4637,7 @@ def _stack_popen(args, cwd, log_path):
     try:
         proc = subprocess.Popen(
             args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-            creationflags=flags, close_fds=True,
+            creationflags=flags, close_fds=True, env=env,
             **({} if os.name == "nt" else {"start_new_session": True}))
         return proc.pid
     finally:
@@ -4688,11 +4739,69 @@ def _stack_setup_gmd(gmd_dir, gmd_url, user, pwd):
         raise RuntimeError("go-music-dl 登录失败: HTTP %s" % exc.code)
 
 
+def _ensure_music_tools(paths):
+    """让 Songloft 能找到 ffmpeg/ffprobe：内置优先，其次复用摄像头组件。"""
+    bin_dir = paths["bin"]
+    os.makedirs(bin_dir, exist_ok=True)
+    for name in ("ffmpeg", "ffprobe"):
+        target = os.path.join(bin_dir, _stack_exe(name))
+        if os.path.isfile(target):
+            continue
+        bundled = os.path.join(MUSIC_STACK_SRC, _stack_exe(name))
+        if not os.path.isfile(bundled):
+            bundled = os.path.join(MUSIC_STACK_SRC, name)
+        if os.path.isfile(bundled):
+            try:
+                shutil.copy2(bundled, target)
+            except OSError:
+                pass
+        if os.path.isfile(target):
+            try:
+                os.chmod(target, 0o755)
+            except OSError:
+                pass
+    ffmpeg = os.path.join(bin_dir, _stack_exe("ffmpeg"))
+    if not os.path.isfile(ffmpeg):
+        found = _camera_ffmpeg_bin()
+        if found and os.path.isfile(found):
+            try:
+                os.symlink(found, ffmpeg)
+            except OSError:
+                try:
+                    shutil.copy2(found, ffmpeg)
+                except OSError:
+                    pass
+    ffprobe = os.path.join(bin_dir, _stack_exe("ffprobe"))
+    if not os.path.isfile(ffprobe):
+        found = shutil.which("ffprobe")
+        if found:
+            try:
+                os.symlink(found, ffprobe)
+            except OSError:
+                try:
+                    shutil.copy2(found, ffprobe)
+                except OSError:
+                    pass
+    for name in ("songloft", "music-dl", "ffmpeg", "ffprobe"):
+        item = os.path.join(bin_dir, _stack_exe(name))
+        if os.path.isfile(item):
+            try:
+                os.chmod(item, 0o755)
+            except OSError:
+                pass
+
+
 def _stack_start_services(sport, gport, user, pwd):
     paths = _stack_paths()
     os.makedirs(paths["songloft_data"], exist_ok=True)
     os.makedirs(paths["gmd_data"], exist_ok=True)
     os.makedirs(paths["plugins"], exist_ok=True)
+    os.makedirs(os.path.join(paths["songloft"], "music"), exist_ok=True)
+    os.makedirs(os.path.join(paths["songloft"], "covers"), exist_ok=True)
+    _ensure_music_tools(paths)
+    music_env = os.environ.copy()
+    music_env["PATH"] = paths["bin"] + os.pathsep + music_env.get("PATH", "")
+    music_env["MUSIC_DIR"] = os.path.join(paths["songloft"], "music")
     state = _stack_state_read()
     sl_exe = os.path.join(paths["bin"], _stack_exe("songloft"))
     gmd_exe = os.path.join(paths["bin"], _stack_exe("music-dl"))
@@ -4716,7 +4825,7 @@ def _stack_start_services(sport, gport, user, pwd):
         state["songloft_pid"] = _stack_popen(
             [sl_exe, "-username", user, "-password", pwd,
              "-port", str(sport), "-db", os.path.join("data", "songloft.db")],
-            paths["songloft"], paths["sl_log"])
+            paths["songloft"], paths["sl_log"], env=music_env)
         _stack_state_write(state)
         if _wait_http("http://127.0.0.1:%d/api/v1/version" % sport,
                       30, want_json=True) is None:
@@ -5160,6 +5269,17 @@ def _stack_install(progress=None):
                 os.chmod(target, 0o755)
             except OSError:
                 pass
+        for name in (_stack_exe("ffmpeg"), _stack_exe("ffprobe")):
+            source = os.path.join(src, name)
+            if os.path.isfile(source):
+                target = os.path.join(paths["bin"], name)
+                shutil.copy2(source, target)
+                try:
+                    os.chmod(target, 0o755)
+                except OSError:
+                    pass
+        os.makedirs(os.path.join(paths["songloft"], "music"), exist_ok=True)
+        os.makedirs(os.path.join(paths["songloft"], "covers"), exist_ok=True)
         for name in os.listdir(os.path.join(src, "plugins")):
             if name.endswith(".jsplugin.zip"):
                 shutil.copy2(os.path.join(src, "plugins", name),
@@ -5640,6 +5760,7 @@ def _bridge_token_file():
 
 
 def _bridge_status():
+    native = None
     native_dir = ""
     if os.name == "nt":
         kind = "win"
@@ -5647,20 +5768,22 @@ def _bridge_status():
         python = ""
         helper = host
     else:
-        native_dir, native_helper = _native_helper_paths()
-        if native_dir and _native_platform():
-            kind, host, python, helper = "native", native_helper, "", native_helper
+        native = _native_bridge_info()
+        if native:
+            kind, host, python, helper = native["kind"], native["host"], "", native["helper"]
+            native_dir = native["base"]
         else:
+            native = None
             python, helper = _wine_helper_paths()
             host = _wine_bin()
             kind = "wine" if (host and python and helper) else ""
     platform_ok = bool(kind)
-    dll_dir = native_dir if kind == "native" else _bridge_dll_dir()
+    dll_dir = native["base"] if native else _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin() if platform_ok else ""
     reasons = []
     if not platform_ok:
         reasons.append("缺少桥接程序（面板 tools/xiaomi-miss-host.exe）" if os.name == "nt"
-                       else "缺少桥接程序（wine 或 camera-stack/native-arm/miss-host-arm）")
+                       else "缺少桥接程序（wine、camera-stack/native-arm/miss-host-arm 或 amd64 qemu-arm）")
     if not dll_dir:
         reasons.append("桥接组件未就绪，请更新到完整安装包")
     if not ffmpeg:
@@ -5808,12 +5931,63 @@ def _native_platform():
     return machine in ("armv7l", "armv6l", "armv8l", "arm")
 
 
+def _native_qemu_bin(base=""):
+    """amd64 上用静态 qemu-arm 跑 ARM libmiss。仅本机私有组件，不随公开包分发。"""
+    candidates = []
+    if base:
+        candidates.extend((os.path.join(base, "qemu-arm-static"),
+                           os.path.join(base, "qemu-arm")))
+    candidates.extend((shutil.which("qemu-arm-static") or "",
+                       shutil.which("qemu-arm") or ""))
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return ""
+
+
+def _native_ensure_root_link(base):
+    """qemu-arm 里的 ARM helper 把解释器路径写死为 /etc/miio-bridge；
+    爱快根分区重启会还原，这里在启动时把该路径指回持久数据盘。"""
+    if os.name == "nt" or not base:
+        return
+    link = "/etc/miio-bridge/camera-stack/native-arm"
+    try:
+        real = os.path.realpath(base)
+        if os.path.realpath(link) == real:
+            return
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.islink(link) or os.path.isfile(link):
+            os.remove(link)
+        elif os.path.isdir(link):
+            return
+        os.symlink(real, link)
+    except Exception:
+        pass
+
+
+def _native_bridge_info():
+    base, helper = _native_helper_paths()
+    if not base or not helper:
+        return None
+    if _native_platform():
+        _native_ensure_root_link(base)
+        return {"kind": "native", "base": base, "helper": helper,
+                "host": helper, "qemu": ""}
+    qemu = _native_qemu_bin(base)
+    if qemu:
+        _native_ensure_root_link(base)
+        return {"kind": "qemu", "base": base, "helper": helper,
+                "host": qemu, "qemu": qemu}
+    return None
+
+
 def _native_bridge_init():
     try:
-        base, helper = _native_helper_paths()
-        if base and helper and _native_platform():
+        native = _native_bridge_info()
+        if native:
             path = _bridge_token_file()
-            LOG.info("native ARM bridge ready (%s, token=%s)", base, bool(path))
+            LOG.info("native bridge ready (%s, kind=%s, token=%s)",
+                     native["base"], native["kind"], bool(path))
     except Exception as exc:
         LOG.warning("native bridge init failed: %s", str(exc)[:160])
 
@@ -5837,22 +6011,26 @@ def _bridge_prepare():
     if (CONFIG.get("p2p_bridge") or BRIDGE_MODE_DEFAULT) == "off":
         return None
     kind, host, python, helper = "win", "", "", ""
+    native = None
     native_dir = ""
     if os.name == "nt":
         host = _bridge_ensure_host()
         if not host:
             return None
     else:
-        native_dir, native_helper = _native_helper_paths()
-        if native_dir and _native_platform():
-            kind, host = "native", native_helper
+        native = _native_bridge_info()
+        if native:
+            kind, host = native["kind"], native["host"]
+            helper = native["helper"]
+            native_dir = native["base"]
         else:
+            native = None
             wine = _wine_bin()
             python, helper = _wine_helper_paths()
             if not (wine and python and helper):
                 return None
             kind, host = "wine", wine
-    dll_dir = native_dir if kind == "native" else _bridge_dll_dir()
+    dll_dir = native["base"] if native else _bridge_dll_dir()
     ffmpeg = _camera_ffmpeg_bin()
     token_file = _bridge_token_file() if (host and dll_dir and ffmpeg) else ""
     if not (host and dll_dir and ffmpeg and token_file):
@@ -5864,6 +6042,9 @@ def _bridge_prepare():
     if kind == "wine":
         bridge["python"] = python
         bridge["helper"] = helper
+    elif kind == "qemu":
+        bridge["helper"] = helper
+        bridge["qemu"] = native["qemu"]
     return bridge
 
 
@@ -5964,8 +6145,11 @@ def _bridge_src(bridge, did, model):
 
 def _bridge_host_args(bridge, did, model):
     log = _bridge_log_path(bridge, did)
-    if bridge.get("kind") == "native":
-        return [bridge["host"],
+    if bridge.get("kind") in ("native", "qemu"):
+        head = [bridge["host"]]
+        if bridge.get("kind") == "qemu":
+            head.append(bridge["helper"])
+        return head + [
                 "--did", str(did), "--model", str(model),
                 "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
                 "--token-file", bridge["token_file"],
@@ -7005,6 +7189,13 @@ def _music_autoconfig():
         if current_host else ""
     if not current_host or host_name in ("127.0.0.1", "localhost", "::1"):
         current_host = _songloft_server_url()
+    elif _music_proxy_target():
+        try:
+            host_ip = ipaddress.ip_address(host_name)
+        except ValueError:
+            host_ip = None
+        if host_ip is not None and not host_ip.is_private and not host_ip.is_loopback:
+            current_host = _songloft_server_url()
     patch = {
         "server_host": current_host,
         "external_search_enabled": True,
@@ -7046,6 +7237,40 @@ def _music_autoconfig():
         LOG.info("music autoconfig: groups left unchanged by default")
     except Exception as e:
         LOG.warning("music autoconfig devices: %s", e)
+
+
+def _music_repair_local_urls():
+    """把历史遗留的公网 server_host/allowlist 修正为当前局域网地址。"""
+    if not _music_proxy_target():
+        return
+    lan_url = _songloft_server_url()
+    try:
+        _, resp = _songloft_req("GET", MIOT_PLUGIN_API + "/config", timeout=8)
+        cfg = resp.get("data") if isinstance(resp, dict) else {}
+        current = str((cfg or {}).get("server_host") or "").strip()
+        host_name = urllib.parse.urlsplit(current).hostname if current else ""
+        replace = not current
+        if host_name:
+            try:
+                ip = ipaddress.ip_address(host_name)
+                replace = not ip.is_private and not ip.is_loopback
+            except ValueError:
+                replace = False
+        if replace:
+            _songloft_req("POST", MIOT_PLUGIN_API + "/config",
+                          {"server_host": lan_url}, timeout=15)
+            LOG.info("music repair: server_host -> %s", lan_url)
+    except Exception as exc:
+        LOG.debug("music repair server_host failed: %s", str(exc)[:120])
+    try:
+        _, gmd = _songloft_req("GET", GMD_PLUGIN_API + "/config", timeout=6)
+        if not isinstance(gmd, dict) or str(gmd.get("serverHost") or "") != lan_url:
+            _songloft_req("POST", GMD_PLUGIN_API + "/config",
+                          {"serverHost": lan_url}, timeout=10)
+            LOG.info("music repair: gmd serverHost -> %s", lan_url)
+    except Exception as exc:
+        LOG.debug("music repair gmd config failed: %s", str(exc)[:120])
+    _ensure_proxy_allowlist(lan_url)
 
 
 def _music_search_test(keyword):
@@ -7216,7 +7441,7 @@ class Handler(BaseHTTPRequestHandler):
     def _music_route(self):
         u = urllib.parse.urlparse(self.path)
         prefix = ""
-        for item in ("/songloft", "/api/v1/jsplugin-assets"):
+        for item in ("/songloft", "/api/v1/jsplugin-assets", "/api/v1"):
             if u.path == item or u.path.startswith(item + "/"):
                 prefix = item
                 break
@@ -7273,7 +7498,7 @@ class Handler(BaseHTTPRequestHandler):
                 if low in ("connection", "keep-alive", "transfer-encoding", "content-length",
                            "content-encoding") or (rewrite and low == "content-type"):
                     continue
-                if low == "location" and value.startswith("/"):
+                if low == "location" and prefix == "/songloft" and value.startswith("/"):
                     value = prefix + value
                 self.send_header(key, value)
             if rewrite:
@@ -8039,7 +8264,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         args = _bridge_host_args(bridge, did, model)
         flags = 0x08000000 if os.name == "nt" else 0
-        pipe_mode = bridge.get("kind") in ("wine", "native")
+        pipe_mode = bridge.get("kind") in ("wine", "native", "qemu")
         try:
             proc = subprocess.Popen(args,
                                     stdin=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
@@ -10819,13 +11044,34 @@ def _music_autostart():
         sport = int(state.get("songloft_port") or 58091)
         if _port_json("http://127.0.0.1:%d/api/v1/version" % sport):
             _sync_sso_quiet()
+            _music_repair_local_urls()
             return
         LOG.info("music stack: autostart")
         _stack_start()
         LOG.info("music stack: autostart done")
+        _music_repair_local_urls()
         _sync_sso_quiet()
     except Exception as exc:
         LOG.warning("music stack autostart failed: %s", str(exc)[:160])
+
+
+def _music_bootstrap():
+    """插件内置完整音乐组件时，首次启动自动安装，装完即可用。"""
+    if str(os.environ.get("MIOT_AUTO_MUSIC") or "").lower() not in ("1", "true", "yes"):
+        return
+    time.sleep(4)
+    try:
+        state = _stack_state_read()
+        if state.get("installed") or state.get("disabled"):
+            return
+        src = MUSIC_STACK_SRC
+        if not os.path.isdir(src) or _stack_missing(src):
+            return
+        LOG.info("music stack: bundled bootstrap")
+        _stack_install()
+        LOG.info("music stack: bundled bootstrap done")
+    except Exception as exc:
+        LOG.warning("music stack bundled bootstrap failed: %s", str(exc)[:200])
 
 
 def main():
@@ -10870,6 +11116,7 @@ def main():
         threading.Thread(target=_stack_autostart, daemon=True).start()
     threading.Thread(target=_camera_autostart, daemon=True).start()
     threading.Thread(target=_music_autostart, daemon=True).start()
+    threading.Thread(target=_music_bootstrap, daemon=True).start()
     threading.Thread(target=_watchdog_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     LOG.info("miot-cloud listening on :%d", PORT)

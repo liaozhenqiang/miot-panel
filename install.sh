@@ -73,15 +73,27 @@ if ! deps_ok; then
 fi
 
 mkdir -p "$DIR"
+
+# 随包资源要整套装上：少了 compat.js / 型号表 / cacert.pem 会退化成精简型号集合并让
+# HTTPS 校验找不到 CA，少了 music / tools 目录则音乐中心和摄像头组件在裸机上装不起来
+APP_ITEMS="cloud_panel.html admin.html camera.html compat.js manifest.webmanifest sw.js
+           sensor_models.json miot_models.json.gz cacert.pem LICENSE README.md
+           requirements.txt icons music tools android windows"
 install -m 755 "$SRC/miot-cloud.py" "$DIR/miot-cloud.py"
-install -m 644 "$SRC/cloud_panel.html" "$DIR/cloud_panel.html"
-install -m 644 "$SRC/admin.html" "$DIR/admin.html"
-install -m 644 "$SRC/camera.html" "$DIR/camera.html"
-install -m 644 "$SRC/manifest.webmanifest" "$DIR/manifest.webmanifest"
-install -m 644 "$SRC/sw.js" "$DIR/sw.js"
-mkdir -p "$DIR/icons"
-install -m 644 "$SRC/icons/icon-192.png" "$DIR/icons/icon-192.png"
-install -m 644 "$SRC/icons/icon-512.png" "$DIR/icons/icon-512.png"
+for item in $APP_ITEMS; do
+  src="$SRC/$item"
+  if [ -d "$src" ]; then
+    rm -rf "$DIR/$item"
+    cp -a "$src" "$DIR/$item"
+  elif [ -f "$src" ]; then
+    install -m 644 "$src" "$DIR/$item"
+  fi
+done
+for script in "$DIR/music"/*.sh "$DIR/music"/*.py "$DIR/windows"/*.ps1; do
+  if [ -f "$script" ]; then
+    chmod 755 "$script"
+  fi
+done
 if [ ! -f "$DIR/cloud_config.json" ]; then
   install -m 600 "$SRC/config.example.json" "$DIR/cloud_config.json"
   echo "== 已创建默认配置：$DIR/cloud_config.json"

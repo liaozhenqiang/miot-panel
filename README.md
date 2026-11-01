@@ -70,7 +70,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.4-docker-installer.run
+sudo bash miot-panel-v0.7.27-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -87,14 +87,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.6 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.27 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.4-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.4
+docker load -i miot-panel-v0.7.27-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.27
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -541,6 +541,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 
 ## 更新日志
 - **v0.7.23（2026-10-30）修复音乐中心免登录插件装不上**：根因是面板只把 `panel-sso` 插件拷进目录，而 Songloft 的已安装插件记录在数据库里，拷贝不会注册；且新包缺少 Songloft 要求的 `entryHash`/`zipHash`。现在插件包按 Songloft 规范写入两个 hash，面板通过音乐中心的 `/api/v1/jsplugins/registry/install` 接口自动安装/升级（由面板自己提供 `/music/panel-sso.jsplugin.zip` 给它拉取），连接音乐中心、打开后台音乐中心或面板启动时都会自动补装，版本不一致也会自动覆盖。
+- **v0.7.27（2026-11-01）一键安装器修复 + Linux 裸机装齐随包资源**：`miot-panel-*-installer.run` 的引导脚本会 cd 到 `miot-panel-linux-<版本>`，而包内实际目录带 `v` 前缀，从 v0.7.20 起 `sudo ./…-installer.run` 直接报 “No such file or directory”，什么都不装；现在按包内真实目录匹配，Linux 与 Docker 安装器都在容器里重跑过。同时 `install.sh` 以前只拷主程序和页面，`compat.js`、全量 MIoT 型号表、传感器型号表和 `cacert.pem` 没装进运行目录，装完后型号识别会退化（部分设备的属性读不到）、HTTPS 校验找不到自带 CA，音乐中心和摄像头组件脚本也是缺的；现在一次装齐整套资源，并在 amd64 / arm64 / armv7 三种架构的安装包里各跑了一遍。另外在路由器/光猫上取本机地址时会拿到 WAN IP，现在优先按网卡名挑局域网 IPv4，手机扫码地址和后台二维码跟着变对；音乐中心首次启动自动装内置组件，并把历史遗留的公网回调地址改回当前局域网地址。
 - **v0.7.26（2026-11-01）摄像头后台状态与文案修正**：后台摄像头板块按当前平台显示可用状态与提示；远程摄像头服务/云台转发说明更清晰；摄像头页来源标注修正。
 - **v0.7.22（2026-10-30）自检、迁移、自愈、口令控制**：① 后台「自检与迁移 → 生成诊断」一键汇总账号、设备、摄像头、音乐中心、组件守护和最近告警，IP 自动打码，可直接复制反馈；② 配置迁移包：登录态/主题排版/改名隐藏/摄像头/音乐凭据/PIN/自定义页打包成**口令加密**的 `.miotbak`，新设备导入即用（导入前先备份、可先检查不覆盖）；③ 组件看门狗：每 60 秒探活音乐中心与摄像头，连续 3 次异常自动重启（同组件 5 分钟内只重启一次，后台可关）；④ 面板新增「口令」按钮，说人话控设备（打开客厅灯 / 空调调到 26 度 / 风速 2 档 / 制冷），解析后先预览再执行；⑤「设备」里可开启按使用习惯自动排序，常控设备自动排前面，手动保存排版会切回手动。
 - **v0.7.21（2026-10-30）音乐中心开箱即用**：① 容器/设备重启后自动把已装好的音乐中心拉起来，不再出现「显示已安装但服务没跑」；② 后台内嵌音乐中心改走面板同源代理 `/songloft/`，只开面板一个端口也能用（Docker 不必再映射 58091），单点登录、插件样式和音频请求全部走代理；③ 面板单点登录插件随面板自动升级，登录后回到正确的音乐中心首页。远程音乐中心（另一台机器/玩客云）仍按填写的地址直连，不受影响。

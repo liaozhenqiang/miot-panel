@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>更新日志 · 米家面板文档</title>
 
-<meta name="description" content="米家面板 v0.7.26 及历史版本的功能与修复记录。">
+<meta name="description" content="米家面板 v0.7.27 及历史版本的功能与修复记录。">
 <link rel="canonical" href="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="米家面板">
 <meta property="og:title" content="更新日志 · 米家面板文档">
-<meta property="og:description" content="米家面板 v0.7.26 及历史版本的功能与修复记录。">
+<meta property="og:description" content="米家面板 v0.7.27 及历史版本的功能与修复记录。">
 <meta property="og:url" content="https://liaozhenqiang.github.io/miot-panel/guide/changelog.html">
 <meta property="og:image" content="https://liaozhenqiang.github.io/miot-panel/assets/hero.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -57,8 +57,16 @@
   <main class="content">
     <div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><a href="../guide/quickstart.html">文档</a><span>/</span><span>更新日志</span></div>
     <h1>更新日志</h1>
-    <p class="page-desc">米家面板 v0.7.26 及历史版本的功能与修复记录。</p>
+    <p class="page-desc">米家面板 v0.7.27 及历史版本的功能与修复记录。</p>
     
+<h2 id="h-0">v0.7.27 <span class="pgh-date">2026-11-01</span></h2>
+<ul>
+<li>修复一键安装器：<code>…-installer.run</code> 引导脚本 cd 的目录名与包内实际目录不一致（少一个 <code>v</code>），从 v0.7.20 起 <code>sudo ./…-installer.run</code> 会报 “No such file or directory” 且什么都不装；现在按包内真实目录匹配，Linux 与 Docker 安装器均已容器内重跑。</li>
+<li>Linux 安装脚本一次装齐整套随包资源：兼容层、全量 MIoT 型号表、传感器型号表、CA 证书、音乐中心与组件脚本，修复裸机安装后型号识别退化和 HTTPS 校验找不到自带 CA 的问题。</li>
+<li>amd64 / arm64 / armv7 三种架构的安装包分别实跑安装 + 启动校验。</li>
+<li>路由器 / 光猫环境下优先按网卡名取局域网 IPv4，手机扫码地址与后台二维码不再指向公网 IP。</li>
+<li>音乐中心首次启动自动安装内置组件，并把历史遗留的公网回调地址改回当前局域网地址。</li>
+</ul>
 <h2 id="h-1">v0.7.26 <span class="pgh-date">2026-11-01</span></h2>
 <ul>
 <li>后台摄像头板块按当前平台显示可用状态与提示，状态和文案更准确。</li>
