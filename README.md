@@ -169,6 +169,9 @@ sudo bash miot-panel-v<版本>-linux-arm64-installer.run    # 树莓派 4/5 64 �
 sudo bash miot-panel-v<版本>-linux-amd64-installer.run    # 普通 PC / NAS
 ```
 
+> 想省掉首次使用时的组件下载，用同架构的**完整包** `miot-panel-v<版本>-linux-<arch>-bundle-installer.run`：
+> 摄像头组件随包内置，装完即用；两种包功能一致，升级方式也一样。
+
 手动源码安装：
 
 ```bash
