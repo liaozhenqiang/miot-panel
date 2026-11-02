@@ -9,7 +9,10 @@ usage: wine python.exe miss_host_wine.py --did X --model Y --rpc URL
 import ctypes
 import json
 import os
+import socket
+import struct
 import sys
+import threading
 import time
 import urllib.request
 
@@ -68,6 +71,154 @@ except Exception:
     pass
 
 
+AUDIO_CODEC_ID = 1032      # 发 0x104 后设备在视频通道里送的麦克风帧
+CRC_POLY = 0x04C11DB7
+
+
+def _crc_table():
+    table = []
+    for i in range(256):
+        r = i << 24
+        for _ in range(8):
+            r = ((r << 1) ^ CRC_POLY) & 0xFFFFFFFF if r & 0x80000000 else (r << 1) & 0xFFFFFFFF
+        table.append(r)
+    return table
+
+
+CRC_TABLE = _crc_table()
+
+
+def _crc(data):
+    crc = 0
+    for b in data:
+        crc = ((crc << 8) & 0xFFFFFFFF) ^ CRC_TABLE[((crc >> 24) & 0xFF) ^ b]
+    return crc
+
+
+def _frame_samples(toc):
+    """Opus TOC 里的 config 决定一帧时长，granule 按 48kHz 累加（RFC 6716 表）。"""
+    config = (toc >> 3) & 0x1F
+    wide = (100, 200, 400, 600)
+    if config < 12:
+        ms10 = wide[config % 4]
+    elif config < 16:
+        ms10 = 100 if config % 2 == 0 else 200
+    elif config < 24:
+        ms10 = 25 if config % 2 == 0 else 50
+    else:
+        ms10 = wide[(config - 24) % 4]
+    return 48 * ms10 // 10
+
+
+class OggAudio(object):
+    """把设备的 Opus 帧封成 Ogg 流，用回环 TCP 喂给面板起的 ffmpeg 第二路输入。"""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(1)
+        self.port = self.sock.getsockname()[1]
+        self.client = None
+        self.seq = 0
+        self.granule = 0
+        self.toc = 0x50
+        self.last = 0.0
+        threading.Thread(target=self._accept_loop).start()
+        threading.Thread(target=self._beat).start()
+
+    def _page(self, payload, granule, bos=False):
+        segs = []
+        n = len(payload)
+        while n >= 255:
+            segs.append(255)
+            n -= 255
+        segs.append(n)
+        head = bytearray(b"OggS")
+        head.append(0)
+        head.append(2 if bos else 0)
+        head += struct.pack("<q", granule)
+        head += struct.pack("<III", 0x4D494F54, self.seq, 0)
+        head.append(len(segs))
+        head += bytes(segs)
+        page = bytearray(head) + payload
+        struct.pack_into("<I", page, 22, _crc(bytes(page)))
+        self.seq += 1
+        return bytes(page)
+
+    def _headers(self):
+        head = (b"OpusHead" + bytes([1, 1]) + struct.pack("<H", 0) +
+                struct.pack("<I", 48000) + struct.pack("<h", 0) + bytes([0]))
+        tags = b"OpusTags" + struct.pack("<I", 0)
+        return self._page(head, 0, True) + self._page(tags, 0, False)
+
+    def _accept_loop(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            try:
+                conn.sendall(self._headers())
+                with self.lock:
+                    self.client = conn
+                    self.last = time.time()
+                log("audio client attached port=%d" % self.port)
+            except OSError:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+    def _beat(self):
+        while True:
+            time.sleep(0.15)
+            with self.lock:
+                idle = self.client is not None and time.time() - self.last > 0.3
+            if idle:
+                self.packet(bytes([self.toc]))       # DTX 空包：ffmpeg 读不到数据会卡住整条流
+
+    def packet(self, payload):
+        if not payload:
+            return
+        self.toc = payload[0]
+        self.granule += _frame_samples(self.toc)
+        page = self._page(payload, self.granule)
+        with self.lock:
+            if self.client is None:
+                return
+            try:
+                self.client.sendall(page)
+                self.last = time.time()
+            except OSError:
+                try:
+                    self.client.close()
+                except OSError:
+                    pass
+                self.client = None
+
+    def feed(self, frame):
+        # 设备帧 = [Opus TOC][1 字节设备字段][Opus 载荷]，去掉中间那个字节才是合法包
+        if len(frame) > 3:
+            self.packet(frame[0:1] + frame[2:])
+
+
+AUDIO = None
+try:
+    AUDIO = OggAudio()
+    port_file = ARGS.get("--audio-port-file", "")
+    if port_file:
+        try:
+            with open(port_file, "w", encoding="ascii") as fh:
+                fh.write(str(AUDIO.port))
+        except OSError:
+            pass
+    log("audio stream port=%d" % AUDIO.port)
+except Exception as exc:
+    AUDIO = None
+    log("audio stream failed: %r" % (exc,))
+
+
 def rpc_forward(ctx, path, body):
     try:
         req = urllib.request.Request(
@@ -119,14 +270,19 @@ def make_cb(idx):
                 ln = ctypes.c_uint32.from_address(a2).value
                 codec = ctypes.c_uint32.from_address(a2 + 4).value
                 if 0 < ln <= 4000000:
-                    out.write(ctypes.string_at(a3, ln))
-                    out.flush()
-                    state["frames"] += 1
-                    state["bytes"] += ln
-                    if not state["first"]:
-                        state["first"] = time.time()
-                        state["codec"] = codec
-                        log("first frame codec=%d len=%d" % (codec, ln))
+                    if codec == AUDIO_CODEC_ID:
+                        if AUDIO is not None:
+                            AUDIO.feed(ctypes.string_at(a3, ln))
+                        state["audio"] = state.get("audio", 0) + 1
+                    else:
+                        out.write(ctypes.string_at(a3, ln))
+                        out.flush()
+                        state["frames"] += 1
+                        state["bytes"] += ln
+                        if not state["first"]:
+                            state["first"] = time.time()
+                            state["codec"] = codec
+                            log("first frame codec=%d len=%d" % (codec, ln))
             except Exception as exc:
                 log("frame error %r" % (exc,))
         elif idx == 2:
@@ -187,6 +343,12 @@ if state["frames"] == 0:
     lib.miss_client_session_close(sess)
     sys.exit(4)
 
+if AUDIO is not None:
+    try:
+        log("audio start rc=%s" % lib.miss_cmd_send(sess, 0x104, None, 0))
+    except Exception as exc:
+        log("audio start failed: %r" % (exc,))
+
 while True:
     if PARENT:
         try:
@@ -198,8 +360,11 @@ while True:
             log("parent gone")
             break
     time.sleep(3)
-log("stop frames=%d bytes=%d" % (state["frames"], state["bytes"]))
+log("stop frames=%d bytes=%d audio=%d" %
+    (state["frames"], state["bytes"], state.get("audio", 0)))
 try:
+    if AUDIO is not None:
+        lib.miss_cmd_send(sess, 0x105, None, 0)
     lib.miss_cmd_send(sess, 0x103, None, 0)
     lib.miss_client_session_close(sess)
 except Exception:

@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.28"
+APP_VERSION = "0.7.29"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -5667,10 +5667,20 @@ def _camera_rtsp_ok():
 
 
 def _bridge_token():
+    """桥接签名密钥：复用 bridge.token 里已存在的值，面板重启后 go2rtc 里的老地址才不会失效。"""
     global BRIDGE_TOKEN
     with BRIDGE_TOKEN_LOCK:
         if not BRIDGE_TOKEN:
-            BRIDGE_TOKEN = secrets.token_hex(20)
+            path = os.path.join(BRIDGE_DIR, "bridge.token")
+            try:
+                with open(path, "r", encoding="ascii") as f:
+                    saved = f.read().strip().lower()
+                if len(saved) == 40 and all(c in "0123456789abcdef" for c in saved):
+                    BRIDGE_TOKEN = saved
+            except OSError:
+                pass
+            if not BRIDGE_TOKEN:
+                BRIDGE_TOKEN = secrets.token_hex(20)
         return BRIDGE_TOKEN
 
 
@@ -5703,33 +5713,82 @@ def _bridge_dll_dir():
     return ""
 
 
+def _file_digest(path):
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 16), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return ""
+
+
+def _bridge_reap_hosts():
+    """Windows 上运行中的 exe 无法替换；换新版前先把残留宿主收掉（播放会重连一次）。"""
+    if os.name != "nt":
+        return
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "xiaomi-miss-host.exe"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+    except Exception as exc:
+        LOG.debug("bridge host reap failed: %s", exc)
+
+
+def _bridge_prune_hosts(keep):
+    """按指纹起副本会攒下旧文件：能删就删，被卡死的宿主占着的留着不管。"""
+    folder = os.path.dirname(BRIDGE_HOST)
+    base = os.path.basename(BRIDGE_HOST)
+    keep = {os.path.abspath(keep), os.path.abspath(BRIDGE_HOST)}
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(base):
+            continue
+        path = os.path.join(folder, name)
+        if os.path.abspath(path) in keep:
+            continue
+        try:
+            if time.time() - os.path.getmtime(path) > 3600:
+                os.remove(path)
+        except OSError:
+            pass
+
+
 def _bridge_ensure_host():
     src = os.path.join(APP_DIR, "tools", "xiaomi-miss-host.exe")
     if not os.path.isfile(src):
         return ""
     try:
-        need = True
-        if os.path.isfile(BRIDGE_HOST):
-            same = (os.path.getsize(src) == os.path.getsize(BRIDGE_HOST)
-                    and int(os.path.getmtime(src)) <= int(os.path.getmtime(BRIDGE_HOST)))
-            need = not same
-        if need:
-            os.makedirs(os.path.dirname(BRIDGE_HOST), exist_ok=True)
-            tmp = BRIDGE_HOST + ".tmp"
-            shutil.copyfile(src, tmp)
+        digest = _file_digest(src)
+        # 只比大小会漏更新：改几行代码后的 exe 常常一样大
+        if not digest:
+            return BRIDGE_HOST if os.path.isfile(BRIDGE_HOST) else ""
+        if os.path.isfile(BRIDGE_HOST) and _file_digest(BRIDGE_HOST) == digest:
+            return BRIDGE_HOST
+        _bridge_reap_hosts()
+        os.makedirs(os.path.dirname(BRIDGE_HOST), exist_ok=True)
+        tmp = BRIDGE_HOST + ".tmp"
+        shutil.copyfile(src, tmp)
+        try:
+            os.replace(tmp, BRIDGE_HOST)
+        except OSError:
+            # 卡死的宿主既占着文件名又杀不掉，就按指纹另起一份，别让新版本永远装不上
             try:
-                os.replace(tmp, BRIDGE_HOST)
+                os.remove(tmp)
             except OSError:
-                # 正在播流时 helper 可能被占用，下轮刷新再替换
-                try:
-                    os.remove(BRIDGE_HOST)
-                    os.replace(tmp, BRIDGE_HOST)
-                except OSError:
-                    try:
-                        os.remove(tmp)
-                    except OSError:
-                        pass
-                    raise
+                pass
+            tagged = "%s-%s.exe" % (BRIDGE_HOST[:-4], digest[:8])
+            try:
+                if not os.path.isfile(tagged):
+                    shutil.copyfile(src, tagged)
+                LOG.info("bridge host locked, running %s instead", os.path.basename(tagged))
+                _bridge_prune_hosts(tagged)
+                return tagged
+            except OSError:
+                LOG.warning("bridge host refresh failed")
     except Exception as exc:
         LOG.warning("bridge host copy failed: %s", exc)
     return BRIDGE_HOST if os.path.isfile(BRIDGE_HOST) else ""
@@ -6124,9 +6183,9 @@ def _transcode_src(did):
     # go2rtc 内置 ffmpeg 读 RTSP 默认 5 秒超时；P2P 桥接首帧可能更慢，046 机型会超时。
     tail = "#timeout=15000000"
     if (CAM_QUALITY.get(str(did)) or "sd") == "hd":
-        return ("ffmpeg:cam_%s#video=h264#width=1280#height=720#bitrate=2500k"
+        return ("ffmpeg:cam_%s#video=h264#audio=aac#width=1280#height=720#bitrate=2500k"
                 % did) + tail
-    return ("ffmpeg:cam_%s#video=h264#width=640#height=360#bitrate=600k"
+    return ("ffmpeg:cam_%s#video=h264#audio=aac#width=640#height=360#bitrate=600k"
             % did) + tail
 
 
@@ -6384,8 +6443,38 @@ def _bridge_src(bridge, did, model):
     return "http://127.0.0.1:%d/api/camera/bridge_stream?%s" % (PORT, q)
 
 
+def _bridge_audio_port_file(bridge, did):
+    safe = re.sub(r"[^0-9A-Za-z._-]", "", str(did)) or "camera"
+    return os.path.join(bridge["logs"], "audio-%s.port" % safe)
+
+
+def _bridge_audio_port(path, proc, timeout=4.0):
+    """等桥接端写出它的音频监听端口；拿不到就退回纯视频（不带 -an 的老命令）。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if proc.poll() is not None:
+                return 0
+        except Exception:
+            return 0
+        try:
+            with open(path, "r") as fh:
+                port = int((fh.read() or "0").strip() or 0)
+            if 0 < port < 65536:
+                return port
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.1)
+    return 0
+
+
 def _bridge_host_args(bridge, did, model):
     log = _bridge_log_path(bridge, did)
+    port_file = _bridge_audio_port_file(bridge, did)
+    try:
+        os.remove(port_file)
+    except OSError:
+        pass
     if bridge.get("kind") in ("native", "qemu"):
         head = [bridge["host"]]
         if bridge.get("kind") == "qemu":
@@ -6395,6 +6484,7 @@ def _bridge_host_args(bridge, did, model):
                 "--rpc", "http://127.0.0.1:%d/api/camera/miss_rpc" % PORT,
                 "--token-file", bridge["token_file"],
                 "--log", log,
+                "--audio-port-file", port_file,
                 "--parent", str(os.getpid())]
     if bridge.get("kind") == "wine":
         return [bridge["host"], bridge["python"], bridge["helper"],
@@ -6403,6 +6493,7 @@ def _bridge_host_args(bridge, did, model):
                 "--token-file", bridge["token_file"],
                 "--dll-dir", bridge["dll_dir"],
                 "--log", log,
+                "--audio-port-file", port_file,
                 "--parent", str(os.getpid())]
     return [bridge["host"],
             "--did", str(did), "--model", str(model),
@@ -6411,6 +6502,7 @@ def _bridge_host_args(bridge, did, model):
             "--dll-dir", bridge["dll_dir"],
             "--ffmpeg", bridge["ffmpeg"],
             "--log", log,
+            "--audio-port-file", port_file,
             "--parent", str(os.getpid())]
 
 
@@ -8526,13 +8618,23 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             threading.Thread(target=_drain_pipe, args=(proc.stderr, did),
                              daemon=True).start()
+            # 桥接端会把自己监听的音频端口写进这个文件；拿到了就多加一路 Ogg-Opus 输入
+            audio_port = _bridge_audio_port(port_file, proc, timeout=4.0)
+            ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
+                       "-use_wallclock_as_timestamps", "1",
+                       "-f", "hevc", "-i", "pipe:0"]
+            if audio_port:
+                # 音频输入一断，ffmpeg 会把整条 TS 一起结束，所以读超时给到 15 秒
+                ff_args += ["-use_wallclock_as_timestamps", "1", "-f", "ogg",
+                            "-i", "tcp://127.0.0.1:%d?timeout=15000000" % audio_port,
+                            "-map", "0:v:0", "-map", "1:a:0",
+                            "-c:v", "copy", "-c:a", "aac", "-b:a", "24k"]
+            else:
+                ff_args += ["-c", "copy", "-an"]
+            ff_args += ["-flush_packets", "1", "-f", "mpegts", "pipe:1"]
             try:
                 ff = subprocess.Popen(
-                    [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
-                     "-use_wallclock_as_timestamps", "1",
-                     "-f", "hevc", "-i", "pipe:0",
-                     "-c", "copy", "-an", "-flush_packets", "1",
-                     "-f", "mpegts", "pipe:1"],
+                    ff_args,
                     stdin=proc.stdout, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     creationflags=0x08000000 if os.name == "nt" else 0)

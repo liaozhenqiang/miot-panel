@@ -61,6 +61,10 @@ iframe{display:block;width:100%;height:100%;border:0;background:#000;}
 .quality button{appearance:none;border:0;background:transparent;color:rgba(255,255,255,.7);font-size:12px;line-height:1;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
 .quality button:hover{background:rgba(255,255,255,.12);color:#fff;}
 .quality button.on{background:var(--accent);color:#fff;}
+.sound{position:absolute;left:14px;top:12px;z-index:6;appearance:none;display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:11px;border:1px solid rgba(255,255,255,.14);background:rgba(6,9,14,.6);color:rgba(255,255,255,.7);font-size:12px;line-height:1;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
+.sound[hidden]{display:none;}
+.sound:hover{background:rgba(255,255,255,.12);color:#fff;}
+.sound.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 @media (max-width:900px){
   .side{width:260px;flex-basis:260px;}
   .title{font-size:20px;}
@@ -173,6 +177,8 @@ body.theme-cyber a.btn,body.theme-cyber button.btn{background:rgba(0,240,255,.06
 body.theme-cyber button.btn.primary{background:var(--accent);border-color:var(--accent);color:#001014;box-shadow:0 0 18px rgba(0,240,255,.28);}
 body.theme-cyber .loading,body.theme-cyber .errBox{background:rgba(0,4,8,.92);}
 body.theme-cyber .hintBar{background:rgba(0,8,12,.72);border:1px solid rgba(0,240,255,.16);border-radius:0;color:rgba(200,255,255,.75);font-family:monospace;}
+body.theme-cyber .quality,body.theme-cyber .sound{background:rgba(0,8,12,.72);border:1px solid rgba(0,240,255,.35);border-radius:0;color:#c9feff;font-family:monospace;letter-spacing:1px;}
+body.theme-cyber .sound.on,body.theme-cyber .quality button.on{background:var(--accent);color:#001014;box-shadow:0 0 14px rgba(0,240,255,.3);}
 
 body.theme-morandi{
   --bg:#f1ece4;--panel:rgba(255,252,247,.92);--panel2:rgba(255,252,247,.80);--line:rgba(120,105,90,.14);
@@ -215,6 +221,8 @@ body.theme-pixel a.btn,body.theme-pixel button.btn{background:#071007;border:2px
 body.theme-pixel button.btn.primary{background:var(--accent);border-color:var(--accent);color:#031003;}
 body.theme-pixel .loading,body.theme-pixel .errBox{background:rgba(0,8,0,.92);}
 body.theme-pixel .hintBar{border:1px solid #1f7a1f;border-radius:0;background:rgba(5,8,5,.82);color:#7fce7f;font-family:monospace;}
+body.theme-pixel .quality,body.theme-pixel .sound{border:1px solid #1f7a1f;border-radius:0;background:rgba(5,8,5,.82);color:#7fce7f;font-family:monospace;}
+body.theme-pixel .quality button.on,body.theme-pixel .sound.on{background:#1f7a1f;color:#b7ffb7;}
 
 .compBar{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 18px;background:rgba(255,106,0,.12);border-bottom:1px solid rgba(255,106,0,.28);font-size:14px;line-height:1.5;}
 .compBar.hidden{display:none;}
@@ -313,6 +321,7 @@ body.theme-paper .ptz{background:radial-gradient(circle at 50% 38%,#20404a,#101c
       <button type="button" class="pDown" data-dir="down" aria-label="云台向下">▼</button>
       <span class="cap">云台</span>
     </div>
+    <button type="button" class="sound" id="soundBtn" aria-pressed="false" hidden>声音</button>
     <div class="quality" id="qualityBox" hidden>
       <button type="button" data-q="sd">流畅</button>
       <button type="button" data-q="hd">高清</button>
@@ -575,8 +584,36 @@ function hidePlayerChrome() {
     var v = doc.querySelector('video');
     if (v) v.controls = false;
   } catch (e) { /* 配了远程 go2rtc 时是跨源，拿不到就保持原样 */ }
+  applySound();
 }
 player.addEventListener('load', hidePlayerChrome);
+var soundBtn = document.getElementById('soundBtn');
+var soundOn = false;
+try { soundOn = localStorage.getItem('miotCamSound') === '1'; } catch (e) {}
+function playerVideo() {
+  try { return player.contentDocument.querySelector('video'); } catch (e) { return null; }
+}
+// 浏览器要求自动播放必须静音，声音得由用户点一下才放行
+function applySound() {
+  if (!soundBtn) return;
+  var v = playerVideo();
+  if (v) {
+    v.muted = !soundOn;
+    if (soundOn && v.paused) { try { v.play(); } catch (e) {} }
+  }
+  soundBtn.classList.toggle('on', soundOn);
+  soundBtn.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+  soundBtn.textContent = soundOn ? '声音已开' : '声音';
+}
+soundBtn.addEventListener('click', function () {
+  soundOn = !soundOn;
+  try { localStorage.setItem('miotCamSound', soundOn ? '1' : '0'); } catch (e) {}
+  applySound();
+  if (current) {
+    barHint.textContent = current.name + ' · ' +
+      (soundOn ? '声音已打开，仍没声就是这台摄像头没推音频' : '已静音');
+  }
+});
 var ptzPad = document.getElementById('ptzPad');
 var qualityBox = document.getElementById('qualityBox');
 var camQuality = 'sd';
@@ -616,7 +653,12 @@ function syncPtz() {
   ptzPad.hidden = !on;
 }
 function syncQuality() {
-  qualityBox.hidden = !(current && current.stream);
+  var live = !!(current && current.stream);
+  qualityBox.hidden = !live;
+  if (soundBtn) {
+    soundBtn.hidden = !live;
+    applySound();
+  }
   Array.prototype.forEach.call(qualityBox.querySelectorAll('button'), function (b) {
     b.classList.toggle('on', b.getAttribute('data-q') === camQuality);
   });

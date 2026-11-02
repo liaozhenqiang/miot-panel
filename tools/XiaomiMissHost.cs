@@ -3,18 +3,24 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
 // 32-bit bridge: Xiaomi libmiss (official PC viewer) -> MPEG-TS on stdout for go2rtc.
 // Loads proprietary DLLs from --dll-dir at runtime; they are never bundled here.
+// Video is copied through; the mic stream (Opus) is re-framed and fed to ffmpeg as a
+// second input over loopback TCP, then encoded to AAC in the same TS.
 internal static class XiaomiMissHost
 {
     private const int CmdVideoStart = 0x102;
     private const int CmdVideoStop = 0x103;
+    private const int CmdAudioStart = 0x104;
+    private const int CmdAudioStop = 0x105;
     private const int CodecH264 = 4;
     private const int CodecH265 = 5;
+    private const int CodecAudio = 1032;   // 发 0x104 后设备在视频通道里送的麦克风帧
     private const int MaxFrame = 8 * 1024 * 1024;
 
     private static string _did, _model, _rpc, _ctrl, _tokenFile, _dllDir, _ffmpegPath, _logPath;
@@ -39,6 +45,13 @@ internal static class XiaomiMissHost
     private static readonly object FfmpegLock = new object();
     private static Process _ffmpeg;
     private static Stream _ffmpegIn;
+    private static OggOpusStream _audio;
+    private static string _audioPortFile;
+    private static bool _noAudio;
+    private static long _audioPackets;
+    private static long _audioSkipped;
+    private static long _audioFill;
+    private static int _ffmpegTick;
     private static IntPtr _job;
     private static volatile bool _firstFrame;
     private static volatile bool _stopped;
@@ -161,6 +174,7 @@ internal static class XiaomiMissHost
             {
                 return 2;
             }
+            StartAudioStream();
             _job = CreateJob(_job);
             if (!RegisterCallbacks())
             {
@@ -212,6 +226,63 @@ internal static class XiaomiMissHost
         }
     }
 
+    private static string AudioOffPath
+    {
+        get
+        {
+            string dir = Path.GetDirectoryName(_logPath);
+            return Path.Combine(dir, "audio-off-" + _did + ".flag");
+        }
+    }
+
+    private static void StartAudioStream()
+    {
+        if (_noAudio)
+        {
+            Log("audio off (panel flag)");
+            return;
+        }
+        try
+        {
+            string off = AudioOffPath;
+            if (File.Exists(off))
+            {
+                DateTime written = File.GetLastWriteTime(off);
+                if ((DateTime.Now - written).TotalMinutes < 30)
+                {
+                    Log("audio paused after an earlier ffmpeg failure; retry " +
+                        written.AddMinutes(30).ToString("HH:mm"));
+                    return;
+                }
+                File.Delete(off);
+            }
+            _audio = new OggOpusStream();
+            if (!string.IsNullOrEmpty(_audioPortFile))
+            {
+                File.WriteAllText(_audioPortFile, _audio.Port.ToString());
+            }
+            Log("audio stream port=" + _audio.Port);
+        }
+        catch (Exception ex)
+        {
+            _audio = null;
+            Log("audio stream failed: " + ex.Message);
+        }
+    }
+
+    // 音频是 ffmpeg 的第二路输入，它出问题会连累画面；一旦起流后很快退出就暂时关掉音频
+    private static void MarkAudioOff(string reason)
+    {
+        try
+        {
+            File.WriteAllText(AudioOffPath, reason ?? "");
+            Log("audio paused: " + (reason ?? ""));
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     private static bool ParseArgs(string[] args)
     {
         Dictionary<string, string> map = new Dictionary<string, string>();
@@ -246,6 +317,16 @@ internal static class XiaomiMissHost
                 _parentPid = pid;
             }
         }
+        string audioFile;
+        if (map.TryGetValue("--audio-port-file", out audioFile))
+        {
+            _audioPortFile = audioFile;
+        }
+        string noAudio;
+        if (map.TryGetValue("--no-audio", out noAudio))
+        {
+            _noAudio = noAudio != "0";
+        }
         return true;
     }
 
@@ -273,7 +354,10 @@ internal static class XiaomiMissHost
                 try
                 {
                     string dir = Path.GetDirectoryName(_logPath);
-                    string liblog = Path.Combine(dir, "libmiss-" + _did + ".log");
+                    // 每进程一个文件：两个桥接同时存在时，共享同一个 libmiss 日志会打开失败，
+                    // 而 libmiss 打不开文件时会把日志直接写到 stdout，把 TS 流污染掉。
+                    string liblog = Path.Combine(dir, "libmiss-" + _did + "-" +
+                                                 Process.GetCurrentProcess().Id + ".log");
                     using (File.Create(liblog))
                     {
                     }
@@ -286,6 +370,16 @@ internal static class XiaomiMissHost
                 }
                 catch (Exception ex)
                 {
+                    if (_logSetLevel != null)
+                    {
+                        try
+                        {
+                            _logSetLevel(5);
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
                     Log("libmiss log setup failed: " + ex.Message);
                 }
             }
@@ -560,6 +654,21 @@ internal static class XiaomiMissHost
         }
         if (codec != CodecH264 && codec != CodecH265)
         {
+            if (codec == CodecAudio && _audio != null && len >= 4 && len <= 4096)
+            {
+                IntPtr src = payload != IntPtr.Zero ? payload : new IntPtr(frame.ToInt64() + 40);
+                byte[] buf = new byte[len];
+                try
+                {
+                    Marshal.Copy(src, buf, 0, len);
+                    _audio.WriteFrame(buf);
+                    _audioPackets++;
+                }
+                catch (Exception)
+                {
+                    _audioSkipped++;
+                }
+            }
             return;
         }
         IntPtr data = payload != IntPtr.Zero ? payload : new IntPtr(frame.ToInt64() + 40);
@@ -603,8 +712,18 @@ internal static class XiaomiMissHost
     private static bool StartFfmpeg(int codec)
     {
         string fmt = codec == CodecH265 ? "hevc" : "h264";
+        bool audio = _audio != null;
         string args = "-hide_banner -loglevel error -use_wallclock_as_timestamps 1 -f " + fmt +
-                      " -i pipe:0 -c copy -an -flush_packets 1 -f mpegts pipe:1";
+                      " -i pipe:0";
+        if (audio)
+        {
+            // 音频输入读不到数据就会把整条 TS 一起带走，超时给到 15 秒才不至于因为
+            // 设备短暂停推就前功尽弃（心跳补包正常时根本用不到这么久）
+            args += " -use_wallclock_as_timestamps 1 -f ogg -i tcp://127.0.0.1:" + _audio.Port +
+                    "?timeout=15000000";
+        }
+        args += audio ? " -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 24k" : " -c copy -an";
+        args += " -flush_packets 1 -f mpegts pipe:1";
         try
         {
             ProcessStartInfo psi = new ProcessStartInfo();
@@ -619,6 +738,7 @@ internal static class XiaomiMissHost
             p.StartInfo = psi;
             p.Start();
             _ffmpeg = p;
+            _ffmpegTick = Environment.TickCount;
             _ffmpegIn = p.StandardInput.BaseStream;
             AssignToJob(p);
             Thread pump = new Thread(PumpStdout);
@@ -627,7 +747,8 @@ internal static class XiaomiMissHost
             Thread err = new Thread(PumpStderr);
             err.IsBackground = true;
             err.Start(p);
-            Log("ffmpeg started fmt=" + fmt + " pid=" + p.Id);
+            Log("ffmpeg started fmt=" + fmt + " audio=" + (audio ? _audio.Port.ToString() : "off") +
+                " pid=" + p.Id);
             return true;
         }
         catch (Exception ex)
@@ -636,6 +757,316 @@ internal static class XiaomiMissHost
             _ffmpeg = null;
             _ffmpegIn = null;
             return false;
+        }
+    }
+
+    // 设备音频帧 = [Opus TOC][1 字节设备字段][Opus 载荷]，去掉中间那个字节就是合法 Opus 包。
+    // libmiss 不带解码器，所以这里把包封成 Ogg-Opus，用回环 TCP 交给 ffmpeg 的第二路输入。
+    private sealed class OggOpusStream : IDisposable
+    {
+        private const uint Serial = 0x4D494F54;
+        private static readonly uint[] CrcTable = BuildCrcTable();
+
+        private readonly TcpListener _listener;
+        private readonly object _gate = new object();
+        private readonly Queue<byte[]> _queue = new Queue<byte[]>();
+        private readonly byte[] _headers;
+        private NetworkStream _client;
+        private int _seq = 2;
+        private long _granule;
+        private int _startedTick;
+        private byte _toc = 0x50;              // 实测：SILK-WB / 40ms / VBR 单帧
+        private long _lastPacket;
+        private bool _closed;
+
+        public OggOpusStream()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            _headers = Concat(Page(OpusHead(), 0, 2), Page(OpusTags(), 0, 0));
+            Thread accept = new Thread(AcceptLoop);
+            accept.IsBackground = true;
+            accept.Start();
+            Thread beat = new Thread(Heartbeat);
+            beat.IsBackground = true;
+            beat.Start();
+        }
+
+        public int Port
+        {
+            get { return ((IPEndPoint)_listener.LocalEndpoint).Port; }
+        }
+
+        private static uint[] BuildCrcTable()
+        {
+            uint[] table = new uint[256];
+            for (uint i = 0; i < 256; i++)
+            {
+                uint r = i << 24;
+                for (int k = 0; k < 8; k++)
+                {
+                    r = ((r & 0x80000000u) != 0) ? ((r << 1) ^ 0x04C11DB7u) : (r << 1);
+                }
+                table[i] = r;
+            }
+            return table;
+        }
+
+        private static uint Crc(byte[] data)
+        {
+            uint crc = 0;
+            for (int i = 0; i < data.Length; i++)
+            {
+                crc = (crc << 8) ^ CrcTable[((crc >> 24) & 0xFF) ^ data[i]];
+            }
+            return crc;
+        }
+
+        private static byte[] Concat(byte[] a, byte[] b)
+        {
+            byte[] outBuf = new byte[a.Length + b.Length];
+            Buffer.BlockCopy(a, 0, outBuf, 0, a.Length);
+            Buffer.BlockCopy(b, 0, outBuf, a.Length, b.Length);
+            return outBuf;
+        }
+
+        private static byte[] OpusHead()
+        {
+            byte[] head = new byte[19];
+            Buffer.BlockCopy(Encoding.ASCII.GetBytes("OpusHead"), 0, head, 0, 8);
+            head[8] = 1;                       // version
+            head[9] = 1;                       // channels
+            head[10] = 0; head[11] = 0;        // pre-skip
+            WriteLE(head, 12, 48000);          // input sample rate
+            head[16] = 0; head[17] = 0;        // output gain
+            head[18] = 0;                      // channel mapping family
+            return head;
+        }
+
+        private static byte[] OpusTags()
+        {
+            byte[] tags = new byte[12];
+            Buffer.BlockCopy(Encoding.ASCII.GetBytes("OpusTags"), 0, tags, 0, 8);
+            return tags;
+        }
+
+        private static void WriteLE(byte[] buf, int off, int value)
+        {
+            buf[off] = (byte)(value & 0xFF);
+            buf[off + 1] = (byte)((value >> 8) & 0xFF);
+            buf[off + 2] = (byte)((value >> 16) & 0xFF);
+            buf[off + 3] = (byte)((value >> 24) & 0xFF);
+        }
+
+        private byte[] Page(byte[] payload, long granule, int type)
+        {
+            int segs = payload.Length / 255 + 1;
+            byte[] page = new byte[27 + segs + payload.Length];
+            Buffer.BlockCopy(Encoding.ASCII.GetBytes("OggS"), 0, page, 0, 4);
+            page[4] = 0;
+            page[5] = (byte)type;
+            for (int i = 0; i < 8; i++)
+            {
+                page[6 + i] = (byte)((granule >> (8 * i)) & 0xFF);
+            }
+            WriteLE(page, 14, unchecked((int)Serial));
+            WriteLE(page, 18, _seq);
+            WriteLE(page, 22, 0);
+            page[26] = (byte)segs;
+            int left = payload.Length;
+            for (int i = 0; i < segs; i++)
+            {
+                int take = left >= 255 ? 255 : left;
+                page[27 + i] = (byte)take;
+                left -= take;
+            }
+            Buffer.BlockCopy(payload, 0, page, 27 + segs, payload.Length);
+            WriteLE(page, 22, unchecked((int)Crc(page)));
+            _seq++;
+            return page;
+        }
+
+        // TOC 里 5 bit config 决定一帧时长，granule 按 48kHz 累加（RFC 6716 表）
+        private static int FrameSamples(byte toc)
+        {
+            int[] wide = new int[] { 100, 200, 400, 600 };
+            int config = (toc >> 3) & 0x1F;
+            int ms10;
+            if (config < 12)
+            {
+                ms10 = wide[config % 4];
+            }
+            else if (config < 16)
+            {
+                ms10 = (config % 2) == 0 ? 100 : 200;
+            }
+            else if (config < 24)
+            {
+                ms10 = (config % 2) == 0 ? 25 : 50;
+            }
+            else
+            {
+                ms10 = wide[(config - 24) % 4];
+            }
+            return 48 * ms10 / 10;
+        }
+
+        public void WriteFrame(byte[] frame)
+        {
+            if (frame.Length < 4)
+            {
+                return;
+            }
+            _toc = frame[0];
+            byte[] packet = new byte[frame.Length - 1];
+            packet[0] = frame[0];
+            Buffer.BlockCopy(frame, 2, packet, 1, frame.Length - 3);
+            WritePacket(packet);
+        }
+
+        private void WritePacket(byte[] packet)
+        {
+            lock (_gate)
+            {
+                WritePacketLocked(packet);
+            }
+        }
+
+        private void WritePacketLocked(byte[] packet)
+        {
+            _granule += FrameSamples(_toc);
+            byte[] page = Page(packet, _granule, 0);
+            _lastPacket = Environment.TickCount;
+            if (_client != null)
+            {
+                try
+                {
+                    _client.Write(page, 0, page.Length);
+                    return;
+                }
+                catch (Exception)
+                {
+                    CloseClient();
+                }
+            }
+            if (_queue.Count > 400)
+            {
+                _queue.Dequeue();
+            }
+            _queue.Enqueue(page);
+        }
+
+        private void AcceptLoop()
+        {
+            while (!_closed)
+            {
+                Socket socket;
+                try
+                {
+                    socket = _listener.AcceptSocket();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+                try
+                {
+                    NetworkStream stream = new NetworkStream(socket, true);
+                    lock (_gate)
+                    {
+                        _client = stream;
+                        _seq = 2;
+                        _granule = 0;
+                        _startedTick = Environment.TickCount;
+                        stream.Write(_headers, 0, _headers.Length);
+                        while (_queue.Count > 0)
+                        {
+                            byte[] page = _queue.Dequeue();
+                            stream.Write(page, 0, page.Length);
+                        }
+                        _lastPacket = Environment.TickCount;
+                    }
+                    Log("audio client attached port=" + Port);
+                }
+                catch (Exception ex)
+                {
+                    Log("audio client failed: " + ex.Message);
+                }
+            }
+        }
+
+        // ffmpeg 的解码循环会阻塞在输入上，没声音时也要按 DTX 空包续着，否则整条 TS 卡住
+        private void Heartbeat()
+        {
+            int tick = 0;
+            while (!_closed)
+            {
+                Thread.Sleep(100);
+                lock (_gate)
+                {
+                    if (_client == null)
+                    {
+                        continue;
+                    }
+                    // 对齐墙钟：设备静音时补 DTX 空包，ffmpeg 读不到数据会把整条流卡住
+                    // granule 是 48kHz 采样数，除以 48 才是毫秒（乘 1000 除 48 会把它放大 1000 倍）
+                    long want = Environment.TickCount - _startedTick;
+                    long have = _granule / 48;
+                    int guard = 0;
+                    while (have + 100 < want && guard++ < 30)
+                    {
+                        WritePacketLocked(new byte[] { _toc });
+                        _audioFill++;
+                        have += 40;
+                    }
+                    // 墙钟还领先也要保持链路有数据：ffmpeg 的音频输入读不到包超时会把整条 TS 带走
+                    if (Environment.TickCount - _lastPacket > 500)
+                    {
+                        WritePacketLocked(new byte[] { _toc });
+                        _audioFill++;
+                    }
+                    // 每 10 秒报一次状态，现场判断“到底是谁没喂数据”全靠这行
+                    if (++tick >= 100)
+                    {
+                        tick = 0;
+                        Log("audio state packets=" + _audioPackets + " fill=" + _audioFill +
+                            " queued=" + _queue.Count + " stream=" + (have / 1000) + "s wall=" +
+                            (want / 1000) + "s");
+                    }
+                }
+            }
+        }
+
+        private void CloseClient()
+        {
+            if (_client != null)
+            {
+                try
+                {
+                    _client.Close();
+                }
+                catch (Exception)
+                {
+                }
+                _client = null;
+                Log("audio client dropped packets=" + _audioPackets + " queued=" + _queue.Count);
+            }
+        }
+
+        public void Dispose()
+        {
+            _closed = true;
+            lock (_gate)
+            {
+                CloseClient();
+            }
+            try
+            {
+                _listener.Stop();
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 
@@ -654,6 +1085,11 @@ internal static class XiaomiMissHost
                 stdout.Flush();
             }
             Log("ffmpeg stdout closed");
+            if (_audio != null && Environment.TickCount - _ffmpegTick < 20000)
+            {
+                MarkAudioOff("ffmpeg died " + ((Environment.TickCount - _ffmpegTick) / 1000) +
+                             "s after an audio start");
+            }
         }
         catch (Exception ex)
         {
@@ -681,8 +1117,23 @@ internal static class XiaomiMissHost
         }
     }
 
+    private static DateTime _parentStart;
+
     private static void ParentWatcher()
     {
+        try
+        {
+            using (Process parent = Process.GetProcessById(_parentPid))
+            {
+                _parentStart = parent.StartTime;
+            }
+        }
+        catch (Exception)
+        {
+            Log("panel parent already gone");
+            Stop(0);
+            return;
+        }
         while (!_stopped)
         {
             Thread.Sleep(3000);
@@ -694,13 +1145,14 @@ internal static class XiaomiMissHost
             {
                 using (Process parent = Process.GetProcessById(_parentPid))
                 {
-                    if (parent.HasExited)
+                    // 只判断"还在不在"会被 PID 复用骗过：面板重启后新进程可能拿到同一个 pid
+                    if (parent.HasExited || parent.StartTime != _parentStart)
                     {
                         throw new InvalidOperationException();
                     }
                 }
             }
-            catch
+            catch (Exception)
             {
                 Log("panel parent gone");
                 Stop(0);
@@ -723,6 +1175,11 @@ internal static class XiaomiMissHost
             {
                 int rc = _cmdSend(_session, CmdVideoStart, IntPtr.Zero, 0);
                 Log("video start rc=" + rc);
+                if (_audio != null)
+                {
+                    int arc = _cmdSend(_session, CmdAudioStart, IntPtr.Zero, 0);
+                    Log("audio start rc=" + arc);
+                }
             }
             catch (Exception ex)
             {
@@ -789,16 +1246,27 @@ internal static class XiaomiMissHost
             return;
         }
         _stopped = true;
-        Log("stop code=" + code + " frames=" + _frames + " bytes=" + _bytes + " codec=" + _videoCodec);
+        Log("stop code=" + code + " frames=" + _frames + " bytes=" + _bytes +
+            " codec=" + _videoCodec + " audio=" + _audioPackets + "/" + _audioSkipped +
+            " fill=" + _audioFill);
         try
         {
             if (_session != IntPtr.Zero && _cmdSend != null)
             {
                 _cmdSend(_session, CmdVideoStop, IntPtr.Zero, 0);
+                if (_audio != null)
+                {
+                    _cmdSend(_session, CmdAudioStop, IntPtr.Zero, 0);
+                }
             }
         }
         catch
         {
+        }
+        if (_audio != null)
+        {
+            _audio.Dispose();
+            _audio = null;
         }
         try
         {

@@ -70,7 +70,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.28-docker-installer.run
+sudo bash miot-panel-v0.7.29-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -87,14 +87,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.28 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.29 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.28-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.28
+docker load -i miot-panel-v0.7.29-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.29
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -543,6 +543,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.29（2026-11-03）摄像头终于有声音**：以前桥接只把视频原样转发，音频帧到了桥接进程就被丢掉，ffmpeg 也一律带 `-an`，所以异地摄像头一直是静音。现在麦克风音频按设备实际编码收下来重新打包，交给本机 ffmpeg 混进同一路 TS（AAC 音轨），Windows、Linux/Docker 与 ARM 原生桥接走同一套逻辑；摄像头页左上角新增「声音」开关并记住选择（浏览器策略要求第一次必须由用户点一下才允许出声，所以默认仍是静音）。顺带修掉几个会打断画面的问题：上一轮残留的桥接进程还占着设备会话、日志文件被占用时运行库把日志写进了视频流、面板重启后桥接令牌变化让已注册的流返回 403、以及尺寸相同的新桥接程序没被替换上去。音频输入短时间读不到数据也不再 5 秒就把整条流带走，超时放宽到 15 秒。
 - **v0.7.23（2026-10-30）修复音乐中心免登录插件装不上**：根因是面板只把 `panel-sso` 插件拷进目录，而 Songloft 的已安装插件记录在数据库里，拷贝不会注册；且新包缺少 Songloft 要求的 `entryHash`/`zipHash`。现在插件包按 Songloft 规范写入两个 hash，面板通过音乐中心的 `/api/v1/jsplugins/registry/install` 接口自动安装/升级（由面板自己提供 `/music/panel-sso.jsplugin.zip` 给它拉取），连接音乐中心、打开后台音乐中心或面板启动时都会自动补装，版本不一致也会自动覆盖。
 - **v0.7.28（2026-11-01）摄像头打开更快：H.264 不再多转一道、点开先给一帧画面**：面板自己读视频流的 PMT 判断编码（不依赖 ffmpeg），确认是 H.264 就直接播原始流，省掉「解码→再编码」这一整趟，玩客云/路由器这类弱机 CPU 明显降下来；HEVC 机型或用户主动点「流畅/高清」时仍然走转码，编码结果记进配置、重启也保留，没装 ffmpeg 的机器上 H.264 摄像头也能直接播。新增最近一帧快照接口：点开摄像头时先用上一帧垫住黑屏（容器实测热缓存 0.4 秒出图、真实画面约 3 秒接上），画面通了再自动更新这一帧。
 - **v0.7.27（2026-11-01）一键安装器修复 + Linux 裸机装齐随包资源**：`miot-panel-*-installer.run` 的引导脚本会 cd 到 `miot-panel-linux-<版本>`，而包内实际目录带 `v` 前缀，从 v0.7.20 起 `sudo ./…-installer.run` 直接报 “No such file or directory”，什么都不装；现在按包内真实目录匹配，Linux 与 Docker 安装器都在容器里重跑过。同时 `install.sh` 以前只拷主程序和页面，`compat.js`、全量 MIoT 型号表、传感器型号表和 `cacert.pem` 没装进运行目录，装完后型号识别会退化（部分设备的属性读不到）、HTTPS 校验找不到自带 CA，音乐中心和摄像头组件脚本也是缺的；现在一次装齐整套资源，并在 amd64 / arm64 / armv7 三种架构的安装包里各跑了一遍。另外在路由器/光猫上取本机地址时会拿到 WAN IP，现在优先按网卡名挑局域网 IPv4，手机扫码地址和后台二维码跟着变对；音乐中心首次启动自动装内置组件，并把历史遗留的公网回调地址改回当前局域网地址。
