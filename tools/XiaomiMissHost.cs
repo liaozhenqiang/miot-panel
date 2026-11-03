@@ -1165,6 +1165,7 @@ internal static class XiaomiMissHost
     {
         int[] delays = { 1200, 3000, 6000, 10000 };
         int refused = 0;
+        int start = Environment.TickCount;
         foreach (int delay in delays)
         {
             Thread.Sleep(delay);
@@ -1178,8 +1179,8 @@ internal static class XiaomiMissHost
                 Log("video start rc=" + rc);
                 if (rc != 0)
                 {
-                    // 设备明确拒绝（会话满/忙）：三次之后还不行就早退，让面板尽快报错并冷却
-                    if (++refused >= 3)
+                    // 刚建立会话时被拒是常见现象；6 秒后还连续拒绝才快速放弃
+                    if (Environment.TickCount - start > 6000 && ++refused >= 3)
                     {
                         Log("video start refused, giving up");
                         break;

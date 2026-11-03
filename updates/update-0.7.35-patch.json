@@ -1,0 +1,8 @@
+{
+  "version": "0.7.35",
+  "released": "2026-11-03",
+  "notes": "桥接热会话收尾：TS 边界对齐、音频端口等待放宽、会话建立期的拒绝不再误杀。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.35-update.tar.gz",
+  "sha256": "b0407f4b7e5e5d1a0bda9c2dcf607eb12a0991aff987a77453763a91aa050f44",
+  "size": 3013032
+}

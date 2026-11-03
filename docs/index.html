@@ -66,7 +66,7 @@
           <a class="btn ghost" href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3.2-.4 6.5-1.6 6.5-7.2A5.6 5.6 0 0 0 20 4.6 5.2 5.2 0 0 0 19.9.8S18.6.4 16 2.2a13.4 13.4 0 0 0-7 0C6.4.4 5.1.8 5.1.8A5.2 5.2 0 0 0 5 4.6a5.6 5.6 0 0 0-1.5 3.9c0 5.5 3.3 6.8 6.5 7.2A3.4 3.4 0 0 0 9 18.3V22"/></svg> GitHub</a>
         </div>
         <div class="hero-meta">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> v0.7.33 · MIT License</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> v0.7.35 · MIT License</span>
           <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> 本地优先</span>
           <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> PWA / Android</span>
         </div>
@@ -106,16 +106,16 @@
   <div class="container">
     <div class="section-head"><div class="kicker">Quick start</div><h2>三步开始使用</h2><p>下载、设置 PIN、登录小米账号。摄像头和音乐中心可以之后再装。</p></div>
     <div class="quick-grid">
-      <div class="code-card"><div class="code-head">Windows <span class="tag">推荐</span></div><pre><code>下载 miot-panel-v0.7.33-windows-installer.exe
+      <div class="code-card"><div class="code-head">Windows <span class="tag">推荐</span></div><pre><code>下载 miot-panel-v0.7.35-windows-installer.exe
 运行安装器，按提示完成安装
 浏览器打开 http://127.0.0.1:8080</code></pre><div class="code-foot">设置管理员 PIN → 登录小米账号</div></div>
-      <div class="code-card"><div class="code-head">Linux / 玩客云 <span class="tag">armv7</span></div><pre><code>chmod +x miot-panel-v0.7.33-linux-amd64-installer.run
-sudo ./miot-panel-v0.7.33-linux-amd64-installer.run
+      <div class="code-card"><div class="code-head">Linux / 玩客云 <span class="tag">armv7</span></div><pre><code>chmod +x miot-panel-v0.7.35-linux-amd64-installer.run
+sudo ./miot-panel-v0.7.35-linux-amd64-installer.run
 # armv7 换用 linux-armv7-installer.run</code></pre><div class="code-foot">访问 http://&lt;设备IP&gt;/</div></div>
-      <div class="code-card"><div class="code-head">Docker / NAS <span class="tag">多架构</span></div><pre><code>docker load -i miot-panel-v0.7.33-docker-multiarch.tar
+      <div class="code-card"><div class="code-head">Docker / NAS <span class="tag">多架构</span></div><pre><code>docker load -i miot-panel-v0.7.35-docker-multiarch.tar
 docker run -d --name miot-panel -p 8080:80 \
   -v miot_data:/data --restart unless-stopped \
-  liaozhenqiang/miot-panel:0.7.33</code></pre><div class="code-foot">数据卷保留配置与登录态</div></div>
+  liaozhenqiang/miot-panel:0.7.35</code></pre><div class="code-foot">数据卷保留配置与登录态</div></div>
     </div>
   </div>
 </section>
@@ -125,13 +125,13 @@ docker run -d --name miot-panel -p 8080:80 \
     <div class="section-head"><div class="kicker">Download</div><h2>下载最新版本</h2><p>选择你的平台。升级一般保留 PIN、登录态和设备设置。</p></div>
     <div class="download-wrap">
       <div class="download-main">
-        <span class="eyebrow" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.8)"><span class="dot"></span>最新版本 v0.7.33</span>
+        <span class="eyebrow" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.8)"><span class="dot"></span>最新版本 v0.7.35</span>
         <h2>把面板带回家</h2>
         <p>Windows 一键安装器、Linux 自解压安装器、Docker 多架构镜像与 Android 客户端都在 Release 页面。</p>
         <a class="btn primary" href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">打开 GitHub Releases <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a>
         <div class="meta"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> MIT License</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> 数据保留升级</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Windows / Linux / Docker</span></div>
       </div>
-      <div class="download-list"><h3>当前版本资产</h3><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.33-windows-installer.exe</code><span style="margin-left:auto;color:var(--text-3)">Windows 一键安装（x64 / x86 / ARM64）</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.33-windows-x64-portable.zip</code><span style="margin-left:auto;color:var(--text-3)">Windows x64 便携包</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.33-linux-amd64-installer.run</code><span style="margin-left:auto;color:var(--text-3)">Linux x86_64 自解压安装</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.33-linux-armv7-installer.run</code><span style="margin-left:auto;color:var(--text-3)">Linux ARMv7（玩客云等）</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.33-docker-multiarch.tar</code><span style="margin-left:auto;color:var(--text-3)">Docker 多架构 OCI 镜像</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-android-1.0.5.apk</code><span style="margin-left:auto;color:var(--text-3)">Android 客户端</span></div></div>
+      <div class="download-list"><h3>当前版本资产</h3><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.35-windows-installer.exe</code><span style="margin-left:auto;color:var(--text-3)">Windows 一键安装（x64 / x86 / ARM64）</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.35-windows-x64-portable.zip</code><span style="margin-left:auto;color:var(--text-3)">Windows x64 便携包</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.35-linux-amd64-installer.run</code><span style="margin-left:auto;color:var(--text-3)">Linux x86_64 自解压安装</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.35-linux-armv7-installer.run</code><span style="margin-left:auto;color:var(--text-3)">Linux ARMv7（玩客云等）</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-v0.7.35-docker-multiarch.tar</code><span style="margin-left:auto;color:var(--text-3)">Docker 多架构 OCI 镜像</span></div><div class="asset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></svg><code>miot-panel-android-1.0.5.apk</code><span style="margin-left:auto;color:var(--text-3)">Android 客户端</span></div></div>
     </div>
   </div>
 </section>
@@ -179,7 +179,7 @@ docker run -d --name miot-panel -p 8080:80 \
 <section class="cta-band">
   <div class="container cta-inner">
     <div><h2>让家里的旧设备，再当一次主角。</h2><p>米家面板是开源项目，欢迎部署、反馈和参与改进。</p></div>
-    <div class="cta-actions"><a class="btn primary" href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">下载 v0.7.33</a><a class="btn" href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener">查看 GitHub</a></div>
+    <div class="cta-actions"><a class="btn primary" href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">下载 v0.7.35</a><a class="btn" href="https://github.com/liaozhenqiang/miot-panel" target="_blank" rel="noopener">查看 GitHub</a></div>
   </div>
 </section>
 </main>

@@ -212,7 +212,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.33"
+APP_VERSION = "0.7.35"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -5813,7 +5813,7 @@ def _bridge_hub_get(bridge, did, model):
             pass
         threading.Thread(target=_drain_pipe, args=(proc.stderr, did), daemon=True).start()
         audio_port = _bridge_audio_port(_bridge_audio_port_file(bridge, did), proc,
-                                        timeout=0.5)
+                                        timeout=2.0)
         if not audio_port:
             LOG.info("bridge host gave no audio port (did=%s)，这一路只有画面", did)
         ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
@@ -5868,13 +5868,21 @@ def _bridge_hub_pump(hub):
         if not chunk:
             break
         with hub["cond"]:
-            hub["seq"] += 1
-            hub["chunks"].append((hub["seq"], chunk))
-            hub["bytes"] += len(chunk)
-            while hub["bytes"] > (1 << 20) and len(hub["chunks"]) > 1:
-                old = hub["chunks"].popleft()
-                hub["bytes"] -= len(old[1])
-            hub["cond"].notify_all()
+            if not hub["chunks"]:
+                # 第一个分片要对齐 TS 包边界（0x47），go2rtc 的 magic 检查只认头部
+                idx = chunk.find(b"\x47", 0, 2048)
+                if idx < 0:
+                    chunk = b""
+                elif idx > 0:
+                    chunk = chunk[idx:]
+            if chunk:
+                hub["seq"] += 1
+                hub["chunks"].append((hub["seq"], chunk))
+                hub["bytes"] += len(chunk)
+                while hub["bytes"] > (1 << 20) and len(hub["chunks"]) > 1:
+                    old = hub["chunks"].popleft()
+                    hub["bytes"] -= len(old[1])
+                hub["cond"].notify_all()
     with hub["cond"]:
         hub["dead"] = True
         hub["cond"].notify_all()
@@ -5882,6 +5890,28 @@ def _bridge_hub_pump(hub):
         wait = _bridge_failed(hub["did"])
         LOG.warning("bridge hub died without data did=%s rc=%s%s", hub["did"],
                     hub["proc"].returncode, "，冷却 %.0f 秒" % wait if wait else "")
+
+
+def _bridge_registered_stale(did):
+    """go2rtc 里注册的桥接地址签名和当前令牌对不上（老面板代留下的）就重注册。"""
+    try:
+        req = urllib.request.Request(_go2rtc_base() + "/api/streams", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read() or b"{}")
+    except Exception:
+        return False
+    for p in ((data or {}).get("cam_" + str(did)) or {}).get("producers") or []:
+        url = str(p.get("url") or "")
+        if "/api/camera/bridge_stream?" not in url:
+            continue
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        sig = (q.get("sig") or [""])[0]
+        d = (q.get("did") or [""])[0]
+        m = (q.get("model") or [""])[0]
+        expected = _bridge_sig(d, m) if (d and m) else ""
+        if expected and not hmac.compare_digest(sig, expected):
+            return True
+    return False
 
 
 def _bridge_warm(did):
@@ -5955,6 +5985,10 @@ def _bridge_hub_serve(self, hub, did):
             if not batch and not hub["dead"]:
                 continue
             for data in batch:
+                if sent == 0:
+                    idx = data.find(b"\x47", 0, 2048)
+                    if idx > 0:
+                        data = data[idx:]
                 self.wfile.write(data)
                 self.wfile.flush()
                 sent += len(data)
@@ -8928,7 +8962,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception as exc:
                         LOG.warning("camera ensure start failed: %s", str(exc)[:160])
         ready, names = _go2rtc_stream_names()
-        if ready and name in names:
+        if ready and name in names and not _bridge_registered_stale(did):
             threading.Thread(target=_bridge_warm, args=(did,), daemon=True).start()
             self._send(200, _camera_ready_payload(did, name, names))
             return
