@@ -54,6 +54,7 @@ import random
 import secrets
 import shutil
 import subprocess
+import collections
 import tarfile
 import tempfile
 import zipfile
@@ -211,7 +212,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.32"
+APP_VERSION = "0.7.33"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -5775,6 +5776,200 @@ def _bridge_succeeded(did):
         BRIDGE_FAIL.pop(did, None)
 
 
+BRIDGE_HUBS = {}
+BRIDGE_HUB_LOCK = threading.Lock()
+BRIDGE_HUB_KEEP = 120.0   # 最后一个观众离开后保留热会话
+BRIDGE_HUB_WARM = 45.0    # 预热后一直没人看的最多保留
+
+
+def _bridge_hub_get(bridge, did, model):
+    """桥接链复用：宿主 + ffmpeg 常驻，输出进环形缓冲，后来的观众直接吃缓冲。
+
+    米家/官方查看器点开即看靠的是会话常驻 + 原生解码；我们没法改解码端，
+    但可以把「P2P 握手 + 云端 RPC + 开流」这些几秒的冷启动从每次点开里省掉。
+    """
+    with BRIDGE_HUB_LOCK:
+        hub = BRIDGE_HUBS.get(did)
+        if hub and not hub["dead"]:
+            hub["last"] = time.time()
+            return hub
+    pipe_mode = bridge.get("kind") in ("wine", "native", "qemu")
+    flags = 0x08000000 if os.name == "nt" else 0
+    try:
+        proc = subprocess.Popen(_bridge_host_args(bridge, did, model),
+                                stdin=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
+                                creationflags=flags)
+    except Exception as exc:
+        LOG.warning("bridge spawn failed: %s", exc)
+        return None
+    ff = None
+    audio_port = 0
+    if pipe_mode:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        threading.Thread(target=_drain_pipe, args=(proc.stderr, did), daemon=True).start()
+        audio_port = _bridge_audio_port(_bridge_audio_port_file(bridge, did), proc,
+                                        timeout=0.5)
+        if not audio_port:
+            LOG.info("bridge host gave no audio port (did=%s)，这一路只有画面", did)
+        ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
+                   "-use_wallclock_as_timestamps", "1", "-f", "hevc", "-i", "pipe:0"]
+        if audio_port:
+            # 音频输入一断，ffmpeg 会把整条 TS 一起结束，所以读超时给到 15 秒
+            ff_args += ["-use_wallclock_as_timestamps", "1", "-f", "ogg",
+                        "-i", "tcp://127.0.0.1:%d?timeout=15000000" % audio_port,
+                        "-map", "0:v:0", "-map", "1:a:0",
+                        "-c:v", "copy", "-c:a", "aac", "-b:a", "24k"]
+        else:
+            ff_args += ["-c", "copy", "-an"]
+        ff_args += ["-flush_packets", "1", "-f", "mpegts", "pipe:1"]
+        try:
+            ff = subprocess.Popen(ff_args, stdin=proc.stdout, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, creationflags=flags)
+        except Exception as exc:
+            LOG.warning("bridge ffmpeg spawn failed: %s", exc)
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return None
+    hub = {"did": did, "proc": proc, "ff": ff, "chunks": collections.deque(),
+           "seq": 0, "bytes": 0, "watchers": 0, "watched": False, "dead": False,
+           "last": time.time(), "cond": threading.Condition()}
+    with BRIDGE_HUB_LOCK:
+        existing = BRIDGE_HUBS.get(did)
+        if existing and not existing["dead"]:
+            # 预热线程和首个观众撞车：只留一个，另一个立即放手
+            for p in (ff, proc):
+                if p is not None:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+            return existing
+        BRIDGE_HUBS[did] = hub
+    threading.Thread(target=_bridge_hub_pump, args=(hub,), daemon=True).start()
+    threading.Thread(target=_bridge_hub_idle, args=(hub,), daemon=True).start()
+    LOG.info("bridge hub start did=%s pid=%s kind=%s", did, proc.pid, bridge.get("kind"))
+    return hub
+
+
+def _bridge_hub_pump(hub):
+    fd = (hub["ff"] or hub["proc"]).stdout.fileno()
+    while True:
+        try:
+            chunk = os.read(fd, 65536)
+        except (OSError, ValueError):
+            chunk = b""
+        if not chunk:
+            break
+        with hub["cond"]:
+            hub["seq"] += 1
+            hub["chunks"].append((hub["seq"], chunk))
+            hub["bytes"] += len(chunk)
+            while hub["bytes"] > (1 << 20) and len(hub["chunks"]) > 1:
+                old = hub["chunks"].popleft()
+                hub["bytes"] -= len(old[1])
+            hub["cond"].notify_all()
+    with hub["cond"]:
+        hub["dead"] = True
+        hub["cond"].notify_all()
+    if hub["bytes"] == 0:
+        wait = _bridge_failed(hub["did"])
+        LOG.warning("bridge hub died without data did=%s rc=%s%s", hub["did"],
+                    hub["proc"].returncode, "，冷却 %.0f 秒" % wait if wait else "")
+
+
+def _bridge_warm(did):
+    """页面点开摄像头时先起桥接链预热，播放器拉流时 P2P 握手已经做完。"""
+    try:
+        bridge = _bridge_prepare()
+        if not bridge:
+            return
+        model = ""
+        for item in (CAM_CACHE.get("items") or []):
+            if str(item.get("did") or "") == did:
+                model = str(item.get("model") or "")
+                break
+        if model:
+            _bridge_hub_get(bridge, did, model)
+    except Exception as exc:
+        LOG.debug("bridge warm failed: %s", exc)
+
+
+def _bridge_hub_idle(hub):
+    while not hub["dead"]:
+        time.sleep(10)
+        with hub["cond"]:
+            idle = time.time() - hub["last"]
+            limit = BRIDGE_HUB_KEEP if hub["watched"] else BRIDGE_HUB_WARM
+        if idle > limit:
+            break
+    with BRIDGE_HUB_LOCK:
+        if BRIDGE_HUBS.get(hub["did"]) is hub:
+            BRIDGE_HUBS.pop(hub["did"], None)
+    for p in (hub["ff"], hub["proc"]):
+        if p is not None:
+            try:
+                p.kill()
+            except Exception:
+                pass
+            try:
+                p.wait(timeout=5)
+            except Exception:
+                pass
+    LOG.info("bridge hub end did=%s", hub["did"])
+
+
+def _bridge_hub_serve(self, hub, did):
+    """先给缓冲里的历史 TS（秒出首帧），再接着实时数据；观众互不影响。"""
+    with hub["cond"]:
+        next_seq = hub["seq"] - len(hub["chunks"]) + 1
+        hub["watchers"] += 1
+        hub["watched"] = True
+        hub["last"] = time.time()
+    sent = 0
+    try:
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp2t")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        while True:
+            batch = []
+            with hub["cond"]:
+                while hub["seq"] < next_seq and not hub["dead"]:
+                    hub["cond"].wait(timeout=4)
+                for seq, data in hub["chunks"]:
+                    if seq >= next_seq:
+                        batch.append(data)
+                if batch:
+                    next_seq = hub["seq"] + 1
+                elif hub["dead"]:
+                    break
+            if not batch and not hub["dead"]:
+                continue
+            for data in batch:
+                self.wfile.write(data)
+                self.wfile.flush()
+                sent += len(data)
+            if hub["dead"]:
+                break
+    except Exception as exc:
+        LOG.debug("bridge hub serve end: %s", exc)
+    finally:
+        with hub["cond"]:
+            hub["watchers"] = max(0, hub["watchers"] - 1)
+            hub["last"] = time.time()
+        if sent:
+            _bridge_succeeded(did)
+
+
 def _bridge_prune_hosts(keep):
     """按指纹起副本会攒下旧文件：能删就删，被卡死的宿主占着的留着不管。"""
     folder = os.path.dirname(BRIDGE_HOST)
@@ -8708,95 +8903,11 @@ class Handler(BaseHTTPRequestHandler):
         if not bridge:
             self._send(503, {"ok": False, "error": "桥接未就绪"})
             return
-        args = _bridge_host_args(bridge, did, model)
-        flags = 0x08000000 if os.name == "nt" else 0
-        pipe_mode = bridge.get("kind") in ("wine", "native", "qemu")
-        try:
-            proc = subprocess.Popen(args,
-                                    stdin=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE if pipe_mode else subprocess.DEVNULL,
-                                    creationflags=flags)
-        except Exception as exc:
-            LOG.warning("bridge spawn failed: %s", exc)
-            self._send(500, {"ok": False, "error": "桥接启动失败"})
+        hub = _bridge_hub_get(bridge, did, model)
+        if not hub:
+            self._send(503, {"ok": False, "error": "桥接启动失败"})
             return
-        ff = None
-        if pipe_mode:
-            try:
-                proc.stdin.close()
-            except Exception:
-                pass
-            threading.Thread(target=_drain_pipe, args=(proc.stderr, did),
-                             daemon=True).start()
-            # 桥接端会把自己监听的音频端口写进这个文件；拿到了就多加一路 Ogg-Opus 输入
-            audio_port = _bridge_audio_port(_bridge_audio_port_file(bridge, did), proc,
-                                            timeout=0.5)
-            if not audio_port:
-                LOG.info("bridge host gave no audio port (did=%s)，这一路只有画面", did)
-            ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
-                       "-use_wallclock_as_timestamps", "1",
-                       "-f", "hevc", "-i", "pipe:0"]
-            if audio_port:
-                # 音频输入一断，ffmpeg 会把整条 TS 一起结束，所以读超时给到 15 秒
-                ff_args += ["-use_wallclock_as_timestamps", "1", "-f", "ogg",
-                            "-i", "tcp://127.0.0.1:%d?timeout=15000000" % audio_port,
-                            "-map", "0:v:0", "-map", "1:a:0",
-                            "-c:v", "copy", "-c:a", "aac", "-b:a", "24k"]
-            else:
-                ff_args += ["-c", "copy", "-an"]
-            ff_args += ["-flush_packets", "1", "-f", "mpegts", "pipe:1"]
-            try:
-                ff = subprocess.Popen(
-                    ff_args,
-                    stdin=proc.stdout, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=0x08000000 if os.name == "nt" else 0)
-            except Exception as exc:
-                LOG.warning("bridge ffmpeg spawn failed: %s", exc)
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-                self._send(500, {"ok": False, "error": "桥接转码启动失败"})
-                return
-        LOG.info("bridge stream start did=%s pid=%s kind=%s", did, proc.pid, bridge.get("kind"))
-        sent = 0
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", "video/mp2t")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
-            fd = (ff or proc).stdout.fileno()
-            while True:
-                chunk = os.read(fd, 65536)
-                if not chunk:
-                    break
-                sent += len(chunk)
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except Exception as exc:
-            LOG.debug("bridge stream write end: %s", exc)
-        finally:
-            for doomed in (ff, proc):
-                if doomed is None:
-                    continue
-                try:
-                    doomed.kill()
-                except Exception:
-                    pass
-                try:
-                    doomed.wait(timeout=5)
-                except Exception:
-                    pass
-            if sent:
-                _bridge_succeeded(did)
-            else:
-                wait = _bridge_failed(did)
-                LOG.warning("bridge stream got no data did=%s rc=%s%s", did, proc.returncode,
-                            "，冷却 %.0f 秒" % wait if wait else "")
+        _bridge_hub_serve(self, hub, did)
 
     def api_camera_ensure(self, u=None):
         """页面播放前调用：流不在 go2rtc 里就重新注册（go2rtc 重启后运行时流会丢）。"""
@@ -8818,6 +8929,7 @@ class Handler(BaseHTTPRequestHandler):
                         LOG.warning("camera ensure start failed: %s", str(exc)[:160])
         ready, names = _go2rtc_stream_names()
         if ready and name in names:
+            threading.Thread(target=_bridge_warm, args=(did,), daemon=True).start()
             self._send(200, _camera_ready_payload(did, name, names))
             return
         reason = ""
@@ -8832,6 +8944,7 @@ class Handler(BaseHTTPRequestHandler):
             reason = str(exc)[:160]
         ready, names = _go2rtc_stream_names()
         if ready and name in names:
+            threading.Thread(target=_bridge_warm, args=(did,), daemon=True).start()
             self._send(200, _camera_ready_payload(did, name, names, recovered=True))
             return
         self._send(200, {"ok": False, "ready": False,

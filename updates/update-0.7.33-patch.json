@@ -1,0 +1,8 @@
+{
+  "version": "0.7.33",
+  "released": "2026-11-03",
+  "notes": "摄像头秒开：桥接热会话 + 环形缓冲，点开时后台预热、断开后保持 2 分钟，实测预热后首字节 0.06 秒，连续切换几乎零等待。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.33-update.tar.gz",
+  "sha256": "9cefae6b5a6c7d4e2eaf437f6050607bd652d830f32976eadf2c2d3ff14656c3",
+  "size": 3012539
+}
