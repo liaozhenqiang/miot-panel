@@ -1,8 +1,8 @@
 {
-  "version": "0.7.31",
+  "version": "0.7.32",
   "released": "2026-11-03",
-  "notes": "摄像头桥接再补一处环境修复：Armbian(glibc) 设备上缺 uClibc 加载器软链时，面板自动补上，玩客云真机实测声音与画面正常。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.31-update.tar.gz",
-  "sha256": "d05ad0626799dbef068cdd83a4eaa3bf157adfb432b400024bbc39612c0f4b4f",
-  "size": 3010832
+  "notes": "设备端拒绝开流时桥接不再长转圈：三次拒绝即放弃、面板冷却并尽快报错；正常摄像头首帧等待与音频端口等待也各缩短一截。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.32-update.tar.gz",
+  "sha256": "189191b8cb7e4386fecb02129b19ed01d4dccd7d92501381b099bc2d69b3e5e1",
+  "size": 3011169
 }

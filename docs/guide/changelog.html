@@ -59,33 +59,38 @@
     <h1>更新日志</h1>
     <p class="page-desc">米家面板 v0.7.26 及历史版本的功能与修复记录。</p>
     
-<h2 id="h-1">v0.7.31 <span class="pgh-date">2026-11-03</span></h2>
+<h2 id="h-1">v0.7.32 <span class="pgh-date">2026-11-03</span></h2>
+<ul>
+<li>设备端拒绝开流（会话满/忙）时桥接不再按固定节奏重试半分钟，三次拒绝即放弃并交给面板冷却，播放页不再长时间转圈。</li>
+<li>正常摄像头的首帧等待缩短：Windows 首次拉流 1.8 秒降到 1.2 秒，音频端口等待 1.2 秒降到 0.5 秒。</li>
+</ul>
+<h2 id="h-2">v0.7.31 <span class="pgh-date">2026-11-03</span></h2>
 <ul>
 <li>修复玩客云（Armbian/glibc）上 ARM 桥接起不来的问题：uClibc 加载器软链缺失，面板现在会自动补上，完整安装包也自带这一步。</li>
 <li>玩客云真机实测：原始流 HEVC 640x360 + AAC 48kHz 26kb/s，转码流 H.264 + AAC。</li>
 </ul>
-<h2 id="h-2">v0.7.30 <span class="pgh-date">2026-11-03</span></h2>
+<h2 id="h-3">v0.7.30 <span class="pgh-date">2026-11-03</span></h2>
 <ul>
 <li>修复 v0.7.29 的严重回归：音频改动里有个变量在 Linux 分支没定义，桥接一启动就抛异常，玩客云 / 爱快 / Docker 上的异地摄像头全部黑屏。</li>
 <li>补上 qemu 运行 ARM 桥接时缺少的 sysroot —— 在非 ARM 机器（如 x86_64 爱快）上这条路径此前会直接找不到 ARM 动态加载器而退出。</li>
 <li>连续两次拉不到画面就冷却 120 秒，不再让重试的桥接一直占着摄像头的 P2P 会话；面板启动与热更新时收掉上一代残留的桥接进程。</li>
 <li>桥接端不支持音频时，等待从 4 秒缩短到 1.2 秒并退回纯画面；爱快真机实测原始流 HEVC + AAC 27kb/s、转码流 H.264 + AAC 33kb/s。</li>
 </ul>
-<h2 id="h-3">v0.7.29 <span class="pgh-date">2026-11-03</span></h2>
+<h2 id="h-4">v0.7.29 <span class="pgh-date">2026-11-03</span></h2>
 <ul>
 <li>摄像头终于有声音：异地摄像头的拾音不再被丢掉，桥接把音频和本机 ffmpeg 一起混进同一路流（AAC 音轨），Windows / Linux / Docker / ARM 原生走同一套逻辑。</li>
 <li>摄像头页左上角新增「声音」开关，选择会被记住；浏览器策略要求第一次由用户点击才允许出声，因此默认仍是静音。</li>
 <li>修复上一轮残留的桥接进程占着设备会话、运行库日志写进视频流导致黑屏、面板重启后桥接令牌变化让已注册的流返回 403、以及尺寸相同的新桥接程序没被替换上去的问题。</li>
 <li>音频输入短时间读不到数据不再 5 秒就整条退出，读超时放宽到 15 秒。</li>
 </ul>
-<h2 id="h-4">v0.7.28 <span class="pgh-date">2026-11-01</span></h2>
+<h2 id="h-5">v0.7.28 <span class="pgh-date">2026-11-01</span></h2>
 <ul>
 <li>摄像头选流优化：面板直接读视频流的 PMT 判断编码（不依赖 ffmpeg），H.264 走原始流播放，不再多一道解码再编码；HEVC 或主动选「流畅/高清」时才转码。</li>
 <li>弱机（玩客云、路由器、NAS）CPU 占用明显下降，编码结果会记住，重启后依旧生效。</li>
 <li>点开摄像头先用最近一帧画面垫住黑屏，真实画面接上后自动切换；容器实测热缓存 0.4 秒出图、真实画面约 3 秒接上。</li>
 <li>没装 ffmpeg 的机器上，H.264 摄像头现在也能直接播放，不再提示「无法转码播放」。</li>
 </ul>
-<h2 id="h-5">v0.7.27 <span class="pgh-date">2026-11-01</span></h2>
+<h2 id="h-6">v0.7.27 <span class="pgh-date">2026-11-01</span></h2>
 <ul>
 <li>修复一键安装器：<code>…-installer.run</code> 引导脚本 cd 的目录名与包内实际目录不一致（少一个 <code>v</code>），从 v0.7.20 起 <code>sudo ./…-installer.run</code> 会报 “No such file or directory” 且什么都不装；现在按包内真实目录匹配，Linux 与 Docker 安装器均已容器内重跑。</li>
 <li>Linux 安装脚本一次装齐整套随包资源：兼容层、全量 MIoT 型号表、传感器型号表、CA 证书、音乐中心与组件脚本，修复裸机安装后型号识别退化和 HTTPS 校验找不到自带 CA 的问题。</li>
@@ -93,42 +98,42 @@
 <li>路由器 / 光猫环境下优先按网卡名取局域网 IPv4，手机扫码地址与后台二维码不再指向公网 IP。</li>
 <li>音乐中心首次启动自动安装内置组件，并把历史遗留的公网回调地址改回当前局域网地址。</li>
 </ul>
-<h2 id="h-6">v0.7.26 <span class="pgh-date">2026-11-01</span></h2>
+<h2 id="h-7">v0.7.26 <span class="pgh-date">2026-11-01</span></h2>
 <ul>
 <li>后台摄像头板块按当前平台显示可用状态与提示，状态和文案更准确。</li>
 <li>远程摄像头服务 / 云台转发说明更清晰；新增共享 go2rtc 地址。</li>
 <li>摄像头页来源标注修正为实际类型。</li>
 <li>更新 GitHub 文档，清理安装包与发布说明中的技术细节。</li>
 </ul>
-<h2 id="h-7">v0.7.25 <span class="pgh-date">2026-10-30</span></h2>
+<h2 id="h-8">v0.7.25 <span class="pgh-date">2026-10-30</span></h2>
 <ul>
 <li>修复 Windows 面板刷新后台时弹 PowerShell 黑窗；所有子进程统一隐藏控制台。</li>
 <li>局域网地址查询增加 60 秒缓存，后台刷新更快。</li>
 </ul>
-<h2 id="h-8">v0.7.22 <span class="pgh-date">2026-10-30</span></h2>
+<h2 id="h-9">v0.7.22 <span class="pgh-date">2026-10-30</span></h2>
 <ul>
 <li>新增自检诊断、口令加密迁移包、组件看门狗、自然语言控制和使用习惯排序。</li>
 </ul>
-<h2 id="h-9">v0.7.20 <span class="pgh-date">2026-10-30</span></h2>
+<h2 id="h-10">v0.7.20 <span class="pgh-date">2026-10-30</span></h2>
 <ul>
 <li>新增极光、纸感两套结构级主题；补充平板/横屏栅格。</li>
 <li>音乐中心跨平台一键安装，自动跟随上游最新版。</li>
 </ul>
-<h2 id="h-10">v0.7.17 <span class="pgh-date">2026-10-29</span></h2>
+<h2 id="h-11">v0.7.17 <span class="pgh-date">2026-10-29</span></h2>
 <ul>
 <li>排版改为横 × 竖自定义；新增默认米家主题；后台分区切换。</li>
 <li>摄像头页同步主题，设备显示与改名移动到音乐中心之前。</li>
 </ul>
-<h2 id="h-11">v0.7.12 <span class="pgh-date">2026-10-29</span></h2>
+<h2 id="h-12">v0.7.12 <span class="pgh-date">2026-10-29</span></h2>
 <ul>
 <li>Linux 包按架构拆分，内置预编译轮子；armv7 不再需要 gcc 现场编译。</li>
 <li>新增 Android 客户端自动发现、原生 PIN 和 WebView 兼容层。</li>
 </ul>
-<h2 id="h-12">v0.7.0 <span class="pgh-date">2026-10-28</span></h2>
+<h2 id="h-13">v0.7.0 <span class="pgh-date">2026-10-28</span></h2>
 <ul>
 <li>摄像头组件扩展到 Windows / Linux / macOS / Docker；新增 UDP 37020 局域网发现和 Android 客户端 1.0.0。</li>
 </ul>
-<h2 id="h-13">v0.3.0 <span class="pgh-date">2026-10-26</span></h2>
+<h2 id="h-14">v0.3.0 <span class="pgh-date">2026-10-26</span></h2>
 <ul>
 <li>跨平台版：拆分程序与数据目录，支持 Windows / Linux / Docker 多架构；新增 PWA。</li>
 </ul>

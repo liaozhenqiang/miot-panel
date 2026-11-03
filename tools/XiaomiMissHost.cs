@@ -1163,7 +1163,8 @@ internal static class XiaomiMissHost
 
     private static void VideoStarter()
     {
-        int[] delays = { 1800, 5000, 10000, 15000 };
+        int[] delays = { 1200, 3000, 6000, 10000 };
+        int refused = 0;
         foreach (int delay in delays)
         {
             Thread.Sleep(delay);
@@ -1175,6 +1176,16 @@ internal static class XiaomiMissHost
             {
                 int rc = _cmdSend(_session, CmdVideoStart, IntPtr.Zero, 0);
                 Log("video start rc=" + rc);
+                if (rc != 0)
+                {
+                    // 设备明确拒绝（会话满/忙）：三次之后还不行就早退，让面板尽快报错并冷却
+                    if (++refused >= 3)
+                    {
+                        Log("video start refused, giving up");
+                        break;
+                    }
+                    continue;
+                }
                 if (_audio != null)
                 {
                     int arc = _cmdSend(_session, CmdAudioStart, IntPtr.Zero, 0);

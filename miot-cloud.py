@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.31"
+APP_VERSION = "0.7.32"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -8731,7 +8731,7 @@ class Handler(BaseHTTPRequestHandler):
                              daemon=True).start()
             # 桥接端会把自己监听的音频端口写进这个文件；拿到了就多加一路 Ogg-Opus 输入
             audio_port = _bridge_audio_port(_bridge_audio_port_file(bridge, did), proc,
-                                            timeout=1.2)
+                                            timeout=0.5)
             if not audio_port:
                 LOG.info("bridge host gave no audio port (did=%s)，这一路只有画面", did)
             ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",

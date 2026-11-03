@@ -70,7 +70,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.31-docker-installer.run
+sudo bash miot-panel-v0.7.32-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -87,14 +87,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.31 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.32 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.31-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.31
+docker load -i miot-panel-v0.7.32-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.32
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -543,6 +543,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.32（2026-11-03）摄像头连不上的时候不再长时间转圈**：以前设备端拒绝开流（会话满/忙）时，桥接会按固定节奏重试半分钟到一分钟，播放页就一直转。现在设备三次明确拒绝就立即放弃，面板把失败摄像头冷却起来并尽快报错；打开正常摄像头时首帧等待也缩短了（Windows 首次拉流从 1.8 秒降到 1.2 秒），音频端口等待从 1.2 秒缩到 0.5 秒。摄像头本身被多个客户端占满会话时，重启摄像头最直接。
 - **v0.7.31（2026-11-03）玩客云摄像头桥接再修一处环境问题**：ARM 宿主是 uClibc 动态链接，加载器写死 `/lib/ld-uClibc.so.0`；玩客云这类 Armbian（glibc）系统没有它，内核直接报“找不到文件”，桥接起不来。现在面板启动时若发现缺这个加载器，会自动把 `native-arm` 里的软链过去（真正的 uClibc 设备本来就有，不受影响），完整安装包也自带这一步。玩客云真机实测：原始流 HEVC 640x360 + AAC 48kHz 单声道 26kb/s，转码流 H.264 + AAC。
 - **v0.7.30（2026-11-03）修复 v0.7.30 在 Linux / ARM 上把画面一起弄坏的回归**：音频改动里有一处变量在 Linux 分支没定义，桥接一启动就抛异常，go2rtc 只拿到 EOF，玩客云、爱快、Docker 上的异地摄像头全部黑屏（Windows 走的是另一条分支，所以当时实测是好的）。同时补上 qemu 跑 ARM 桥接时缺少的 sysroot：以前在非 ARM 机器上（如爱快 x86_64）qemu 会去宿主机 `/lib` 找 ARM 动态加载器，找不到就直接退出，这条路径实际上从来没通过。另外：连续两次拉不到画面就先冷却 120 秒，不再让重试的桥接一直钉着摄像头的会话；面板启动和热更新重启用时会收掉上一代残留的桥接进程；桥接端不支持音频时等端口从 4 秒缩到 1.2 秒并写明只有画面。爱快真机实测：原始流 HEVC + AAC 48kHz 单声道 27kb/s，转码流 H.264 + AAC 33kb/s。
 - **v0.7.29（2026-11-03）摄像头终于有声音**：以前桥接只把视频原样转发，音频帧到了桥接进程就被丢掉，ffmpeg 也一律带 `-an`，所以异地摄像头一直是静音。现在麦克风音频按设备实际编码收下来重新打包，交给本机 ffmpeg 混进同一路 TS（AAC 音轨），Windows、Linux/Docker 与 ARM 原生桥接走同一套逻辑；摄像头页左上角新增「声音」开关并记住选择（浏览器策略要求第一次必须由用户点一下才允许出声，所以默认仍是静音）。顺带修掉几个会打断画面的问题：上一轮残留的桥接进程还占着设备会话、日志文件被占用时运行库把日志写进了视频流、面板重启后桥接令牌变化让已注册的流返回 403、以及尺寸相同的新桥接程序没被替换上去。音频输入短时间读不到数据也不再 5 秒就把整条流带走，超时放宽到 15 秒。
