@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.30"
+APP_VERSION = "0.7.31"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -6092,12 +6092,37 @@ def _native_ensure_root_link(base):
         pass
 
 
+def _native_loader_link(base):
+    """ARM 宿主是 uClibc 动态链接，PT_INTERP 写死 /lib/ld-uClibc.so.0。
+
+    玩客云这类 Armbian(glibc) 系统的 /lib 里没有它，内核 exec 直接报 ENOENT。
+    把 native-arm 里的加载器软链过去；真正的 uClibc 设备本来就带，跳过即可。
+    """
+    if not base:
+        return False
+    dst = "/lib/ld-uClibc.so.0"
+    if os.path.lexists(dst):
+        return True
+    for name in ("ld-uClibc.so.0", "ld-uClibc-1.0.31.so", "ld-linux-armhf.so.3"):
+        src = os.path.join(base, name)
+        if os.path.isfile(src) or os.path.islink(src):
+            try:
+                os.symlink(src, dst)
+                LOG.info("native loader link created: %s -> %s", dst, src)
+                return True
+            except OSError as exc:
+                LOG.warning("native loader link failed: %s", exc)
+                return False
+    return False
+
+
 def _native_bridge_info():
     base, helper = _native_helper_paths()
     if not base or not helper:
         return None
     if _native_platform():
         _native_ensure_root_link(base)
+        _native_loader_link(base)
         return {"kind": "native", "base": base, "helper": helper,
                 "host": helper, "qemu": ""}
     qemu = _native_qemu_bin(base)

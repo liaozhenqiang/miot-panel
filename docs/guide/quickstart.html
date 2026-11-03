@@ -61,10 +61,10 @@
     
 <p>米家面板支持 Windows、Linux（含玩客云/树莓派等 armv7 设备）、Docker / NAS，以及 PWA 和 Android 客户端。第一次使用只需要完成三件事：安装、设置 PIN、登录小米账号。</p>
 <h2 id="h-1">下载</h2>
-<p>所有安装包都在 <a href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>。当前版本 <strong>v0.7.30</strong>，按平台选择：</p>
+<p>所有安装包都在 <a href="https://github.com/liaozhenqiang/miot-panel/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>。当前版本 <strong>v0.7.31</strong>，按平台选择：</p>
 <table>
 <tr><th>平台</th><th>推荐安装包</th><th>说明</th></tr>
-<tr><td>Windows</td><td><code>miot-panel-v0.7.30-windows-installer.exe</code></td><td>一次安装 x64 / x86 / ARM64 运行时，自动选择架构</td></tr>
+<tr><td>Windows</td><td><code>miot-panel-v0.7.31-windows-installer.exe</code></td><td>一次安装 x64 / x86 / ARM64 运行时，自动选择架构</td></tr>
 <tr><td>Windows 便携</td><td><code>...-windows-x64-portable.zip</code> 等</td><td>解压即用，适合不想安装</td></tr>
 <tr><td>Linux x86_64</td><td><code>...-linux-amd64-installer.run</code></td><td>自解压安装并注册 systemd 服务</td></tr>
 <tr><td>Linux ARM64</td><td><code>...-linux-arm64-installer.run</code></td><td>树莓派 4/5、ARM 迷你主机等</td></tr>
@@ -77,7 +77,7 @@
 
 <h2 id="h-2">Windows 安装</h2>
 <ol>
-<li>下载并运行 <code>miot-panel-v0.7.30-windows-installer.exe</code>。</li>
+<li>下载并运行 <code>miot-panel-v0.7.31-windows-installer.exe</code>。</li>
 <li>安装器会按真实 CPU 选择 x64 / x86 / ARM64 运行时；安装完成后启动面板并加入开机自启。</li>
 <li>浏览器打开 <code>http://127.0.0.1:8080</code>（或安装器提示的端口），设置管理员 PIN。</li>
 <li>用小米账号登录，等待设备列表同步。</li>
@@ -86,18 +86,18 @@
 
 <h2 id="h-3">Linux / 玩客云安装</h2>
 <p>以 amd64 为例；armv7 / arm64 换成对应文件名：</p>
-<pre><code>chmod +x miot-panel-v0.7.30-linux-amd64-installer.run
-sudo ./miot-panel-v0.7.30-linux-amd64-installer.run</code></pre>
+<pre><code>chmod +x miot-panel-v0.7.31-linux-amd64-installer.run
+sudo ./miot-panel-v0.7.31-linux-amd64-installer.run</code></pre>
 <p>安装器会安装到系统目录并注册 <code>miot-cloud</code> 服务，默认端口通常为 80。安装完成后访问：</p>
 <pre><code>http://&lt;设备IP&gt;/</code></pre>
 <p>玩客云等 armv7 设备请使用 <code>linux-armv7</code> 包，包内带预编译依赖轮子，不需要现场编译。</p>
 
 <h2 id="h-4">Docker / NAS 安装</h2>
 <p>Release 提供多架构 OCI 镜像 tar 和 Docker 安装器。以 OCI tar 为例：</p>
-<pre><code>docker load -i miot-panel-v0.7.30-docker-multiarch.tar
+<pre><code>docker load -i miot-panel-v0.7.31-docker-multiarch.tar
 docker run -d --name miot-panel \
   -p 8080:80 -v miot_data:/data \
-  --restart unless-stopped liaozhenqiang/miot-panel:0.7.30</code></pre>
+  --restart unless-stopped liaozhenqiang/miot-panel:0.7.31</code></pre>
 <p>也可以使用 <code>docker-installer.run</code> 或包里的 <code>docker-compose.yml</code>。数据卷必须保留，升级时不要删除。</p>
 
 <h2 id="h-5">首次设置</h2>

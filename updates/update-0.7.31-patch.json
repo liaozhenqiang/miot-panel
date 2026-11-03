@@ -1,0 +1,8 @@
+{
+  "version": "0.7.31",
+  "released": "2026-11-03",
+  "notes": "摄像头桥接再补一处环境修复：Armbian(glibc) 设备上缺 uClibc 加载器软链时，面板自动补上，玩客云真机实测声音与画面正常。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.31-update.tar.gz",
+  "sha256": "d05ad0626799dbef068cdd83a4eaa3bf157adfb432b400024bbc39612c0f4b4f",
+  "size": 3010832
+}

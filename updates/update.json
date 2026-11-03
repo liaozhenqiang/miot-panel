@@ -1,8 +1,8 @@
 {
-  "version": "0.7.30",
+  "version": "0.7.31",
   "released": "2026-11-03",
-  "notes": "摄像头终于有声音，并修掉 v0.7.29 在 Linux/ARM 上把画面弄黑的回归：桥接把拾音混成同一路带 AAC 的流，摄像头页新增「声音」开关；补上 qemu 跑 ARM 桥接缺的 sysroot；连续拉不到画面会先冷却，面板重启时会收掉残留的桥接进程。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.30-update.tar.gz",
-  "sha256": "9d90f2504827da0a3543ad15512f4a54e05433834ea3f4dcdda756470cbf7f73",
-  "size": 3010480
+  "notes": "摄像头桥接再补一处环境修复：Armbian(glibc) 设备上缺 uClibc 加载器软链时，面板自动补上，玩客云真机实测声音与画面正常。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.31-update.tar.gz",
+  "sha256": "d05ad0626799dbef068cdd83a4eaa3bf157adfb432b400024bbc39612c0f4b4f",
+  "size": 3010832
 }
