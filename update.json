@@ -1,8 +1,8 @@
 {
-  "version": "0.7.29",
+  "version": "0.7.30",
   "released": "2026-11-03",
-  "notes": "摄像头终于有声音：桥接不再丢掉拾音数据，音频和本机 ffmpeg 一起混成带 AAC 音轨的流，Windows / Linux / Docker / ARM 原生同一套逻辑；摄像头页左上角新增「声音」开关并记住选择。同时修掉残留宿主占住设备会话、日志串进画面流、面板重启后桥接 403、新版桥接程序装不上等问题。",
-  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.29-update.tar.gz",
-  "sha256": "fbc0bbc003253d57080e55606389aa0b55749892a61466d5fffc36e5bfd13c12",
-  "size": 3008807
+  "notes": "摄像头终于有声音，并修掉 v0.7.29 在 Linux/ARM 上把画面弄黑的回归：桥接把拾音混成同一路带 AAC 的流，摄像头页新增「声音」开关；补上 qemu 跑 ARM 桥接缺的 sysroot；连续拉不到画面会先冷却，面板重启时会收掉残留的桥接进程。",
+  "url": "https://raw.githubusercontent.com/liaozhenqiang/miot-panel/main/updates/miot-panel-v0.7.30-update.tar.gz",
+  "sha256": "9d90f2504827da0a3543ad15512f4a54e05433834ea3f4dcdda756470cbf7f73",
+  "size": 3010480
 }

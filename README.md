@@ -70,7 +70,7 @@ Windows 推荐一键安装 EXE；Linux 推荐 `.run` 自解压安装；Docker/NA
 Release 提供自解压安装器：
 
 ```bash
-sudo bash miot-panel-v0.7.29-docker-installer.run
+sudo bash miot-panel-v0.7.30-docker-installer.run
 ```
 
 或手动使用 compose：
@@ -87,14 +87,14 @@ docker compose up -d --build
 多架构构建（amd64 / arm64 / armv7）：
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.29 .
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t miot-panel:0.7.30 .
 ```
 
 Release 还提供通用多架构镜像 tar（linux/amd64、arm64、armv7），无需本机构建：
 
 ```bash
-docker load -i miot-panel-v0.7.29-docker-multiarch.tar
-docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.29
+docker load -i miot-panel-v0.7.30-docker-multiarch.tar
+docker run -d --name miot-panel -p 8080:8080 -v panel-data:/data miot-panel:0.7.30
 ```
 
 该 tar 为 OCI 多架构布局，需 Docker 25+ / containerd；旧版 Docker 请使用构建上下文或对应架构镜像重建。
@@ -543,6 +543,7 @@ chromium --kiosk --incognito --noerrdialogs --disable-infobars \
 - **后台打不开/登录不了**：确认 `/admin` 地址；清除浏览器 Cookie 后重试；忘记 PIN 可停服务后把 `cloud_config.json` 里的 `admin_pin_salt`/`admin_pin_hash` 清空并重启，重新设置。
 
 ## 更新日志
+- **v0.7.30（2026-11-03）修复 v0.7.30 在 Linux / ARM 上把画面一起弄坏的回归**：音频改动里有一处变量在 Linux 分支没定义，桥接一启动就抛异常，go2rtc 只拿到 EOF，玩客云、爱快、Docker 上的异地摄像头全部黑屏（Windows 走的是另一条分支，所以当时实测是好的）。同时补上 qemu 跑 ARM 桥接时缺少的 sysroot：以前在非 ARM 机器上（如爱快 x86_64）qemu 会去宿主机 `/lib` 找 ARM 动态加载器，找不到就直接退出，这条路径实际上从来没通过。另外：连续两次拉不到画面就先冷却 120 秒，不再让重试的桥接一直钉着摄像头的会话；面板启动和热更新重启用时会收掉上一代残留的桥接进程；桥接端不支持音频时等端口从 4 秒缩到 1.2 秒并写明只有画面。爱快真机实测：原始流 HEVC + AAC 48kHz 单声道 27kb/s，转码流 H.264 + AAC 33kb/s。
 - **v0.7.29（2026-11-03）摄像头终于有声音**：以前桥接只把视频原样转发，音频帧到了桥接进程就被丢掉，ffmpeg 也一律带 `-an`，所以异地摄像头一直是静音。现在麦克风音频按设备实际编码收下来重新打包，交给本机 ffmpeg 混进同一路 TS（AAC 音轨），Windows、Linux/Docker 与 ARM 原生桥接走同一套逻辑；摄像头页左上角新增「声音」开关并记住选择（浏览器策略要求第一次必须由用户点一下才允许出声，所以默认仍是静音）。顺带修掉几个会打断画面的问题：上一轮残留的桥接进程还占着设备会话、日志文件被占用时运行库把日志写进了视频流、面板重启后桥接令牌变化让已注册的流返回 403、以及尺寸相同的新桥接程序没被替换上去。音频输入短时间读不到数据也不再 5 秒就把整条流带走，超时放宽到 15 秒。
 - **v0.7.23（2026-10-30）修复音乐中心免登录插件装不上**：根因是面板只把 `panel-sso` 插件拷进目录，而 Songloft 的已安装插件记录在数据库里，拷贝不会注册；且新包缺少 Songloft 要求的 `entryHash`/`zipHash`。现在插件包按 Songloft 规范写入两个 hash，面板通过音乐中心的 `/api/v1/jsplugins/registry/install` 接口自动安装/升级（由面板自己提供 `/music/panel-sso.jsplugin.zip` 给它拉取），连接音乐中心、打开后台音乐中心或面板启动时都会自动补装，版本不一致也会自动覆盖。
 - **v0.7.28（2026-11-01）摄像头打开更快：H.264 不再多转一道、点开先给一帧画面**：面板自己读视频流的 PMT 判断编码（不依赖 ffmpeg），确认是 H.264 就直接播原始流，省掉「解码→再编码」这一整趟，玩客云/路由器这类弱机 CPU 明显降下来；HEVC 机型或用户主动点「流畅/高清」时仍然走转码，编码结果记进配置、重启也保留，没装 ffmpeg 的机器上 H.264 摄像头也能直接播。新增最近一帧快照接口：点开摄像头时先用上一帧垫住黑屏（容器实测热缓存 0.4 秒出图、真实画面约 3 秒接上），画面通了再自动更新这一帧。

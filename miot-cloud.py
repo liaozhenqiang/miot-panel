@@ -211,7 +211,7 @@ SETTINGS_FILE = os.path.join(ROOT, "cloud_settings.json")
 PAGES_DIR = os.path.join(ROOT, "pages")
 PAGES_FILE = os.path.join(ROOT, "pages.json")
 PAGES_LOCK = threading.RLock()
-APP_VERSION = "0.7.29"
+APP_VERSION = "0.7.30"
 APP_NAME = "miot-panel"
 try:
     DISCOVERY_PORT = int(os.environ.get("MIOT_DISCOVERY_PORT") or 37020)
@@ -5727,12 +5727,52 @@ def _file_digest(path):
 def _bridge_reap_hosts():
     """Windows 上运行中的 exe 无法替换；换新版前先把残留宿主收掉（播放会重连一次）。"""
     if os.name != "nt":
+        # Linux/ARM：面板重启或热更新后，上一代的桥接进程还占着摄像头会话，
+        # 宿主只认 PID 和启动时间，而 execv 两者都不变，所以它不会自己退出
+        for pat in ("miss-host-arm", "xiaomi-miss-host.exe"):
+            try:
+                subprocess.run(["pkill", "-9", "-f", pat],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=8)
+            except Exception as exc:
+                LOG.debug("bridge host reap (%s) failed: %s", pat, exc)
         return
     try:
         subprocess.run(["taskkill", "/F", "/IM", "xiaomi-miss-host.exe"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
     except Exception as exc:
         LOG.debug("bridge host reap failed: %s", exc)
+
+
+BRIDGE_FAIL = {}
+BRIDGE_FAIL_LOCK = threading.Lock()
+BRIDGE_COOLDOWN = 120.0
+
+
+def _bridge_cooling(did):
+    """返回还要等多少秒；连续两次拉不到画面就先放手，别把摄像头钉死。"""
+    with BRIDGE_FAIL_LOCK:
+        item = BRIDGE_FAIL.get(did)
+        if not item:
+            return 0.0
+        left = float(item[1]) - time.time()
+        return left if left > 0 else 0.0
+
+
+def _bridge_failed(did):
+    with BRIDGE_FAIL_LOCK:
+        item = BRIDGE_FAIL.get(did) or [0, 0.0]
+        item[0] += 1
+        if item[0] >= 2:
+            item[0] = 0
+            item[1] = time.time() + BRIDGE_COOLDOWN
+        BRIDGE_FAIL[did] = item
+        return max(0.0, item[1] - time.time())
+
+
+def _bridge_succeeded(did):
+    with BRIDGE_FAIL_LOCK:
+        BRIDGE_FAIL.pop(did, None)
 
 
 def _bridge_prune_hosts(keep):
@@ -5983,6 +6023,41 @@ def _native_platform():
     return machine in ("armv7l", "armv6l", "armv8l", "arm")
 
 
+def _native_sysroot(base):
+    """qemu-arm 会按 PT_INTERP 的绝对路径去找 ARM 动态加载器。
+
+    路由器/PC 的 /lib 里当然没有 uClibc 的加载器，所以把 native-arm 伪装成一个
+    sysroot：在里面建一个 lib/ 目录，把加载器和依赖都软链过去，再用 -L 指给 qemu。
+    """
+    if not base or not os.path.isdir(base):
+        return ""
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return ""
+    loaders = [n for n in names if n.startswith("ld-") and ".so" in n]
+    if not loaders:
+        return ""
+    libdir = os.path.join(base, "lib")
+    try:
+        os.makedirs(libdir, exist_ok=True)
+        for name in [n for n in names if ".so" in n]:
+            dst = os.path.join(libdir, name)
+            if os.path.lexists(dst):
+                continue
+            try:
+                os.symlink(os.path.join(base, name), dst)
+            except OSError:
+                try:
+                    shutil.copyfile(os.path.join(base, name), dst)
+                except OSError:
+                    pass
+    except OSError as exc:
+        LOG.debug("native sysroot build failed: %s", exc)
+        return ""
+    return base
+
+
 def _native_qemu_bin(base=""):
     """amd64 上用静态 qemu-arm 跑 ARM libmiss。仅本机私有组件，不随公开包分发。"""
     candidates = []
@@ -6029,7 +6104,7 @@ def _native_bridge_info():
     if qemu:
         _native_ensure_root_link(base)
         return {"kind": "qemu", "base": base, "helper": helper,
-                "host": qemu, "qemu": qemu}
+                "host": qemu, "qemu": qemu, "sysroot": _native_sysroot(base)}
     return None
 
 
@@ -6097,6 +6172,7 @@ def _bridge_prepare():
     elif kind == "qemu":
         bridge["helper"] = helper
         bridge["qemu"] = native["qemu"]
+        bridge["sysroot"] = native.get("sysroot") or ""
     return bridge
 
 
@@ -6478,6 +6554,10 @@ def _bridge_host_args(bridge, did, model):
     if bridge.get("kind") in ("native", "qemu"):
         head = [bridge["host"]]
         if bridge.get("kind") == "qemu":
+            # 不给 sysroot，qemu 会在宿主机 /lib 里找 ARM 加载器然后直接退出
+            sysroot = bridge.get("sysroot") or ""
+            if sysroot:
+                head += ["-L", sysroot]
             head.append(bridge["helper"])
         return head + [
                 "--did", str(did), "--model", str(model),
@@ -8593,6 +8673,12 @@ class Handler(BaseHTTPRequestHandler):
         if not expected or not hmac.compare_digest(sig, expected):
             self._send(403, {"ok": False, "error": "forbidden"})
             return
+        cooling = _bridge_cooling(did)
+        if cooling:
+            # 反复拉起只会一直占着摄像头的 P2P 会话，让别人也进不来
+            self._send(503, {"ok": False,
+                             "error": "摄像头桥接连续没出帧，%.0f 秒后自动重试" % cooling})
+            return
         bridge = _bridge_prepare()
         if not bridge:
             self._send(503, {"ok": False, "error": "桥接未就绪"})
@@ -8619,7 +8705,10 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_drain_pipe, args=(proc.stderr, did),
                              daemon=True).start()
             # 桥接端会把自己监听的音频端口写进这个文件；拿到了就多加一路 Ogg-Opus 输入
-            audio_port = _bridge_audio_port(port_file, proc, timeout=4.0)
+            audio_port = _bridge_audio_port(_bridge_audio_port_file(bridge, did), proc,
+                                            timeout=1.2)
+            if not audio_port:
+                LOG.info("bridge host gave no audio port (did=%s)，这一路只有画面", did)
             ff_args = [bridge["ffmpeg"], "-hide_banner", "-loglevel", "error",
                        "-use_wallclock_as_timestamps", "1",
                        "-f", "hevc", "-i", "pipe:0"]
@@ -8647,6 +8736,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(500, {"ok": False, "error": "桥接转码启动失败"})
                 return
         LOG.info("bridge stream start did=%s pid=%s kind=%s", did, proc.pid, bridge.get("kind"))
+        sent = 0
         try:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
@@ -8659,6 +8749,7 @@ class Handler(BaseHTTPRequestHandler):
                 chunk = os.read(fd, 65536)
                 if not chunk:
                     break
+                sent += len(chunk)
                 self.wfile.write(chunk)
                 self.wfile.flush()
         except Exception as exc:
@@ -8675,7 +8766,12 @@ class Handler(BaseHTTPRequestHandler):
                     doomed.wait(timeout=5)
                 except Exception:
                     pass
-            LOG.info("bridge stream end did=%s rc=%s", did, proc.returncode)
+            if sent:
+                _bridge_succeeded(did)
+            else:
+                wait = _bridge_failed(did)
+                LOG.warning("bridge stream got no data did=%s rc=%s%s", did, proc.returncode,
+                            "，冷却 %.0f 秒" % wait if wait else "")
 
     def api_camera_ensure(self, u=None):
         """页面播放前调用：流不在 go2rtc 里就重新注册（go2rtc 重启后运行时流会丢）。"""
@@ -10637,6 +10733,11 @@ def discovery_loop():
 def _reexec_for_update(_signum=None, _frame=None):
     LOG.info("re-exec for update")
     try:
+        # execv 之后 PID 和启动时间都不变，旧桥接进程会以为父进程还活着
+        _bridge_reap_hosts()
+    except Exception as exc:
+        LOG.debug("re-exec bridge reap failed: %s", exc)
+    try:
         logging.shutdown()
     except Exception:
         pass
@@ -11467,6 +11568,12 @@ def main():
         return
     _load_caches()
     _native_bridge_init()
+    try:
+        # 上一代面板留下的桥接进程会一直占着摄像头的 P2P 会话
+        if os.path.isdir(BRIDGE_DIR):
+            _bridge_reap_hosts()
+    except Exception as exc:
+        LOG.debug("startup bridge reap failed: %s", exc)
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, _reexec_for_update)
     try:
